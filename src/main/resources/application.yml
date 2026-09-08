@@ -1,7 +1,15 @@
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
+  config:
+    import: optional:file:./.env[.properties]
   datasource:
     url: jdbc:h2:mem:plink;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -14,3 +22,9 @@ spring:
   sql:
     init:
       mode: always
+
+plink:
+  auth:
+    google-client-id: ${GOOGLE_CLIENT_ID:}
+    google-client-secret: ${GOOGLE_CLIENT_SECRET:}
+    base-url: ${APP_BASE_URL:http://localhost:3000}

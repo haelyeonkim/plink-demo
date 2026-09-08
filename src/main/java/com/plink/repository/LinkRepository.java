@@ -8,7 +8,6 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Optional;
@@ -58,7 +57,7 @@ public class LinkRepository {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO protected_link (short_code, original_url, title, password_hash, expires_at, recipient_names, max_views) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS);
+                    new String[] { "id" });
             ps.setString(1, link.getShortCode());
             ps.setString(2, link.getOriginalUrl());
             ps.setString(3, link.getTitle());

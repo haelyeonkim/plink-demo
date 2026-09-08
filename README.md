@@ -10,7 +10,8 @@
 - 링크 목록, 상세 조회 및 삭제
 - 비밀번호·만료 시간·최대 열람 수 검증
 - 열람자 이름과 열람 시각 기록
-- 로그인, 통계, 사용자 가이드는 안내용 화면만 구현
+- Google 로그인, 로그인 상태·이름 표시 및 로그아웃
+- 통계, 사용자 가이드는 안내용 화면만 구현
 
 ## 요구사항
 
@@ -36,7 +37,7 @@ bash scripts/run-dev.sh
 bash scripts/run-dev.sh stop
 ```
 
-포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 백엔드 포트를 바꾸면 `frontend/vite.config.ts`의 프록시 대상도 같은 포트로 수정해야 합니다.
+포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
 
 ### 개별 실행 및 빌드
 
@@ -63,13 +64,46 @@ npm run dev
 3. 열람자 이름과 설정한 비밀번호를 입력해 원본 링크 열기 버튼을 확인합니다.
 4. `/manage`에서 해당 링크의 상세 화면을 열어 열람 기록을 확인합니다.
 
+## Google 로그인 설정
+
+Spring Security의 OAuth 2.0 / OpenID Connect 로그인으로 Google 인증 결과를 백엔드에서 검증하고 서버 세션을 생성합니다. 로그인 후 `/manage`로 이동하며 헤더에 이름과 로그아웃 버튼이 표시됩니다. 토큰과 Client Secret은 프론트엔드에 전달하지 않습니다.
+
+1. Google Cloud의 **Google Auth Platform → 클라이언트**에서 기존 **웹 애플리케이션** 클라이언트를 선택하거나 새로 생성합니다.
+2. **승인된 리디렉션 URI**에 `http://localhost:3000/login/oauth2/code/google`을 추가합니다. 승인된 JavaScript 원본만 등록해서는 이 방식의 로그인을 완료할 수 없습니다.
+3. 프로젝트 루트에서 `cp .env.example .env`를 실행하고 `.env`의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`에 값을 입력합니다. 따옴표나 `export` 없이 `이름=값`으로 작성하세요. `.env`는 Git에서 제외됩니다. 환경변수로도 설정할 수 있습니다.
+4. 프로젝트 루트에서 백엔드를 재시작하고 `http://localhost:3000/login`에서 **Google로 계속하기**를 누릅니다. 클라이언트 설정이 없으면 서버는 정상 실행되지만 로그인 버튼은 비활성화됩니다.
+
+로그인 취소나 인증 실패 시 로그인 화면에서 다시 시도할 수 있습니다. 이 방식에는 **승인된 JavaScript 원본**이 필요하지 않습니다. 이 클라이언트를 현재 P-Link에서만 사용한다면 기존 원본 설정을 삭제해도 됩니다. 다른 사이트의 브라우저 Google 로그인이 같은 클라이언트를 사용한다면 해당 원본은 유지하세요. Google 콘솔에서 대상 사용자/테스트 사용자 설정에 따라 로그인할 계정을 허용하세요.
+
+배포 시 `APP_BASE_URL`을 실제 HTTPS 사이트 주소(마지막 `/` 제외)로 설정하고 동일한 `/login/oauth2/code/google` 주소를 Google에 등록하세요. 프론트엔드와 같은 호스트에서 `/api`, `/oauth2`, `/login/oauth2` 요청을 백엔드로 전달해야 합니다. Vite 프록시는 개발 환경에만 적용됩니다.
+
+### 로컬과 lyuni.ddak.app 배포 설정
+
+로컬 `.env`는 유지하고, 배포 서버의 환경변수 또는 프로젝트 루트 `.env`에 서버용 값을 설정합니다. `.env.example`은 값의 형식을 보여주는 템플릿이며 실제 인증값은 넣지 않습니다.
+
+| 설정 | 로컬 | 배포 서버 |
+|------|------|-----------|
+| `APP_BASE_URL` | `http://localhost:3000` | `https://lyuni.ddak.app` |
+| `SESSION_COOKIE_SECURE` | `false` | `true` |
+| Google 승인된 리디렉션 URI | `http://localhost:3000/login/oauth2/code/google` | `https://lyuni.ddak.app/login/oauth2/code/google` |
+
+Google 클라이언트에 위 리디렉션 URI 두 개를 모두 등록하면 됩니다. 백엔드는 `APP_BASE_URL`에 맞춰 로그인 복귀 주소와 API의 허용 원본을 설정합니다. `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`은 각 실행 환경에서 설정해야 하며, 서버 재시작 후 반영됩니다.
+
+배포 서버는 HTTPS를 제공하고 `/api`, `/oauth2`, `/login/oauth2`를 백엔드로 프록시해야 합니다. 그 외 화면 경로는 프론트엔드 `index.html`로 연결하세요. 공개 배포 시 H2 개발 콘솔은 `SPRING_H2_CONSOLE_ENABLED=false`로 끌 수 있습니다. `scripts/run-dev.sh`는 로컬 개발용이며 서버에서는 빌드된 JAR과 프론트엔드 정적 파일을 실행·호스팅하세요.
+
+설정 참고: [Google 웹 서버 OAuth 안내](https://developers.google.com/identity/protocols/oauth2/web-server), [Spring OAuth 로그인 안내](https://spring.io/guides/tutorials/spring-boot-oauth2/).
+
+### 인증 테스트
+
+`./mvnw test`로 세션 조회, Google 인증 시작, 잘못된 콜백 거부, CSRF 보호, 로그아웃 및 기존 링크 생성 API를 검증합니다. 테스트에는 가짜 클라이언트 설정과 인증 사용자를 사용하므로 실제 Google 계정이 필요하지 않습니다. 실제 계정 선택·동의 과정은 위 설정 후 브라우저에서 확인해야 합니다.
+
 ## 데모 데이터와 제한 사항
 
 - H2 메모리 DB를 사용하므로 백엔드를 종료하면 변경 데이터가 사라집니다. 시작할 때 `data.sql`의 샘플 링크 3개와 열람 기록이 생성됩니다.
 - 샘플 URL은 예시 주소입니다. 비밀번호가 있는 샘플 `abc123`, `demo01`은 더미 해시를 사용하므로 인증 시연에는 새 링크를 생성하세요.
-- 계정 인증과 링크 소유자별 권한 검사는 구현되어 있지 않습니다. 수신자 이름은 표시용으로 저장하며 접근 제한에 사용하지 않습니다.
+- Google 로그인은 계정 식별과 세션 유지 기능입니다. 현재 링크 관리 화면과 API는 공유 데모로 누구나 접근할 수 있으며, 링크 소유자별 권한 검사는 아직 구현되어 있지 않습니다. 수신자 이름은 표시용으로 저장하며 접근 제한에 사용하지 않습니다.
 - 비밀번호 처리는 데모용 `String.hashCode()` 방식입니다. 실제 비공개 링크 서비스로 운영하기 전에 비밀번호 저장 방식과 관리 API의 인증·권한 처리를 구현해야 합니다.
-- 자동 테스트는 아직 없으며 Maven 설정은 테스트를 건너뛰도록 되어 있습니다.
+- `./mvnw test`와 `./mvnw package`는 인증 테스트를 실행합니다. 개발 서버 실행 스크립트는 빠른 시작을 위해 테스트를 건너뜁니다.
 
 ## 기술 스택
 
@@ -86,8 +120,8 @@ plink/
 ├── scripts/run-dev.sh               # 개발 서버 실행 스크립트
 ├── src/main/java/com/plink/         # Spring Boot 백엔드
 │   ├── PlinkApplication.java
-│   ├── config/WebConfig.java
-│   ├── controller/LinkController.java
+│   ├── config/                     # SecurityConfig, WebConfig
+│   ├── controller/                 # AuthController, LinkController
 │   ├── model/
 │   ├── repository/
 │   └── service/LinkService.java
@@ -113,3 +147,8 @@ plink/
 | DELETE | /api/links/{id} | 링크 삭제 |
 | GET | /api/links/s/{code} | 공유 코드로 링크 접근 정보 |
 | POST | /api/links/s/{code}/verify | 비밀번호 검증 + 열람 기록 |
+| GET | /api/auth/session | 로그인 사용자, Google 설정 여부 및 CSRF 토큰 |
+| GET | /oauth2/authorization/google | Google 로그인 시작 |
+| POST | /api/auth/logout | 세션 종료 |
+
+POST/DELETE 요청에는 `/api/auth/session` 응답의 `csrfHeader` 이름으로 `csrfToken` 값을 보내야 하며 동일한 세션 쿠키를 유지해야 합니다. 프론트엔드는 이를 자동 처리합니다.
