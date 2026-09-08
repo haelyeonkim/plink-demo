@@ -1,3 +1,4 @@
+import { mutate } from './auth';
 import type { ProtectedLink, LinkDetail, AccessInfo, CreateLinkRequest } from './types';
 
 const BASE = '/api/links';
@@ -15,7 +16,7 @@ export async function fetchLink(id: number): Promise<LinkDetail> {
 }
 
 export async function createLink(req: CreateLinkRequest): Promise<ProtectedLink> {
-  const res = await fetch(BASE, {
+  const res = await mutate(BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -25,7 +26,8 @@ export async function createLink(req: CreateLinkRequest): Promise<ProtectedLink>
 }
 
 export async function deleteLink(id: number): Promise<void> {
-  await fetch(`${BASE}/${id}`, { method: 'DELETE' });
+  const res = await mutate(`${BASE}/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete link');
 }
 
 export async function accessLink(shortCode: string): Promise<AccessInfo> {
@@ -39,7 +41,7 @@ export async function verifyLink(
   password: string,
   viewerName: string,
 ): Promise<string> {
-  const res = await fetch(`${BASE}/s/${shortCode}/verify`, {
+  const res = await mutate(`${BASE}/s/${shortCode}/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password, viewerName }),
