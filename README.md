@@ -40,6 +40,8 @@ bash scripts/run-dev.sh stop
 
 백엔드와 프론트엔드 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩해 Nginx가 `127.0.0.1:3000`으로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
 
+`run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다.
+
 포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
 
 `80` 또는 `443`은 공개 서비스의 외부 포트입니다. 운영 서버에서는 Nginx 같은 리버스 프록시가 `lyuni.ddak.app`의 HTTPS 요청을 받아 프론트엔드와 백엔드로 전달합니다. `run-dev.sh`가 사용하는 `3000`과 `8080`은 서버 내부 개발 포트이므로 공개 URL에 포트 번호를 붙이지 않습니다.
