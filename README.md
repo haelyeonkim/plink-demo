@@ -38,7 +38,7 @@ bash scripts/run-dev.sh
 bash scripts/run-dev.sh stop
 ```
 
-백엔드와 프론트엔드 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩해 Nginx가 `127.0.0.1:3000`으로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
+`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고 즉시 터미널 프롬프트를 돌려줍니다. 실행 진행 로그는 `logs/launcher.log`, 서비스 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩해 Nginx가 `127.0.0.1:3000`으로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/launcher.log`, `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
 
 `run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다.
 

@@ -12,6 +12,19 @@ usage() {
   exit 0
 }
 
+# Start detached by default so the terminal remains available. The internal
+# marker prevents the detached child from spawning another copy of itself.
+if [[ "${1:-}" != "stop" && "${PLINK_DAEMONIZED:-0}" != "1" ]]; then
+  PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  mkdir -p "$PROJECT_DIR/logs"
+  nohup env PLINK_DAEMONIZED=1 bash "$0" "$@" \
+    >> "$PROJECT_DIR/logs/launcher.log" 2>&1 < /dev/null &
+  echo "P-Link is starting in the background (PID $!)."
+  echo "Follow startup: tail -f $PROJECT_DIR/logs/launcher.log"
+  echo "Check status: curl -i http://127.0.0.1:3000"
+  exit 0
+fi
+
 stop_all() {
   echo "Stopping services..."
   if [ -f "$PID_DIR/backend.pid" ]; then
