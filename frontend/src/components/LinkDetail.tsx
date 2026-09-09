@@ -11,6 +11,7 @@ function formatDate(s: string): string {
 function timeAgo(s: string): string {
   const diff = Date.now() - new Date(s).getTime();
   const min = Math.floor(diff / 60000);
+  if (min < 1) return '방금 전';
   if (min < 60) return `${min}분 전`;
   const hours = Math.floor(min / 60);
   if (hours < 24) return `${hours}시간 전`;
