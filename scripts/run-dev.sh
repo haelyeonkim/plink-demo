@@ -57,7 +57,7 @@ cd "$PROJECT_DIR/frontend"
 npm install --silent
 
 echo "==> Starting frontend on :$FRONTEND_PORT ..."
-BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 &
+BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
 
