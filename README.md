@@ -38,9 +38,9 @@ bash scripts/run-dev.sh
 bash scripts/run-dev.sh stop
 ```
 
-`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고 즉시 터미널 프롬프트를 돌려줍니다. 실행 진행 로그는 `logs/launcher.log`, 서비스 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩하고 `lyuni.ddak.app`을 허용해 Nginx가 도메인 Host 헤더로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/launcher.log`, `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
+`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고, 시작 메시지와 헬스체크 결과를 현재 터미널에 직접 출력한 뒤 프롬프트를 돌려줍니다. 서비스 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩하고 `lyuni.ddak.app`을 허용해 Nginx가 도메인 Host 헤더로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
 
-`run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다.
+`run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다. 스크립트가 종료되어도 두 서비스는 백그라운드에서 계속 실행됩니다.
 
 포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
 

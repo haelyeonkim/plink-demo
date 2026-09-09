@@ -12,19 +12,6 @@ usage() {
   exit 0
 }
 
-# Start detached by default so the terminal remains available. The internal
-# marker prevents the detached child from spawning another copy of itself.
-if [[ "${1:-}" != "stop" && "${PLINK_DAEMONIZED:-0}" != "1" ]]; then
-  PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-  mkdir -p "$PROJECT_DIR/logs"
-  nohup env PLINK_DAEMONIZED=1 bash "$0" "$@" \
-    >> "$PROJECT_DIR/logs/launcher.log" 2>&1 < /dev/null &
-  echo "P-Link is starting in the background (PID $!)."
-  echo "Follow startup: tail -f $PROJECT_DIR/logs/launcher.log"
-  echo "Check status: curl -i http://127.0.0.1:3000"
-  exit 0
-fi
-
 stop_all() {
   echo "Stopping services..."
   if [ -f "$PID_DIR/backend.pid" ]; then
@@ -75,7 +62,7 @@ cd "$PROJECT_DIR"
 ./mvnw -q clean package -DskipTests -Dserver.port="$BACKEND_PORT"
 
 echo "==> Starting backend on :$BACKEND_PORT ..."
-APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 &
+nohup env APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 < /dev/null &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 
@@ -85,7 +72,7 @@ cd "$PROJECT_DIR/frontend"
 npm install --silent
 
 echo "==> Starting frontend on :$FRONTEND_PORT ..."
-BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 &
+nohup env BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 < /dev/null &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
 
@@ -105,5 +92,3 @@ wait_for_http "Backend" "http://127.0.0.1:$BACKEND_PORT/api/auth/session"
 wait_for_http "Frontend" "http://127.0.0.1:$FRONTEND_PORT/"
 echo "  Health check passed."
 echo ""
-
-wait
