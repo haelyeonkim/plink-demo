@@ -28,6 +28,21 @@ stop_all() {
   exit 0
 }
 
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  for ((i=1; i<=30; i++)); do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      echo "  $name OK → $url"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  $name failed → $url"
+  echo "  Check logs: $LOG_DIR/backend.log, $LOG_DIR/frontend.log"
+  return 1
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     stop) stop_all ;;
@@ -70,6 +85,12 @@ echo "  H2 Console → http://localhost:$BACKEND_PORT/h2-console"
 echo ""
 echo "  Stop with: bash scripts/run-dev.sh stop"
 echo "  Logs: $LOG_DIR/backend.log, $LOG_DIR/frontend.log"
+echo ""
+
+echo "==> Checking services..."
+wait_for_http "Backend" "http://127.0.0.1:$BACKEND_PORT/api/auth/session"
+wait_for_http "Frontend" "http://127.0.0.1:$FRONTEND_PORT/"
+echo "  Health check passed."
 echo ""
 
 wait
