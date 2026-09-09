@@ -39,6 +39,7 @@ export default function LinkDetail() {
           <span className={`status ${expired ? 'status-expired' : 'status-active'}`}>
             {expired ? '만료됨' : '활성'}
           </span>
+          <span className="status status-lock">{link.claimed ? '패스키 수신 확정' : '수신 대기'}</span>
           {link.hasPassword && <span className="status status-lock">비밀번호 보호</span>}
         </div>
       </div>
@@ -52,11 +53,12 @@ export default function LinkDetail() {
             <dt>공유 코드</dt>
             <dd>
               <code>{link.shortCode}</code>
-              <button className="btn-tiny" onClick={() => navigator.clipboard.writeText(link.shortCode)}>복사</button>
-              <button className="btn-tiny" onClick={() => navigate(`/s/${link.shortCode}`)}>테스트</button>
+              <button className="btn-tiny" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/s/${link.shortCode}`)}>복사</button>
+              <button className="btn-tiny" onClick={() => navigate(`/s/${link.shortCode}`)}>수신 화면</button>
             </dd>
-            <dt>공유 대상</dt>
+            <dt>수신자 메모 (관리용)</dt>
             <dd>{link.recipientNames || '-'}</dd>
+            <dt>수신 안내</dt><dd>수신 화면에서 직접 패스키를 등록하면 관리자 본인에게 귀속됩니다. 수신자에게 전달할 링크는 먼저 등록하지 마세요.</dd>
             <dt>생성일</dt>
             <dd>{formatDate(link.createdAt)}</dd>
             <dt>만료일</dt>
@@ -67,7 +69,7 @@ export default function LinkDetail() {
         </div>
 
         <div className="detail-card">
-          <h3>열람 현황 <span className="count">{link.views.length}명</span></h3>
+          <h3>열람 현황 <span className="count">{link.views.length}회</span></h3>
           {link.views.length === 0 ? (
             <p className="empty">아직 열람 기록이 없습니다.</p>
           ) : (

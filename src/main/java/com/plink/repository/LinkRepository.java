@@ -19,6 +19,7 @@ public class LinkRepository {
     private static final RowMapper<ProtectedLink> ROW_MAPPER = (rs, rowNum) -> {
         ProtectedLink link = new ProtectedLink();
         link.setId(rs.getLong("id"));
+        link.setOwnerSub(rs.getString("owner_sub"));
         link.setShortCode(rs.getString("short_code"));
         link.setOriginalUrl(rs.getString("original_url"));
         link.setTitle(rs.getString("title"));
@@ -35,8 +36,8 @@ public class LinkRepository {
         this.jdbc = jdbc;
     }
 
-    public List<ProtectedLink> findAll() {
-        return jdbc.query("SELECT * FROM protected_link ORDER BY created_at DESC", ROW_MAPPER);
+    public List<ProtectedLink> findAll(String ownerSub) {
+        return jdbc.query("SELECT * FROM protected_link WHERE owner_sub = ? ORDER BY created_at DESC", ROW_MAPPER, ownerSub);
     }
 
     public Optional<ProtectedLink> findById(Long id) {
@@ -55,8 +56,8 @@ public class LinkRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                    "INSERT INTO protected_link (short_code, original_url, title, password_hash, expires_at, recipient_names, max_views) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO protected_link (short_code, original_url, title, password_hash, expires_at, recipient_names, max_views, owner_sub) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, link.getShortCode());
             ps.setString(2, link.getOriginalUrl());
@@ -65,10 +66,16 @@ public class LinkRepository {
             ps.setTimestamp(5, link.getExpiresAt());
             ps.setString(6, link.getRecipientNames());
             ps.setInt(7, link.getMaxViews());
+            ps.setString(8, link.getOwnerSub());
             return ps;
         }, keyHolder);
         link.setId(keyHolder.getKey().longValue());
-        return link;
+        return findById(link.getId()).get();
+    }
+
+    public Optional<ProtectedLink> lockByShortCode(String code) {
+        List<ProtectedLink> links = jdbc.query("SELECT * FROM protected_link WHERE short_code = ? FOR UPDATE", ROW_MAPPER, code);
+        return links.isEmpty() ? Optional.empty() : Optional.of(links.get(0));
     }
 
     public void incrementViewCount(Long id) {

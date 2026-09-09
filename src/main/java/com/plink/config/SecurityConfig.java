@@ -1,6 +1,7 @@
 package com.plink.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpMethod;
 import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,8 +18,12 @@ public class SecurityConfig {
             @Value("${plink.auth.google-client-id}") String clientId,
             @Value("${plink.auth.google-client-secret}") String clientSecret,
             @Value("${plink.auth.base-url}") String baseUrl) throws Exception {
-        // Keep the existing shared demo accessible; authentication adds a session only.
-        http.authorizeRequests(auth -> auth.anyRequest().permitAll())
+        http.authorizeRequests(auth -> auth
+                .antMatchers("/api/links/s/**").permitAll()
+                .antMatchers("/api/links", "/api/links/**").authenticated()
+                .antMatchers("/h2-console/**").denyAll()
+                .anyRequest().permitAll())
+            .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, error) -> response.sendError(401)))
             .cors().and()
             .requestCache().disable()
             .formLogin().disable()

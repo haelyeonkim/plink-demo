@@ -24,8 +24,8 @@ public class LinkService {
         this.linkViewRepository = linkViewRepository;
     }
 
-    public List<ProtectedLink> getAllLinks() {
-        return linkRepository.findAll();
+    public List<ProtectedLink> getAllLinks(String ownerSub) {
+        return linkRepository.findAll(ownerSub);
     }
 
     public Optional<ProtectedLink> getLink(Long id) {
@@ -37,9 +37,10 @@ public class LinkService {
     }
 
     public ProtectedLink createLink(String originalUrl, String title, String password,
-                                     Timestamp expiresAt, String recipientNames, int maxViews) {
+                                     Timestamp expiresAt, String recipientNames, int maxViews, String ownerSub) {
         ProtectedLink link = new ProtectedLink();
         link.setShortCode(generateShortCode());
+        link.setOwnerSub(ownerSub);
         link.setOriginalUrl(originalUrl);
         link.setTitle(title);
         link.setPasswordHash(password != null && !password.isEmpty() ? hashPassword(password) : null);
@@ -49,28 +50,8 @@ public class LinkService {
         return linkRepository.save(link);
     }
 
-    public Optional<String> verifyAndAccess(String shortCode, String password, String viewerName) {
-        Optional<ProtectedLink> optLink = linkRepository.findByShortCode(shortCode);
-        if (!optLink.isPresent()) {
-            return Optional.empty();
-        }
-        ProtectedLink link = optLink.get();
-
-        if (link.isExpired()) {
-            return Optional.empty();
-        }
-        if (link.getMaxViews() > 0 && link.getViewCount() >= link.getMaxViews()) {
-            return Optional.empty();
-        }
-        if (link.hasPassword()) {
-            if (password == null || !checkPassword(password, link.getPasswordHash())) {
-                return Optional.empty();
-            }
-        }
-
-        linkRepository.incrementViewCount(link.getId());
-        linkViewRepository.save(link.getId(), viewerName != null ? viewerName : "Anonymous");
-        return Optional.of(link.getOriginalUrl());
+    public boolean passwordMatches(ProtectedLink link, String password) {
+        return !link.hasPassword() || (password != null && checkPassword(password, link.getPasswordHash()));
     }
 
     public List<LinkView> getViews(Long linkId) {
@@ -82,8 +63,8 @@ public class LinkService {
     }
 
     private String generateShortCode() {
-        StringBuilder sb = new StringBuilder(8);
-        for (int i = 0; i < 8; i++) {
+        StringBuilder sb = new StringBuilder(24);
+        for (int i = 0; i < 24; i++) {
             sb.append(CHARS.charAt(RANDOM.nextInt(CHARS.length())));
         }
         return sb.toString();

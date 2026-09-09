@@ -843,3 +843,13 @@ a { color: inherit; text-decoration: none; }
 .google-login:disabled { opacity: .5; cursor: not-allowed; }
 .login-note { font-size: 13px; color: #66708b; margin-top: 16px; }
 .login-home { display: inline-block; margin-top: 24px; font-size: 13px; color: #66708b; text-decoration: underline; }
+
+.passkey-status { color: #18785a; font-weight: 700; margin: 20px 0 12px; }
+.passkey-notice { background: #f0f4ff; border: 1px solid #dce5ff; border-radius: 14px; padding: 20px; margin-bottom: 24px; text-align: left; }
+.passkey-notice h3 { font-size: 17px; line-height: 1.5; margin-bottom: 10px; }
+.passkey-notice p { font-size: 14px; color: #465573; margin-bottom: 12px; }
+.passkey-notice small { display: block; color: #66708b; font-size: 12px; }
+.passkey-footnote { margin-top: 16px; color: #66708b; font-size: 12px; line-height: 1.7; }
+.passkey-card .btn-primary { width: 100%; }
+.cell-code code { overflow-wrap: anywhere; font-size: 11px; }
+.code-display code { overflow-wrap: anywhere; min-width: 0; font-size: 15px; }

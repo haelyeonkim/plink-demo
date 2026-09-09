@@ -66,7 +66,7 @@ export default function LinkList() {
                 <button
                   className="btn-tiny"
                   onClick={(e) => { e.stopPropagation(); navigate(`/s/${link.shortCode}`); }}
-                  title="접속 테스트"
+                  title="수신 화면 열기"
                 >
                   &#x2197;
                 </button>
@@ -77,7 +77,7 @@ export default function LinkList() {
               <span className={`cell-expires ${timeRemaining(link.expiresAt) === '만료됨' ? 'expired' : ''}`}>
                 {timeRemaining(link.expiresAt)}
               </span>
-              <span className="cell-lock">{link.hasPassword ? '&#x1F512;' : '-'}</span>
+              <span className="cell-lock">{link.claimed ? '수신 확정' : '수신 대기'}</span>
               <span className="cell-actions">
                 <button
                   className="btn-delete"
