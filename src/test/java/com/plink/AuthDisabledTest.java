@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 
 @SpringBootTest(properties = {"plink.auth.google-client-id=", "plink.auth.google-client-secret=",
     "plink.auth.base-url=https://lyuni.ddak.app", "spring.datasource.url=jdbc:h2:mem:auth-disabled"})
@@ -34,7 +35,7 @@ class AuthDisabledTest {
             .andExpect(jsonPath("$.googleEnabled").value(false))
             .andExpect(jsonPath("$.user").isEmpty())
             .andExpect(jsonPath("$.csrfToken").isNotEmpty());
-        mvc.perform(get("/api/links")).andExpect(status().isOk());
+        mvc.perform(get("/api/links")).andExpect(status().isUnauthorized());
         mvc.perform(get("/oauth2/authorization/google")).andExpect(status().isNotFound());
     }
 }

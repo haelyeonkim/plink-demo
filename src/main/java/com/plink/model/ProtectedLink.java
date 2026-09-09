@@ -4,6 +4,9 @@ import java.sql.Timestamp;
 
 public class ProtectedLink {
     private Long id;
+    private String ownerSub;
+    public String getOwnerSub() { return ownerSub; }
+    public void setOwnerSub(String ownerSub) { this.ownerSub = ownerSub; }
     private String shortCode;
     private String originalUrl;
     private String title;

@@ -21,8 +21,8 @@ export default function Hero() {
             <strong>안전하게 링크하세요.</strong>
           </h1>
           <p className="lead">
-            P-Link는 중요한 링크를 원하는 사람에게만<br className="desktop" />
-            프라이빗하게 전달하고, 확인까지 관리하는 링크 공유 서비스입니다.
+            관리자를 위한 비공개 링크 공유.<br className="desktop" />
+            수신자에게 링크를 전달하고, 패스키 수신 확정과 열람을 관리하세요.
           </p>
           <div className="actions">
             <Link className="primary" to="/create">보호 링크 만들기 <b>&rarr;</b></Link>
@@ -49,7 +49,7 @@ export default function Hero() {
             <h2>2026 브랜드 리뉴얼<br />최종 제안서</h2>
             <div className="recipient">
               <span>JS</span>
-              <div><small>공유 대상</small><b>김지수 님 외 2명</b></div>
+              <div><small>공유 대상</small><b>김지수 님</b></div>
               <em>인증됨</em>
             </div>
             <div className="expires">
@@ -57,7 +57,7 @@ export default function Hero() {
               <div><small>링크 만료까지</small><b>2일 14시간</b></div>
             </div>
             <button>안전하게 링크 열기 <span>&rarr;</span></button>
-            <p className="notice">이 링크는 지정된 사용자만 열람할 수 있어요.</p>
+            <p className="notice">이 링크는 수신을 확정한 패스키로 열 수 있어요.</p>
           </div>
           <div className="float-card check">
             <span>&#x2713;</span>
@@ -81,7 +81,7 @@ export default function Hero() {
             <p>P for</p>
             <h3>Private<span>.</span></h3>
             <h4>보여줄 사람만</h4>
-            <p className="feature-text">공개 검색 없이, 내가 선택한 사람에게만 링크를 전달해요.</p>
+            <p className="feature-text">받을 사람에게 링크를 전달하면, 처음 등록한 패스키에 접근 권한이 연결돼요.</p>
           </article>
           <article className="blue">
             <div className="feature-icon">&#x25C7;</div>

@@ -46,18 +46,18 @@ export default function CreateLink() {
           <div className="result-icon">&#x2713;</div>
           <h2>보호 링크가 생성되었습니다</h2>
           <div className="result-code">
-            <label>공유 코드</label>
+            <label>수신자에게 보낼 링크</label>
             <div className="code-display">
               <code>{result.shortCode}</code>
               <button
-                onClick={() => navigator.clipboard.writeText(result.shortCode)}
+                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/s/${result.shortCode}`)}
                 title="복사"
               >
                 복사
               </button>
             </div>
           </div>
-          <p className="result-hint">이 코드를 공유 대상에게 전달하세요.</p>
+          <p className="result-hint">수신자 한 명에게 이 링크를 전달하세요. 먼저 패스키를 등록한 사람에게 귀속됩니다.</p>
           <div className="result-actions">
             <Link className="btn-primary" to="/manage">링크 관리로 이동</Link>
             <button className="btn-secondary" onClick={() => { setResult(null); setUrl(''); setTitle(''); setPassword(''); setRecipients(''); setMaxViews(''); }}>
@@ -74,8 +74,9 @@ export default function CreateLink() {
       <div className="section-header">
         <p className="eyebrow"><span></span> CREATE LINK</p>
         <h2>보호 링크 만들기</h2>
-        <p className="section-desc">원본 링크를 입력하고 보호 옵션을 설정하세요.</p>
+        <p className="section-desc">링크 하나에 수신자 한 명을 연결합니다. 여러 명에게 공유하려면 각각 새 링크를 만들어 주세요.</p>
       </div>
+      <p className="passkey-notice">처음 패스키 등록을 완료한 사람이 수신자가 됩니다. 받는 사람의 이메일이나 실명을 확인하는 방식은 아닙니다.</p>
       <form className="create-form" onSubmit={handleSubmit}>
         <div className="field">
           <label>원본 링크 *</label>
@@ -119,10 +120,10 @@ export default function CreateLink() {
         </div>
         <div className="field-row">
           <div className="field">
-            <label>공유 대상</label>
+            <label>수신자 메모 (관리용)</label>
             <input
               type="text"
-              placeholder="쉼표로 구분 (김지수,박현우)"
+              placeholder="예: 제안서 담당자 김지수"
               value={recipients}
               onChange={(e) => setRecipients(e.target.value)}
             />

@@ -4,6 +4,7 @@ export interface ProtectedLink {
   originalUrl: string;
   title: string | null;
   hasPassword: boolean;
+  claimed: boolean;
   expiresAt: string | null;
   recipientNames: string | null;
   maxViews: number;
@@ -24,7 +25,9 @@ export interface AccessInfo {
   shortCode: string;
   title: string | null;
   hasPassword: boolean;
+  claimed: boolean;
   expired: boolean;
+  exhausted: boolean;
 }
 
 export interface CreateLinkRequest {

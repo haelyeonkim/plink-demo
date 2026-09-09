@@ -35,18 +35,3 @@ export async function accessLink(shortCode: string): Promise<AccessInfo> {
   if (!res.ok) throw new Error('Link not found');
   return res.json();
 }
-
-export async function verifyLink(
-  shortCode: string,
-  password: string,
-  viewerName: string,
-): Promise<string> {
-  const res = await mutate(`${BASE}/s/${shortCode}/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, viewerName }),
-  });
-  if (!res.ok) throw new Error('Access denied');
-  const data = await res.json();
-  return data.originalUrl;
-}

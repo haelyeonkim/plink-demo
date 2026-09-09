@@ -3,6 +3,10 @@ package com.plink.controller;
 import com.plink.model.LinkView;
 import com.plink.model.ProtectedLink;
 import com.plink.service.LinkService;
+import com.plink.repository.PasskeyRepository;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,26 +19,33 @@ import java.util.*;
 public class LinkController {
     private final LinkService linkService;
 
-    public LinkController(LinkService linkService) {
+    private final PasskeyRepository passkeys;
+    public LinkController(LinkService linkService, PasskeyRepository passkeys) {
         this.linkService = linkService;
+        this.passkeys = passkeys;
+    }
+    private String owner(OidcUser user) {
+        if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        return user.getSubject();
+    }
+    private ProtectedLink owned(Long id, OidcUser user) {
+        ProtectedLink link = linkService.getLink(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (!owner(user).equals(link.getOwnerSub())) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        return link;
     }
 
     @GetMapping
-    public List<Map<String, Object>> listLinks() {
+    public List<Map<String, Object>> listLinks(@AuthenticationPrincipal OidcUser user) {
         List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
-        for (ProtectedLink link : linkService.getAllLinks()) {
+        for (ProtectedLink link : linkService.getAllLinks(owner(user))) {
             result.add(toSummary(link));
         }
         return result;
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getLink(@PathVariable Long id) {
-        Optional<ProtectedLink> optLink = linkService.getLink(id);
-        if (!optLink.isPresent()) {
-            return ResponseEntity.notFound().build();
-        }
-        ProtectedLink link = optLink.get();
+    public ResponseEntity<Map<String, Object>> getLink(@PathVariable Long id, @AuthenticationPrincipal OidcUser user) {
+        ProtectedLink link = owned(id, user);
         Map<String, Object> body = toSummary(link);
 
         List<Map<String, Object>> views = new ArrayList<Map<String, Object>>();
@@ -49,7 +60,7 @@ public class LinkController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createLink(@RequestBody Map<String, Object> req) {
+    public ResponseEntity<Map<String, Object>> createLink(@RequestBody Map<String, Object> req, @AuthenticationPrincipal OidcUser user) {
         String originalUrl = (String) req.get("originalUrl");
         if (originalUrl == null || originalUrl.isEmpty()) {
             return ResponseEntity.badRequest().build();
@@ -68,7 +79,7 @@ public class LinkController {
             maxViews = ((Number) req.get("maxViews")).intValue();
         }
 
-        ProtectedLink link = linkService.createLink(originalUrl, title, password, expiresAt, recipientNames, maxViews);
+        ProtectedLink link = linkService.createLink(originalUrl, title, password, expiresAt, recipientNames, maxViews, owner(user));
         return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(link));
     }
 
@@ -84,27 +95,14 @@ public class LinkController {
         body.put("title", link.getTitle());
         body.put("hasPassword", link.hasPassword());
         body.put("expired", link.isExpired());
-        return ResponseEntity.ok(body);
-    }
-
-    @PostMapping("/s/{shortCode}/verify")
-    public ResponseEntity<Map<String, Object>> verifyLink(
-            @PathVariable String shortCode, @RequestBody Map<String, String> req) {
-        String password = req.get("password");
-        String viewerName = req.get("viewerName");
-        Optional<String> url = linkService.verifyAndAccess(shortCode, password, viewerName);
-        if (!url.isPresent()) {
-            Map<String, Object> err = new LinkedHashMap<String, Object>();
-            err.put("error", "Access denied");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(err);
-        }
-        Map<String, Object> body = new LinkedHashMap<String, Object>();
-        body.put("originalUrl", url.get());
+        body.put("exhausted", link.getMaxViews() > 0 && link.getViewCount() >= link.getMaxViews());
+        body.put("claimed", passkeys.findByLinkId(link.getId()).isPresent());
         return ResponseEntity.ok(body);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteLink(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteLink(@PathVariable Long id, @AuthenticationPrincipal OidcUser user) {
+        owned(id, user);
         linkService.deleteLink(id);
         return ResponseEntity.noContent().build();
     }
@@ -121,6 +119,7 @@ public class LinkController {
         m.put("maxViews", link.getMaxViews());
         m.put("viewCount", link.getViewCount());
         m.put("createdAt", link.getCreatedAt());
+        m.put("claimed", passkeys.findByLinkId(link.getId()).isPresent());
         return m;
     }
 }

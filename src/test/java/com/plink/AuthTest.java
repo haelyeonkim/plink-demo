@@ -59,7 +59,7 @@ class AuthTest {
         String body = "{\"originalUrl\":\"https://example.com\"}";
         mvc.perform(post("/api/links").contentType("application/json").content(body))
             .andExpect(status().isForbidden());
-        mvc.perform(post("/api/links").with(csrf()).contentType("application/json").content(body))
+        mvc.perform(post("/api/links").with(oidcLogin()).with(csrf()).contentType("application/json").content(body))
             .andExpect(status().isCreated());
     }
 }
