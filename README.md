@@ -26,12 +26,12 @@ Maven은 `./mvnw` 래퍼를 사용하므로 별도 설치가 필요 없습니다
 ## 빠른 시작
 
 ```bash
-# 개발 서버 실행 (백엔드 :8080 + 프론트 :3000)
+# 개발 서버 실행 (내부 백엔드 :8080 + 프론트 :3000)
 git clone https://github.com/haelyeonkim/plink-demo.git
 cd plink-demo
 bash scripts/run-dev.sh
 
-# 브라우저에서 접속
+# 로컬 브라우저에서 접속
 #   http://localhost:3000
 
 # 종료
@@ -39,6 +39,8 @@ bash scripts/run-dev.sh stop
 ```
 
 포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
+
+`80` 또는 `443`은 공개 서비스의 외부 포트입니다. 운영 서버에서는 Nginx 같은 리버스 프록시가 `lyuni.ddak.app`의 HTTPS 요청을 받아 프론트엔드와 백엔드로 전달합니다. `run-dev.sh`가 사용하는 `3000`과 `8080`은 서버 내부 개발 포트이므로 공개 URL에 포트 번호를 붙이지 않습니다.
 
 ### 개별 실행 및 빌드
 
@@ -94,7 +96,7 @@ Spring Security의 OAuth 2.0 / OpenID Connect 로그인으로 Google 인증 결�
 
 Google 클라이언트에 위 리디렉션 URI 두 개를 모두 등록하면 됩니다. 백엔드는 `APP_BASE_URL`에 맞춰 로그인 복귀 주소와 API의 허용 원본을 설정합니다. `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`은 각 실행 환경에서 설정해야 하며, 서버 재시작 후 반영됩니다.
 
-배포 서버는 HTTPS를 제공하고 `/api`, `/oauth2`, `/login/oauth2`를 백엔드로 프록시해야 합니다. 그 외 화면 경로는 프론트엔드 `index.html`로 연결하세요. 공개 배포 시 H2 개발 콘솔은 `SPRING_H2_CONSOLE_ENABLED=false`로 끌 수 있습니다. `scripts/run-dev.sh`는 로컬 개발용이며 서버에서는 빌드된 JAR과 프론트엔드 정적 파일을 실행·호스팅하세요.
+배포 서버는 80/443에서 HTTPS를 제공하고 `/api`, `/oauth2`, `/login/oauth2`를 백엔드로 프록시해야 합니다. 그 외 화면 경로는 프론트엔드 `index.html`로 연결하세요. 공개 배포 시 H2 개발 콘솔은 `SPRING_H2_CONSOLE_ENABLED=false`로 끌 수 있습니다. `scripts/run-dev.sh`는 로컬 개발용이며 서버에서는 빌드된 JAR과 프론트엔드 정적 파일을 실행·호스팅하세요.
 
 설정 참고: [Google 웹 서버 OAuth 안내](https://developers.google.com/identity/protocols/oauth2/web-server), [Spring OAuth 로그인 안내](https://spring.io/guides/tutorials/spring-boot-oauth2/).
 
