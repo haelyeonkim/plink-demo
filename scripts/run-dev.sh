@@ -5,6 +5,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_PORT=8080
 FRONTEND_PORT=3000
 PID_DIR="$PROJECT_DIR/.pids"
+LOG_DIR="$PROJECT_DIR/logs"
 
 usage() {
   echo "Usage: bash scripts/run-dev.sh [stop] [--backend-port PORT] [--frontend-port PORT]"
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "$PID_DIR"
+mkdir -p "$LOG_DIR"
 
 # ---- Backend ----
 echo "==> Building backend..."
@@ -45,7 +47,7 @@ cd "$PROJECT_DIR"
 ./mvnw -q clean package -DskipTests -Dserver.port="$BACKEND_PORT"
 
 echo "==> Starting backend on :$BACKEND_PORT ..."
-APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" &
+APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 
@@ -55,7 +57,7 @@ cd "$PROJECT_DIR/frontend"
 npm install --silent
 
 echo "==> Starting frontend on :$FRONTEND_PORT ..."
-BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" &
+BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
 
@@ -67,6 +69,7 @@ echo "  Backend   → http://localhost:$BACKEND_PORT"
 echo "  H2 Console → http://localhost:$BACKEND_PORT/h2-console"
 echo ""
 echo "  Stop with: bash scripts/run-dev.sh stop"
+echo "  Logs: $LOG_DIR/backend.log, $LOG_DIR/frontend.log"
 echo ""
 
 wait
