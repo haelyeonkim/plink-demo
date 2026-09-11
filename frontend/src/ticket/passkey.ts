@@ -1,0 +1,97 @@
+import { mutate } from '../auth';
+import { ticketBase } from './api';
+import type { Grant } from './codes';
+
+// WebAuthn wire values are base64url; the browser wants ArrayBuffers.
+function decode(value: string): ArrayBuffer {
+  const raw = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, c => c.charCodeAt(0)).buffer;
+}
+function encode(value: ArrayBuffer): string {
+  let raw = '';
+  new Uint8Array(value).forEach(b => { raw += String.fromCharCode(b); });
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function read(response: Response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || '요청을 처리하지 못했어요. 다시 시도해 주세요.');
+  return data;
+}
+
+export function supportsPasskeys(): boolean {
+  return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
+}
+
+/**
+ * Runs the ceremony for a ticket. With no passkey yet this registers one and binds the
+ * ticket; afterwards it authenticates and the server answers with a presentation grant.
+ */
+export async function runCeremony(
+  sessionId: string, token: string, direction?: 'IN' | 'OUT',
+): Promise<{ mode: 'register'; claimed: true } | { mode: 'authenticate'; grant: Grant }> {
+  const base = ticketBase(sessionId, token);
+  const { mode, options } = await read(await mutate(`${base}/passkey/options`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  }));
+  const publicKey = options.publicKey;
+  publicKey.challenge = decode(publicKey.challenge);
+
+  let credential: PublicKeyCredential | null;
+  if (mode === 'register') {
+    publicKey.user.id = decode(publicKey.user.id);
+    publicKey.excludeCredentials = (publicKey.excludeCredentials || [])
+      .map((c: { id: string }) => ({ ...c, id: decode(c.id) }));
+    credential = await navigator.credentials.create({ publicKey }) as PublicKeyCredential | null;
+  } else {
+    publicKey.allowCredentials = (publicKey.allowCredentials || [])
+      .map((c: { id: string }) => ({ ...c, id: decode(c.id) }));
+    credential = await navigator.credentials.get({ publicKey }) as PublicKeyCredential | null;
+  }
+  if (!credential) throw new Error('인증이 취소되었어요. 준비되면 다시 눌러 주세요.');
+
+  let payload;
+  if (mode === 'register') {
+    const r = credential.response as AuthenticatorAttestationResponse;
+    payload = {
+      clientDataJSON: encode(r.clientDataJSON),
+      attestationObject: encode(r.attestationObject),
+      transports: typeof r.getTransports === 'function' ? r.getTransports() : [],
+    };
+  } else {
+    const r = credential.response as AuthenticatorAssertionResponse;
+    payload = {
+      clientDataJSON: encode(r.clientDataJSON),
+      authenticatorData: encode(r.authenticatorData),
+      signature: encode(r.signature),
+      userHandle: r.userHandle ? encode(r.userHandle) : null,
+    };
+  }
+  const result = await read(await mutate(`${base}/passkey/finish`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: credential.id, rawId: encode(credential.rawId), type: credential.type,
+      response: payload, clientExtensionResults: credential.getClientExtensionResults(),
+    }),
+  }));
+  return mode === 'register'
+    ? { mode: 'register', claimed: true }
+    : { mode: 'authenticate', grant: result as Grant };
+}
+
+export function passkeyError(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
+      return '인증이 취소되었어요. 다시 시도해 주세요.';
+    }
+    if (error.name === 'NotSupportedError') {
+      return '이 브라우저에서는 패스키를 사용할 수 없어요. 최신 Safari 또는 Chrome에서 열어 주세요.';
+    }
+    if (error.name === 'InvalidStateError') {
+      return '이미 등록된 패스키가 있어요. 페이지를 새로 고치고 다시 시도해 주세요.';
+    }
+    return '이 환경에서는 패스키를 사용할 수 없어요. 링크를 기본 브라우저에서 열어 주세요.';
+  }
+  return error instanceof Error ? error.message : '인증을 확인하지 못했어요. 다시 시도해 주세요.';
+}

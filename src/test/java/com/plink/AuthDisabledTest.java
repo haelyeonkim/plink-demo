@@ -2,7 +2,7 @@ package com.plink;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -10,7 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 
 @SpringBootTest(properties = {"plink.auth.google-client-id=", "plink.auth.google-client-secret=",
-    "plink.auth.base-url=https://lyuni.ddak.app", "spring.datasource.url=jdbc:h2:mem:auth-disabled"})
+    "plink.auth.base-url=https://lyuni.ddak.app", "spring.datasource.url=jdbc:h2:mem:auth-disabled",
+    // An HTTPS origin must carry a real ticket secret; see TicketStartupCheckTest.
+    "plink.ticket.token-secret=test-only-secret"})
 @AutoConfigureMockMvc
 class AuthDisabledTest {
     @Autowired MockMvc mvc;
