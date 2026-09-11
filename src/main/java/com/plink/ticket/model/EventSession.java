@@ -9,6 +9,9 @@ public class EventSession {
     public int reentryMax, reentryGraceMinutes, reentryCooldownSeconds, autoExitAfterMinutes;
     public int transferMax, transferClosesMinutesBefore;
     public boolean transferAfterFirstEntry;
+    public boolean faceRequired, reentryRequiresFace;
+    public String faceLiveness, faceChallengeOn;
+    public int faceRetentionDays;
     public boolean exitScanRequired;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }

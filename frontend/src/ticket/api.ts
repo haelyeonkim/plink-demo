@@ -73,6 +73,50 @@ export async function reissueTicket(sessionId: string, token: string) {
   return read(await mutate(`${ticketBase(sessionId, token)}/recover`, { method: 'POST' }));
 }
 
+export interface FaceStatus {
+  consented: boolean;
+  enrolled: boolean;
+  consentVersion: string;
+  purposes: string;
+}
+
+export async function fetchFaceStatus(sessionId: string, token: string): Promise<FaceStatus> {
+  return read(await fetch(`${ticketBase(sessionId, token)}/face`)) as Promise<FaceStatus>;
+}
+
+export async function giveFaceConsent(sessionId: string, token: string) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/face/consent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agreed: true }),
+  }));
+}
+
+export async function enrollFace(sessionId: string, token: string, frames: string[]) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/face/enroll`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frames }),
+  }));
+}
+
+export async function withdrawFace(sessionId: string, token: string) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/face/withdraw`, { method: 'POST' }));
+}
+
+export async function gateFaceChallenge(gateId: string, gateToken: string) {
+  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/face/challenge`, {
+    headers: { 'X-Gate-Token': gateToken },
+  }));
+}
+
+export async function gateFaceScan(gateId: string, gateToken: string, frames: string[], challenge?: string) {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/face`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Gate-Token': gateToken },
+    body: JSON.stringify({ frames, challenge }),
+  });
+  return read(response);
+}
+
 export async function gateInfo(gateId: string, gateToken: string) {
   return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}`, {
     headers: { 'X-Gate-Token': gateToken },

@@ -34,6 +34,11 @@ public class EventSessionRepository {
         s.transferMax = rs.getInt("transfer_max");
         s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
         s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
+        s.faceRequired = rs.getBoolean("face_required");
+        s.reentryRequiresFace = rs.getBoolean("reentry_requires_face");
+        s.faceLiveness = rs.getString("face_liveness");
+        s.faceChallengeOn = rs.getString("face_challenge_on");
+        s.faceRetentionDays = rs.getInt("face_retention_days");
         return s;
     };
 
@@ -63,6 +68,13 @@ public class EventSessionRepository {
     public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
         jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
             + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
+    }
+
+    public void updateFacePolicy(long id, boolean faceRequired, boolean reentryRequiresFace,
+            String liveness, String challengeOn, int retentionDays) {
+        jdbc.update("UPDATE event_session SET face_required = ?, reentry_requires_face = ?, "
+            + "face_liveness = ?, face_challenge_on = ?, face_retention_days = ? WHERE id = ?",
+            faceRequired, reentryRequiresFace, liveness, challengeOn, retentionDays, id);
     }
 
     public void updatePolicy(long id, String reentryMode, int reentryMax, int graceMinutes,

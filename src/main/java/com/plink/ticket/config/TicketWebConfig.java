@@ -11,7 +11,8 @@ public class TicketWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // Holder routes only: the ticket page and, later, face enrolment.
-        registry.addInterceptor(mobileGate).addPathPatterns("/api/t/**", "/api/faces/**");
+        // Holder routes only - the ticket page and its face enrolment. Gate terminals and
+        // the organiser console are tablets and desktops by design.
+        registry.addInterceptor(mobileGate).addPathPatterns("/api/t/**");
     }
 }

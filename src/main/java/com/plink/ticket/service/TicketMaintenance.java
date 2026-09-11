@@ -23,11 +23,25 @@ public class TicketMaintenance {
     private final NonceRepository nonces;
     private final AdmissionRepository admissions;
     private final TransferService transfers;
+    private final com.plink.ticket.face.FaceService faces;
 
-    public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions, TransferService transfers) {
+    public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions,
+            TransferService transfers, com.plink.ticket.face.FaceService faces) {
         this.nonces = nonces;
         this.admissions = admissions;
         this.transfers = transfers;
+        this.faces = faces;
+    }
+
+    /**
+     * Face templates are destroyed when the retention window stated in the consent ends.
+     * A biometric cannot be reissued, so keeping one a day longer than promised is the
+     * kind of debt that never gets paid back.
+     */
+    @Scheduled(initialDelay = 90_000, fixedDelay = 3_600_000)
+    public void purgeExpiredFaceTemplates() {
+        int removed = faces.purgeExpired();
+        if (removed > 0) log.info("Purged {} face templates past their retention window", removed);
     }
 
     /** A transfer nobody claimed returns the ticket to the sender rather than stranding it. */
