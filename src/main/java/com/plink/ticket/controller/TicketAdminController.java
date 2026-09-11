@@ -9,7 +9,10 @@ import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.service.GateAuthService;
 import com.plink.ticket.service.Secrets;
+import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.TicketService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -32,15 +35,18 @@ public class TicketAdminController {
     private final AdmissionRepository admissions;
     private final TicketService ticketService;
     private final GateAuthService gateAuth;
+    private final AdmissionService admissionService;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
-            AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth) {
+            AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
+            AdmissionService admissionService) {
         this.sessions = sessions;
         this.tickets = tickets;
         this.gates = gates;
         this.admissions = admissions;
         this.ticketService = ticketService;
         this.gateAuth = gateAuth;
+        this.admissionService = admissionService;
     }
 
     @GetMapping("/sessions")
@@ -82,6 +88,18 @@ public class TicketAdminController {
                 number(body.get("transferClosesMinutesBefore"), current.transferClosesMinutesBefore),
                 body.get("transferAfterFirstEntry") == null ? current.transferAfterFirstEntry
                     : Boolean.parseBoolean(body.get("transferAfterFirstEntry").toString()));
+        }
+        if (body.containsKey("geoMode") || body.containsKey("venueLat") || body.containsKey("venueLon")
+                || body.containsKey("geoRadiusMeters")) {
+            String geoMode = text(body.get("geoMode"), current.geoMode).toUpperCase(java.util.Locale.ROOT);
+            if (!List.of("OFF", "ADVISE", "ENFORCE").contains(geoMode)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "위치 정책은 OFF, ADVISE, ENFORCE 중 하나여야 해요.");
+            }
+            sessions.updateGeoPolicy(id,
+                decimal(body.get("venueLat"), current.venueLat),
+                decimal(body.get("venueLon"), current.venueLon),
+                number(body.get("geoRadiusMeters"), current.geoRadiusMeters), geoMode);
         }
         if (body.containsKey("faceRequired") || body.containsKey("reentryRequiresFace")
                 || body.containsKey("faceLiveness") || body.containsKey("faceChallengeOn")
@@ -189,6 +207,62 @@ public class TicketAdminController {
         return result;
     }
 
+    /** Signals worth a human look; none of them is a verdict on its own. */
+    @GetMapping("/sessions/{id}/anomalies")
+    public Map<String, Object> anomalies(@PathVariable long id) {
+        ticketService.requireSession(id);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("repeatedRefusals", admissions.repeatedRefusals(id, 3));
+        result.put("impossibleMovements", admissions.impossibleMovements(id, 60));
+        result.put("offlineConflicts", admissions.flaggedEvents(id));
+        return result;
+    }
+
+    /**
+     * Staff correction. The ledger is append-only, so a fix is a new entry carrying who
+     * made it and why - never an edit of what the gate recorded.
+     */
+    @PostMapping("/tickets/{ticketId}/movement")
+    public Map<String, Object> staffMovement(@PathVariable long ticketId,
+            @RequestBody Map<String, String> body, @AuthenticationPrincipal OidcUser operator) {
+        Ticket ticket = tickets.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        String direction = required(body.get("direction"), "방향을 지정해 주세요.").toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("IN", "OUT").contains(direction)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "방향은 IN 또는 OUT이어야 해요.");
+        }
+        String reason = required(body.get("reason"), "사유를 입력해 주세요.");
+        String who = operator == null ? "unknown" : operator.getEmail();
+
+        Presence presence = admissions.find(ticketId).orElse(null);
+        if (presence == null) {
+            admissions.create(ticketId, ticket.sessionId);
+            presence = admissions.find(ticketId).orElseThrow();
+        }
+        if ("IN".equals(direction)) {
+            admissions.markInside(ticketId, presence.entryCount + 1,
+                presence.reentryCount + (presence.entryCount > 0 ? 1 : 0), null);
+        } else {
+            admissions.markOutside(ticketId, null);
+        }
+        admissions.appendDetailed(ticketId, ticket.sessionId, direction, null, "STAFF",
+            "IN".equals(direction) ? "ADMITTED" : "EXITED", reason, null, who, false, false);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("direction", direction);
+        result.put("operator", who);
+        result.put("inside", "IN".equals(direction));
+        return result;
+    }
+
+    private static Double decimal(Object value, Double fallback) {
+        if (value == null) return fallback;
+        try { return Double.valueOf(value.toString()); }
+        catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "좌표 형식을 확인해 주세요.");
+        }
+    }
+
     private Map<String, Object> describe(EventSession session) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", session.id);
@@ -211,6 +285,10 @@ public class TicketAdminController {
         row.put("faceLiveness", session.faceLiveness);
         row.put("faceChallengeOn", session.faceChallengeOn);
         row.put("faceRetentionDays", session.faceRetentionDays);
+        row.put("geoMode", session.geoMode);
+        row.put("venueLat", session.venueLat);
+        row.put("venueLon", session.venueLon);
+        row.put("geoRadiusMeters", session.geoRadiusMeters);
         return row;
     }
 

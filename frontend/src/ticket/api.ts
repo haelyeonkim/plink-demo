@@ -117,6 +117,15 @@ export async function gateFaceScan(gateId: string, gateToken: string, frames: st
   return read(response);
 }
 
+export async function gateSync(gateId: string, gateToken: string, events: unknown[]) {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Gate-Token': gateToken },
+    body: JSON.stringify({ events }),
+  });
+  return read(response);
+}
+
 export async function gateInfo(gateId: string, gateToken: string) {
   return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}`, {
     headers: { 'X-Gate-Token': gateToken },

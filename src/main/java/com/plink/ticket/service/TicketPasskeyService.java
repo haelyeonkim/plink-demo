@@ -2,6 +2,7 @@ package com.plink.ticket.service;
 
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Ticket;
+import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.TicketPasskeyRepository;
@@ -39,6 +40,7 @@ public class TicketPasskeyService {
     private final AdmissionRepository admissions;
     private final PresentationService presentations;
     private final TransferService transfers;
+    private final TicketService ticketService;
     private final TicketProperties properties;
     private final RelyingParty rp;
     private final ObjectMapper mapper;
@@ -46,13 +48,14 @@ public class TicketPasskeyService {
 
     public TicketPasskeyService(TicketRepository tickets, TicketPasskeyRepository passkeys,
             AdmissionRepository admissions, PresentationService presentations, TransferService transfers,
-            TicketProperties properties,
+            TicketService ticketService, TicketProperties properties,
             @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper) {
         this.tickets = tickets;
         this.passkeys = passkeys;
         this.admissions = admissions;
         this.presentations = presentations;
         this.transfers = transfers;
+        this.ticketService = ticketService;
         this.properties = properties;
         this.rp = rp;
         this.mapper = mapper;
@@ -60,6 +63,7 @@ public class TicketPasskeyService {
 
     static class Pending {
         final String ticketRef, direction, email, intent, toEmail;
+        GeoCheck.Result geo = new GeoCheck.Result(null, null, null);
         final long ticketId;
         final Long transferId;
         final long expires = System.currentTimeMillis() + TIMEOUT_MS;
@@ -97,6 +101,11 @@ public class TicketPasskeyService {
      */
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
             String rawToEmail, HttpSession session) {
+        return start(resolved, intent, rawDirection, rawToEmail, session, null, null, null);
+    }
+
+    public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
+            String rawToEmail, HttpSession session, Double lat, Double lon, Double accuracy) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Ticket ticket = resolved.ticket;
         boolean claimed = !resolved.viaTransfer() && passkeys.findByTicketId(ticket.id).isPresent();
@@ -152,6 +161,16 @@ public class TicketPasskeyService {
                 .userVerification(UserVerificationRequirement.REQUIRED)
                 .timeout(TIMEOUT_MS).build());
             pending = new Pending(ticket, resolvedIntent, direction, null, toEmail, null, null, request);
+            if ("PRESENT".equals(resolvedIntent)) {
+                // Checked before the biometric prompt so a holder who is nowhere near the
+                // venue is told so rather than being asked for a fingerprint first.
+                EventSession eventSession = ticketService.requireSession(ticket.sessionId);
+                pending.geo = GeoCheck.evaluate(eventSession, lat, lon, accuracy);
+                if ("ENFORCE".equals(eventSession.geoMode) && Boolean.FALSE.equals(pending.geo.ok)) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "공연장 근처에서만 입장 코드를 열 수 있어요.");
+                }
+            }
             options = request.toCredentialsGetJson();
         }
 
@@ -263,7 +282,7 @@ public class TicketPasskeyService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
         }
-        return presentations.issue(ticket, pending.direction, true);
+        return presentations.issue(ticket, pending.direction, true, pending.geo);
     }
 
     private String displayName(Ticket ticket) {

@@ -26,6 +26,31 @@ export function supportsPasskeys(): boolean {
 export interface TransferStarted { status: string; toEmail: string; expiresAt: string }
 
 /**
+ * Best-effort coarse position, used only to bind a presentation to the venue. It never
+ * blocks: a refusal or a slow fix simply leaves the reading out, and the server treats
+ * an absent reading as unknown rather than as a failure.
+ */
+async function coarsePosition(): Promise<Record<string, string>> {
+  if (!navigator.geolocation) return {};
+  return new Promise(resolve => {
+    const done = (value: Record<string, string>) => resolve(value);
+    const timer = window.setTimeout(() => done({}), 4000);
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        window.clearTimeout(timer);
+        done({
+          lat: String(position.coords.latitude),
+          lon: String(position.coords.longitude),
+          accuracy: String(position.coords.accuracy),
+        });
+      },
+      () => { window.clearTimeout(timer); done({}); },
+      { enableHighAccuracy: false, timeout: 3500, maximumAge: 60_000 },
+    );
+  });
+}
+
+/**
  * Runs the ceremony for a ticket. With no passkey yet this registers one and binds the
  * ticket; afterwards it authenticates, and what the server does with that assertion
  * depends on the intent — open a presentation grant, or sign off a transfer.
@@ -39,9 +64,10 @@ export async function runCeremony(
   | { mode: 'authenticate'; intent: 'TRANSFER'; transfer: TransferStarted }
 > {
   const base = ticketBase(sessionId, token);
+  const position = options_.intent === 'TRANSFER' ? {} : await coarsePosition();
   const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options_),
+    body: JSON.stringify({ ...options_, ...position }),
   }));
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);

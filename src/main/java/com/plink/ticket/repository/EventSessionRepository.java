@@ -39,6 +39,12 @@ public class EventSessionRepository {
         s.faceLiveness = rs.getString("face_liveness");
         s.faceChallengeOn = rs.getString("face_challenge_on");
         s.faceRetentionDays = rs.getInt("face_retention_days");
+        double lat = rs.getDouble("venue_lat");
+        s.venueLat = rs.wasNull() ? null : lat;
+        double lon = rs.getDouble("venue_lon");
+        s.venueLon = rs.wasNull() ? null : lon;
+        s.geoRadiusMeters = rs.getInt("geo_radius_meters");
+        s.geoMode = rs.getString("geo_mode");
         return s;
     };
 
@@ -68,6 +74,11 @@ public class EventSessionRepository {
     public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
         jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
             + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
+    }
+
+    public void updateGeoPolicy(long id, Double lat, Double lon, int radiusMeters, String mode) {
+        jdbc.update("UPDATE event_session SET venue_lat = ?, venue_lon = ?, geo_radius_meters = ?, "
+            + "geo_mode = ? WHERE id = ?", lat, lon, radiusMeters, mode, id);
     }
 
     public void updateFacePolicy(long id, boolean faceRequired, boolean reentryRequiresFace,

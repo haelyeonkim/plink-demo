@@ -20,6 +20,7 @@ public class PresentationRepository {
         g.direction = rs.getString("direction");
         g.secret = rs.getString("secret");
         g.uv = rs.getBoolean("uv");
+        g.revoked = rs.getBoolean("revoked");
         g.lastCounter = rs.getLong("last_counter");
         g.issuedAt = rs.getTimestamp("issued_at");
         g.expiresAt = rs.getTimestamp("expires_at");
@@ -28,9 +29,18 @@ public class PresentationRepository {
     };
 
     public void insert(Grant grant) {
-        jdbc.update("INSERT INTO presentation_session (id, ticket_id, direction, secret, uv, issued_at, expires_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            grant.id, grant.ticketId, grant.direction, grant.secret, grant.uv, grant.issuedAt, grant.expiresAt);
+        jdbc.update("INSERT INTO presentation_session (id, ticket_id, direction, secret, uv, issued_at, "
+            + "expires_at, geo_ok, geo_distance_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            grant.id, grant.ticketId, grant.direction, grant.secret, grant.uv, grant.issuedAt,
+            grant.expiresAt, grant.geoOk, grant.geoDistanceMeters);
+    }
+
+    /** Grants opened away from the venue, the signal that a link is being worked remotely. */
+    public int countAwayFromVenue(long ticketId) {
+        Integer count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM presentation_session WHERE ticket_id = ? AND geo_ok = FALSE",
+            Integer.class, ticketId);
+        return count == null ? 0 : count;
     }
 
     public Optional<Grant> findById(String id) {
@@ -50,10 +60,14 @@ public class PresentationRepository {
         jdbc.update("UPDATE presentation_session SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", id);
     }
 
-    /** Any earlier grant dies when a new one is issued, or when the ticket is transferred. */
+    /**
+     * Any earlier grant stops working when a new one is issued, or when the ticket is
+     * transferred. Marked revoked rather than consumed: a terminal that read the old code
+     * while offline still saw a real movement.
+     */
     public void revokeOpenGrants(long ticketId) {
-        jdbc.update("UPDATE presentation_session SET consumed_at = CURRENT_TIMESTAMP "
-            + "WHERE ticket_id = ? AND consumed_at IS NULL", ticketId);
+        jdbc.update("UPDATE presentation_session SET revoked = TRUE "
+            + "WHERE ticket_id = ? AND consumed_at IS NULL AND revoked = FALSE", ticketId);
     }
 
     public int countSince(long ticketId, Timestamp since) {
