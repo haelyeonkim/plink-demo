@@ -1,9 +1,9 @@
 package com.plink.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.plink.service.PasskeyService;
 import org.springframework.web.bind.annotation.*;
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSession;
 import java.util.*;
 
 @RestController

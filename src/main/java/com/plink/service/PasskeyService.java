@@ -1,7 +1,7 @@
 package com.plink.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.plink.model.ProtectedLink;
 import com.plink.repository.*;
 import com.yubico.webauthn.*;
@@ -10,7 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSession;
 import java.security.SecureRandom;
 import java.util.*;
 

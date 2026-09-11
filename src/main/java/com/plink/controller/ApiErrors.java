@@ -9,7 +9,7 @@ import java.util.*;
 public class ApiErrors {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String,String>> handle(ResponseStatusException error) {
-        return ResponseEntity.status(error.getStatus()).body(Collections.singletonMap("error",
+        return ResponseEntity.status(error.getStatusCode()).body(Collections.singletonMap("error",
             error.getReason() == null ? "요청을 처리할 수 없어요." : error.getReason()));
     }
 }

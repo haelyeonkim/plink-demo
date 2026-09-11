@@ -11,20 +11,36 @@ spring:
   config:
     import: optional:file:./.env[.properties]
   datasource:
-    url: jdbc:h2:mem:plink;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    # Default is in-memory H2. Point DB_URL at Supabase to switch; the driver is
+    # inferred from the URL, so no code or driver-class change is needed.
+    url: ${DB_URL:jdbc:h2:mem:plink;DB_CLOSE_DELAY=-1}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
   h2:
     console:
-      enabled: true
+      enabled: ${H2_CONSOLE_ENABLED:true}
       path: /h2-console
+  flyway:
+    # Flyway owns the schema on every environment. Production drops the dev seed
+    # location: FLYWAY_LOCATIONS=classpath:db/migration
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration,classpath:db/dev}
   sql:
     init:
-      mode: always
+      mode: never
 
 plink:
   auth:
     google-client-id: ${GOOGLE_CLIENT_ID:}
     google-client-secret: ${GOOGLE_CLIENT_SECRET:}
     base-url: ${APP_BASE_URL:http://localhost:3000}
+  ticket:
+    # Keys personal tokens, gate tokens and OTP hashes. Rotating it invalidates every
+    # outstanding ticket URL, so set it once per environment and keep it out of git.
+    token-secret: ${TICKET_TOKEN_SECRET:dev-only-insecure-secret}
+    # OFF | ADVISE | ENFORCE, applied to holder routes only.
+    mobile-only: ${TICKET_MOBILE_ONLY:ADVISE}
+    claim-ttl-hours: ${TICKET_CLAIM_TTL_HOURS:72}
+    presentation-ttl-seconds: ${TICKET_PRESENTATION_TTL_SECONDS:90}
+    code-period-seconds: ${TICKET_CODE_PERIOD_SECONDS:10}
+    rebind-max-per-ticket: ${TICKET_REBIND_MAX:2}
+    mail-from: ${MAIL_FROM:no-reply@plink.local}
