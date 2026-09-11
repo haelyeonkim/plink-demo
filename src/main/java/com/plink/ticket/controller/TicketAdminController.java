@@ -83,6 +83,18 @@ public class TicketAdminController {
                 body.get("transferAfterFirstEntry") == null ? current.transferAfterFirstEntry
                     : Boolean.parseBoolean(body.get("transferAfterFirstEntry").toString()));
         }
+        if (body.containsKey("faceRequired") || body.containsKey("reentryRequiresFace")
+                || body.containsKey("faceLiveness") || body.containsKey("faceChallengeOn")
+                || body.containsKey("faceRetentionDays")) {
+            sessions.updateFacePolicy(id,
+                body.get("faceRequired") == null ? current.faceRequired
+                    : Boolean.parseBoolean(body.get("faceRequired").toString()),
+                body.get("reentryRequiresFace") == null ? current.reentryRequiresFace
+                    : Boolean.parseBoolean(body.get("reentryRequiresFace").toString()),
+                text(body.get("faceLiveness"), current.faceLiveness),
+                text(body.get("faceChallengeOn"), current.faceChallengeOn),
+                number(body.get("faceRetentionDays"), current.faceRetentionDays));
+        }
         sessions.updatePolicy(id, mode,
             number(body.get("reentryMax"), current.reentryMax),
             number(body.get("reentryGraceMinutes"), current.reentryGraceMinutes),
@@ -194,6 +206,11 @@ public class TicketAdminController {
         row.put("transferMax", session.transferMax);
         row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
         row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
+        row.put("faceRequired", session.faceRequired);
+        row.put("reentryRequiresFace", session.reentryRequiresFace);
+        row.put("faceLiveness", session.faceLiveness);
+        row.put("faceChallengeOn", session.faceChallengeOn);
+        row.put("faceRetentionDays", session.faceRetentionDays);
         return row;
     }
 

@@ -1,5 +1,6 @@
 package com.plink.ticket.controller;
 
+import com.plink.ticket.face.FaceService;
 import com.plink.ticket.repository.TicketPasskeyRepository;
 import com.plink.ticket.service.EmailOtpService;
 import com.plink.ticket.service.TicketPasskeyService;
@@ -30,14 +31,17 @@ public class TicketController {
     private final TicketPasskeyService passkeyService;
     private final TicketPasskeyRepository passkeys;
     private final TransferService transfers;
+    private final FaceService faces;
     private final EmailOtpService otp;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
-            TicketPasskeyRepository passkeys, TransferService transfers, EmailOtpService otp) {
+            TicketPasskeyRepository passkeys, TransferService transfers, FaceService faces,
+            EmailOtpService otp) {
         this.tickets = tickets;
         this.passkeyService = passkeyService;
         this.passkeys = passkeys;
         this.transfers = transfers;
+        this.faces = faces;
         this.otp = otp;
     }
 
@@ -130,6 +134,45 @@ public class TicketController {
         String email = passkeyService.verifiedEmail(session, resolved.ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
         return tickets.reissue(resolved.ticket, email);
+    }
+
+    @GetMapping("/face")
+    public Map<String, Object> faceStatus(@PathVariable long sessionId, @PathVariable String token) {
+        return faces.status(tickets.resolve(sessionId, token).ticket);
+    }
+
+    /**
+     * Separate, explicit consent for a sensitive category of personal data. Refusing it
+     * costs the holder nothing: the passkey track admits them just the same.
+     */
+    @PostMapping("/face/consent")
+    public Map<String, Object> faceConsent(@PathVariable long sessionId, @PathVariable String token,
+            @RequestBody Map<String, Object> body, HttpSession session) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        String email = requireVerifiedEmail(resolved, session);
+        return faces.consent(resolved.ticket, email, Boolean.TRUE.equals(body.get("agreed")));
+    }
+
+    @PostMapping("/face/enroll")
+    public Map<String, Object> faceEnroll(@PathVariable long sessionId, @PathVariable String token,
+            @RequestBody Map<String, Object> body, HttpSession session) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        requireVerifiedEmail(resolved, session);
+        return faces.enrol(resolved.ticket, Frames.decode(body.get("frames")));
+    }
+
+    @PostMapping("/face/withdraw")
+    public Map<String, Object> faceWithdraw(@PathVariable long sessionId, @PathVariable String token,
+            HttpSession session) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        requireVerifiedEmail(resolved, session);
+        return faces.withdraw(resolved.ticket);
+    }
+
+    private String requireVerifiedEmail(TicketService.Resolved resolved, HttpSession session) {
+        return passkeyService.verifiedEmail(session, resolved.ticket.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "이메일 인증을 먼저 완료해 주세요."));
     }
 
     private boolean isClaimed(TicketService.Resolved resolved) {

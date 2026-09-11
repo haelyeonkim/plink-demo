@@ -966,3 +966,7 @@ a { color: inherit; text-decoration: none; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .admin-table th, .admin-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
 .admin-table th { font-size: 11px; letter-spacing: 0.04em; color: #66708a; text-transform: uppercase; }
+.ticket-face { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ticket-face h3 { font-size: 15px; }
+.ticket-consent { margin: 0; padding-left: 18px; font-size: 13px; color: #44506e; display: flex; flex-direction: column; gap: 4px; }
+.ticket-camera { width: 100%; border-radius: 10px; background: #0b1020; aspect-ratio: 4 / 3; object-fit: cover; }

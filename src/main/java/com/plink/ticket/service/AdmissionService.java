@@ -58,6 +58,20 @@ public class AdmissionService {
 
         Ticket ticket = tickets.lockById(grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
+        return move(gate, ticket, grant.direction, method, grant.id,
+            () -> presentations.consume(grant, verified.counter));
+    }
+
+    /**
+     * The movement itself, shared by every entry track. The QR path arrives here after
+     * code verification, the face path after a 1:1 confirmation.
+     *
+     * @param requestedDirection what the holder asked for, or null to let the terminal decide
+     * @param onAccepted runs inside the transaction once the movement is allowed
+     */
+    @Transactional
+    public Map<String, Object> move(Gate gate, Ticket ticket, String requestedDirection, String method,
+            String grantId, Runnable onAccepted) {
         if (!ticket.bound()) throw deny("등록이 완료되지 않은 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
         if (ticket.sessionId != gate.sessionId) throw deny("다른 회차의 입장권이에요.");
@@ -65,15 +79,15 @@ public class AdmissionService {
         EventSession session = sessions.findById(ticket.sessionId)
             .orElseThrow(() -> deny("회차 정보를 찾을 수 없어요."));
         Presence presence = presence(ticket);
-        String direction = resolveDirection(gate, grant, presence);
+        String direction = resolveDirection(gate, requestedDirection, presence);
         Instant now = Instant.now();
 
         // An accidental second scan must not toggle the state.
         if (presence.lastEventAt != null && gate.id.equals(presence.lastGateId)
                 && presence.lastEventAt.toInstant().isAfter(now.minusSeconds(session.reentryCooldownSeconds))) {
-            presentations.consume(grant, verified.counter);
+            onAccepted.run();
             admissions.append(ticket.id, session.id, direction, gate.id, method, "DUPLICATE",
-                "쿨다운 내 재스캔", grant.id);
+                "쿨다운 내 재스캔", grantId);
             return result("DUPLICATE", direction, ticket, session, presence, "방금 처리된 입장권이에요.");
         }
 
@@ -81,10 +95,10 @@ public class AdmissionService {
             ? enter(ticket, session, presence, gate, method, now)
             : exit(ticket, session, presence, gate);
 
-        presentations.consume(grant, verified.counter);
+        onAccepted.run();
         gates.touch(gate.id);
         admissions.append(ticket.id, session.id, direction, gate.id, method,
-            "IN".equals(direction) ? "ADMITTED" : "EXITED", note, grant.id);
+            "IN".equals(direction) ? "ADMITTED" : "EXITED", note, grantId);
 
         Presence updated = admissions.find(ticket.id).orElse(presence);
         return result("IN".equals(direction) ? "ADMITTED" : "EXITED", direction, ticket, session, updated, null);
@@ -114,7 +128,15 @@ public class AdmissionService {
         if (session.gateOpensAt != null && now.isBefore(session.gateOpensAt.toInstant())) {
             throw deny("입장 시작 시간 전이에요.");
         }
+        if (session.faceRequired && !"FACE".equals(method) && !"STAFF".equals(method)) {
+            throw deny("이 회차는 얼굴 인식으로만 입장할 수 있어요.");
+        }
         if (presence.entryCount > 0) {
+            // Requiring a face only for re-entry is the cheapest control that actually
+            // stops a ticket being passed around between entries.
+            if (session.reentryRequiresFace && !"FACE".equals(method) && !"STAFF".equals(method)) {
+                throw deny("재입장은 얼굴 인식으로만 가능해요.");
+            }
             if (!session.reentryAllowed()) throw deny("재입장이 허용되지 않는 회차예요.");
             if (session.reentryLimited() && presence.reentryCount >= session.reentryMax) {
                 throw deny("재입장 횟수를 모두 사용했어요.");
@@ -139,9 +161,9 @@ public class AdmissionService {
      * Direction is decided by the terminal, never claimed by the QR. A bidirectional
      * terminal infers it from the ticket's presence state.
      */
-    private String resolveDirection(Gate gate, Grant grant, Presence presence) {
+    private String resolveDirection(Gate gate, String requested, Presence presence) {
         if (!gate.bidirectional()) {
-            if (!grant.direction.equals(gate.direction)) {
+            if (requested != null && !requested.equals(gate.direction)) {
                 throw deny("IN".equals(gate.direction)
                     ? "입장 게이트예요. 입장하기로 다시 시도해 주세요."
                     : "퇴장 게이트예요. 퇴장하기로 다시 시도해 주세요.");
@@ -149,7 +171,7 @@ public class AdmissionService {
             return gate.direction;
         }
         String inferred = presence.inside() ? "OUT" : "IN";
-        if (!grant.direction.equals(inferred)) {
+        if (requested != null && !requested.equals(inferred)) {
             throw deny(presence.inside()
                 ? "이미 장내에 있어요. 퇴장하기로 다시 시도해 주세요."
                 : "장내 기록이 없어요. 입장하기로 다시 시도해 주세요.");

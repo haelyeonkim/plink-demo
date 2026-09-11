@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { gateInfo, gateScan } from '../ticket/api';
+import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan } from '../ticket/api';
+import { captureFrames } from '../ticket/camera';
 
 interface GateInfo {
   gateId: string;
@@ -32,6 +33,7 @@ export default function GateScanner() {
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [faceMode, setFaceMode] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLCanvasElement>(null);
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
@@ -83,6 +85,38 @@ export default function GateScanner() {
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
   }, [gateId, gateToken]);
+
+  // Face runs on the same stream as the QR decoder: the operator never switches modes,
+  // and a visitor either holds up a phone or simply walks up.
+  useEffect(() => {
+    if (!gate || !scanning || !faceMode) return;
+    let stopped = false;
+    const timer = window.setInterval(async () => {
+      if (stopped || inFlight.current || !video.current || video.current.videoWidth === 0) return;
+      inFlight.current = true;
+      try {
+        const { challenge } = await gateFaceChallenge(gateId.trim(), gateToken.trim());
+        const frames = await captureFrames(video.current, 2, 120);
+        const result = await gateFaceScan(gateId.trim(), gateToken.trim(), frames, challenge);
+        const seat = result.seat ? ` · ${result.seat}` : '';
+        setOutcome({
+          kind: 'ok',
+          headline: result.outcome === 'EXITED' ? '퇴장' : result.outcome === 'DUPLICATE' ? '중복' : '입장',
+          detail: `얼굴 · ${result.ticketRef}${seat}`,
+          at: Date.now(),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '';
+        // "no match" is the normal state between visitors, not something to flash.
+        if (message && !message.includes('찾지 못했')) {
+          setOutcome({ kind: 'deny', headline: '거부', detail: message, at: Date.now() });
+        }
+      } finally {
+        window.setTimeout(() => { inFlight.current = false; }, 1200);
+      }
+    }, 2000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [gate, scanning, faceMode, gateId, gateToken]);
 
   useEffect(() => {
     if (!gate || !scanning) return;
@@ -170,6 +204,9 @@ export default function GateScanner() {
         <button className="secondary" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
+        <button className="secondary" onClick={() => setFaceMode(value => !value)}>
+          {faceMode ? '얼굴 인식 끄기' : '얼굴 인식 켜기'}
+        </button>
       </header>
 
       <div className="gate-viewport">
@@ -179,7 +216,7 @@ export default function GateScanner() {
           <span className="gate-guide-qr" />
           <span className="gate-guide-face" />
         </div>
-        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR과 얼굴을 함께 인식합니다.</p>}
+        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
       </div>
 
       <div className="gate-result" role="status" aria-live="polite">

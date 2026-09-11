@@ -26,6 +26,48 @@ public class TicketProperties {
     private String mobileOnly = "ADVISE";
     /** Empty means any authenticator; otherwise only these AAGUIDs may register. */
     private List<String> allowedAaguids = new ArrayList<>();
+    private final Face face = new Face();
+
+    /** Face recognition settings. Thresholds live here; per-session policy lives in the database. */
+    public static class Face {
+        /** Base URL of the separate face service. Unset means the development stand-in. */
+        private String serviceUrl;
+        private String serviceToken = "";
+        /** Base64 32-byte key for template encryption, separate from the token secret. */
+        private String templateKey = "";
+        /** Cosine similarity a 1:1 confirmation must reach. */
+        private double matchThreshold = 0.62;
+        /** How far the best candidate must beat the runner-up before 1:N is trusted. */
+        private double marginThreshold = 0.05;
+        /** Stricter bar for enrolment de-duplication than for admission. */
+        private double dedupThreshold = 0.72;
+        /** Minimum capture quality accepted at enrolment. */
+        private double minQuality = 0.55;
+        private double livenessThreshold = 0.7;
+        /** Consent text version recorded with every enrolment. */
+        private String consentVersion = "2026-09-01";
+
+        public String getServiceUrl() { return serviceUrl; }
+        public void setServiceUrl(String v) { this.serviceUrl = v; }
+        public String getServiceToken() { return serviceToken; }
+        public void setServiceToken(String v) { this.serviceToken = v; }
+        public String getTemplateKey() { return templateKey; }
+        public void setTemplateKey(String v) { this.templateKey = v; }
+        public double getMatchThreshold() { return matchThreshold; }
+        public void setMatchThreshold(double v) { this.matchThreshold = v; }
+        public double getMarginThreshold() { return marginThreshold; }
+        public void setMarginThreshold(double v) { this.marginThreshold = v; }
+        public double getDedupThreshold() { return dedupThreshold; }
+        public void setDedupThreshold(double v) { this.dedupThreshold = v; }
+        public double getMinQuality() { return minQuality; }
+        public void setMinQuality(double v) { this.minQuality = v; }
+        public double getLivenessThreshold() { return livenessThreshold; }
+        public void setLivenessThreshold(double v) { this.livenessThreshold = v; }
+        public String getConsentVersion() { return consentVersion; }
+        public void setConsentVersion(String v) { this.consentVersion = v; }
+    }
+
+    public Face getFace() { return face; }
 
     public String getTokenSecret() { return tokenSecret; }
     public void setTokenSecret(String v) { this.tokenSecret = v; }

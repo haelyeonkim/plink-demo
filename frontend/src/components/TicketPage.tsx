@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { cancelTransfer, fetchTicket, reissueTicket, requestOtp, verifyOtp, type TicketView } from '../ticket/api';
 import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
+import FaceEnrolment from './FaceEnrolment';
 
 type Direction = 'IN' | 'OUT';
 
@@ -193,6 +194,7 @@ export default function TicketPage() {
               )
             )}
             <button className="secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
+            <FaceEnrolment sessionId={sessionId} token={token} />
             <p className="ticket-hint">
               버튼을 누르면 지문·얼굴 인증을 거친 뒤에만 QR이 표시됩니다. QR은 10초마다 새로 만들어지고
               한 번 사용하면 사라져요.
