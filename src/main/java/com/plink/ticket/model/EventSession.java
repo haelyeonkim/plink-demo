@@ -7,6 +7,8 @@ public class EventSession {
     public String name, venue, reentryMode, unmatchedExit;
     public Timestamp startsAt, gateOpensAt;
     public int reentryMax, reentryGraceMinutes, reentryCooldownSeconds, autoExitAfterMinutes;
+    public int transferMax, transferClosesMinutesBefore;
+    public boolean transferAfterFirstEntry;
     public boolean exitScanRequired;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }

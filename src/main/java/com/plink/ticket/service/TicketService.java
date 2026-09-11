@@ -4,10 +4,12 @@ import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
+import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.TicketPasskeyRepository;
 import com.plink.ticket.repository.TicketRepository;
+import com.plink.ticket.repository.TransferRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,7 @@ public class TicketService {
     private final EventSessionRepository sessions;
     private final TicketPasskeyRepository passkeys;
     private final AdmissionRepository admissions;
+    private final TransferRepository transfers;
     private final PresentationService presentations;
     private final EmailSender mail;
     private final TicketProperties properties;
@@ -38,12 +41,13 @@ public class TicketService {
 
     public TicketService(TicketRepository tickets, EventSessionRepository sessions,
             TicketPasskeyRepository passkeys, AdmissionRepository admissions,
-            PresentationService presentations, EmailSender mail,
+            TransferRepository transfers, PresentationService presentations, EmailSender mail,
             TicketProperties properties, @Value("${plink.auth.base-url}") String baseUrl) {
         this.tickets = tickets;
         this.sessions = sessions;
         this.passkeys = passkeys;
         this.admissions = admissions;
+        this.transfers = transfers;
         this.presentations = presentations;
         this.mail = mail;
         this.properties = properties;
@@ -126,34 +130,63 @@ public class TicketService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회차를 찾을 수 없어요."));
     }
 
+    /**
+     * A resolved ticket, and which side of a transfer the visitor is on. A link is either
+     * the ticket's own token or a pending transfer's claim token; both open the same
+     * ticket but mean opposite things.
+     */
+    public static class Resolved {
+        public final Ticket ticket;
+        public final Transfer claim;
+        Resolved(Ticket ticket, Transfer claim) { this.ticket = ticket; this.claim = claim; }
+        public boolean viaTransfer() { return claim != null; }
+    }
+
     /** Resolves a personal token. A wrong token and a wrong session look identical. */
-    public Ticket resolve(long sessionId, String token) {
+    public Resolved resolve(long sessionId, String token) {
         if (token == null || token.length() < 16 || token.length() > 64) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요.");
+            throw notFound();
         }
-        Ticket ticket = tickets.findByTokenHmac(tokenHmac(token))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
-        if (ticket.sessionId != sessionId) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요.");
+        String hash = tokenHmac(token);
+        Ticket ticket = tickets.findByTokenHmac(hash).orElse(null);
+        Transfer claim = null;
+        if (ticket == null) {
+            claim = transfers.findByClaimToken(hash).filter(Transfer::open).orElseThrow(this::notFound);
+            ticket = tickets.findById(claim.ticketId).orElseThrow(this::notFound);
         }
+        if (ticket.sessionId != sessionId) throw notFound();
         if (ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
         }
-        return ticket;
+        return new Resolved(ticket, claim);
+    }
+
+    private ResponseStatusException notFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요.");
     }
 
     /** What the ticket page renders. Never includes the token or any credential. */
-    public Map<String, Object> view(Ticket ticket) {
+    public Map<String, Object> view(Resolved resolved) {
+        Ticket ticket = resolved.ticket;
         EventSession session = requireSession(ticket.sessionId);
         Presence presence = admissions.find(ticket.id).orElse(null);
-        boolean claimed = passkeys.findByTicketId(ticket.id).isPresent();
+        // A recipient opening a transfer link has not registered anything yet, whatever
+        // binding the sender may still hold.
+        boolean claimed = !resolved.viaTransfer() && passkeys.findByTicketId(ticket.id).isPresent();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketRef", ticket.ticketRef);
         result.put("claimed", claimed);
+        result.put("role", resolved.viaTransfer() ? "RECIPIENT" : "HOLDER");
+        Transfer pending = transfers.findPendingByTicket(ticket.id).filter(Transfer::open).orElse(null);
+        result.put("transfer", pending == null ? null : Map.of(
+            "status", pending.status,
+            "toEmail", mask(pending.toEmail),
+            "expiresAt", pending.expiresAt.toInstant().toString()));
         result.put("seat", ticket.seat);
         result.put("tier", ticket.tier);
-        result.put("holderEmailMasked", mask(ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail));
+        result.put("holderEmailMasked", mask(resolved.viaTransfer() ? resolved.claim.toEmail
+            : ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail));
         result.put("claimExpired", !claimed && ticket.claimExpiresAt != null
             && ticket.claimExpiresAt.toInstant().isBefore(Instant.now()));
 

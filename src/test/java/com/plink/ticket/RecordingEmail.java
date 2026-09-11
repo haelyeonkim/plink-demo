@@ -34,9 +34,24 @@ public class RecordingEmail {
             return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
         }
 
+        private static final Pattern URL = Pattern.compile("(http://[^\\s]+/t/\\d+/[A-Za-z0-9_-]+)");
+
+        /** Newest message that actually carries a ticket link. */
         public Optional<String> lastTicketUrl() {
-            Matcher matcher = Pattern.compile("(http://[^\\s]+/t/\\d+/[A-Za-z0-9_-]+)").matcher(lastBody());
-            return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+            for (int i = sent.size() - 1; i >= 0; i--) {
+                Matcher matcher = URL.matcher(sent.get(i)[2]);
+                if (matcher.find()) return Optional.of(matcher.group(1));
+            }
+            return Optional.empty();
+        }
+
+        public Optional<String> ticketUrlFor(String recipient) {
+            for (int i = sent.size() - 1; i >= 0; i--) {
+                if (!sent.get(i)[0].equalsIgnoreCase(recipient)) continue;
+                Matcher matcher = URL.matcher(sent.get(i)[2]);
+                if (matcher.find()) return Optional.of(matcher.group(1));
+            }
+            return Optional.empty();
         }
     }
 

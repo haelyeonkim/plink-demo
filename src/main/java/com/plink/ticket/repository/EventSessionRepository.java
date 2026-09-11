@@ -31,6 +31,9 @@ public class EventSessionRepository {
         s.exitScanRequired = rs.getBoolean("exit_scan_required");
         s.unmatchedExit = rs.getString("unmatched_exit");
         s.autoExitAfterMinutes = rs.getInt("auto_exit_after_minutes");
+        s.transferMax = rs.getInt("transfer_max");
+        s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
+        s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
         return s;
     };
 
@@ -55,6 +58,11 @@ public class EventSessionRepository {
             return ps;
         }, keys);
         return keys.getKey().longValue();
+    }
+
+    public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
+        jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
+            + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
     }
 
     public void updatePolicy(long id, String reentryMode, int reentryMax, int graceMinutes,

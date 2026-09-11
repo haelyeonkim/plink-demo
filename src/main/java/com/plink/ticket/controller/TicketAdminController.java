@@ -75,6 +75,14 @@ public class TicketAdminController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "퇴장 미스캔 정책은 STRICT, LENIENT, AUTO_EXIT 중 하나여야 해요.");
         }
+        if (body.containsKey("transferMax") || body.containsKey("transferClosesMinutesBefore")
+                || body.containsKey("transferAfterFirstEntry")) {
+            sessions.updateTransferPolicy(id,
+                number(body.get("transferMax"), current.transferMax),
+                number(body.get("transferClosesMinutesBefore"), current.transferClosesMinutesBefore),
+                body.get("transferAfterFirstEntry") == null ? current.transferAfterFirstEntry
+                    : Boolean.parseBoolean(body.get("transferAfterFirstEntry").toString()));
+        }
         sessions.updatePolicy(id, mode,
             number(body.get("reentryMax"), current.reentryMax),
             number(body.get("reentryGraceMinutes"), current.reentryGraceMinutes),
@@ -108,6 +116,7 @@ public class TicketAdminController {
             row.put("issuedToEmail", TicketService.mask(ticket.issuedToEmail));
             row.put("holderEmail", TicketService.mask(ticket.holderEmail));
             row.put("reissueCount", ticket.reissueCount);
+            row.put("transferCount", ticket.transferCount);
             row.put("inside", presence != null && presence.inside());
             row.put("entryCount", presence == null ? 0 : presence.entryCount);
             row.put("reentryCount", presence == null ? 0 : presence.reentryCount);
@@ -182,6 +191,9 @@ public class TicketAdminController {
         row.put("exitScanRequired", session.exitScanRequired);
         row.put("unmatchedExit", session.unmatchedExit);
         row.put("autoExitAfterMinutes", session.autoExitAfterMinutes);
+        row.put("transferMax", session.transferMax);
+        row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
+        row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
         return row;
     }
 

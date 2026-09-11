@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { ApiError, fetchTicket, reissueTicket, requestOtp, verifyOtp, type TicketView } from '../ticket/api';
+import { cancelTransfer, fetchTicket, reissueTicket, requestOtp, verifyOtp, type TicketView } from '../ticket/api';
 import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 
@@ -27,6 +27,8 @@ export default function TicketPage() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'email' | 'code' | 'passkey'>('email');
+  const [transferTo, setTransferTo] = useState('');
+  const [showTransfer, setShowTransfer] = useState(false);
   const [grant, setGrant] = useState<Grant | null>(null);
 
   const reload = useCallback(async () => {
@@ -61,14 +63,32 @@ export default function TicketPage() {
   });
 
   const claim = () => guard(async () => {
-    await runCeremony(sessionId, token);
-    setNotice('이 기기에 입장권을 등록했어요.');
+    const result = await runCeremony(sessionId, token);
+    setNotice(result.mode === 'register' && result.viaTransfer
+      ? '양도받은 입장권을 이 기기에 등록했어요. 보낸 사람의 링크는 이제 사용할 수 없어요.'
+      : '이 기기에 입장권을 등록했어요.');
     await reload();
-  }).catch(() => undefined);
+  });
 
   const present = (direction: Direction) => guard(async () => {
-    const result = await runCeremony(sessionId, token, direction);
-    if (result.mode === 'authenticate') setGrant(result.grant);
+    const result = await runCeremony(sessionId, token, { direction });
+    if (result.mode === 'authenticate' && result.intent === 'PRESENT') setGrant(result.grant);
+  });
+
+  const startTransfer = () => guard(async () => {
+    const result = await runCeremony(sessionId, token, { intent: 'TRANSFER', toEmail: transferTo });
+    if (result.mode === 'authenticate' && result.intent === 'TRANSFER') {
+      setNotice(`${result.transfer.toEmail} 님에게 양도 링크를 보냈어요. 상대가 등록을 마치기 전까지는 취소할 수 있어요.`);
+      setShowTransfer(false);
+      setTransferTo('');
+      await reload();
+    }
+  });
+
+  const stopTransfer = () => guard(async () => {
+    await cancelTransfer(sessionId, token);
+    setNotice('양도를 취소했어요.');
+    await reload();
   });
 
   const reissue = () => guard(async () => {
@@ -136,6 +156,19 @@ export default function TicketPage() {
         {notice && <p className="ticket-notice" role="status">{notice}</p>}
         {error && <p className="ticket-error" role="alert">{error}</p>}
 
+        {ticket.transfer && (
+          <div className="ticket-notice" role="status">
+            <strong>양도 진행 중</strong> — {ticket.transfer.toEmail} 님이 등록을 마치면 이 링크는 사용할 수 없게 됩니다.
+            {ticket.role === 'HOLDER' && (
+              <>
+                <br />
+                <button className="secondary" onClick={stopTransfer} disabled={busy}>양도 취소</button>
+                <span className="ticket-hint"> 취소하려면 먼저 이메일 인증이 필요해요.</span>
+              </>
+            )}
+          </div>
+        )}
+
         {ticket.claimed ? (
           <div className="ticket-actions">
             {!ticket.presence.inside && (
@@ -143,6 +176,21 @@ export default function TicketPage() {
             )}
             {ticket.presence.inside && (
               <button className="primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>
+            )}
+            {!ticket.transfer && !ticket.presence.inside && (
+              showTransfer ? (
+                <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
+                  <label htmlFor="transfer-to">받는 사람 이메일</label>
+                  <input id="transfer-to" type="email" required value={transferTo}
+                    onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
+                  <button className="primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
+                  <button className="secondary" type="button" onClick={() => setShowTransfer(false)}>취소</button>
+                </form>
+              ) : (
+                <button className="secondary" onClick={() => setShowTransfer(true)} disabled={busy}>
+                  양도하기
+                </button>
+              )
             )}
             <button className="secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
             <p className="ticket-hint">
@@ -156,9 +204,11 @@ export default function TicketPage() {
           </p>
         ) : (
           <div className="ticket-claim">
-            <h3>입장권 등록</h3>
+            <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>
             <p className="ticket-hint">
-              입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.
+              {ticket.role === 'RECIPIENT'
+                ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
+                : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
             </p>
             {stage === 'email' && (
               <form onSubmit={e => { e.preventDefault(); sendCode(); }}>
