@@ -23,17 +23,25 @@ export function supportsPasskeys(): boolean {
   return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
 }
 
+export interface TransferStarted { status: string; toEmail: string; expiresAt: string }
+
 /**
  * Runs the ceremony for a ticket. With no passkey yet this registers one and binds the
- * ticket; afterwards it authenticates and the server answers with a presentation grant.
+ * ticket; afterwards it authenticates, and what the server does with that assertion
+ * depends on the intent — open a presentation grant, or sign off a transfer.
  */
 export async function runCeremony(
-  sessionId: string, token: string, direction?: 'IN' | 'OUT',
-): Promise<{ mode: 'register'; claimed: true } | { mode: 'authenticate'; grant: Grant }> {
+  sessionId: string, token: string,
+  options_: { direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string } = {},
+): Promise<
+  | { mode: 'register'; claimed: true; viaTransfer: boolean }
+  | { mode: 'authenticate'; intent: 'PRESENT'; grant: Grant }
+  | { mode: 'authenticate'; intent: 'TRANSFER'; transfer: TransferStarted }
+> {
   const base = ticketBase(sessionId, token);
-  const { mode, options } = await read(await mutate(`${base}/passkey/options`, {
+  const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ direction }),
+    body: JSON.stringify(options_),
   }));
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);
@@ -75,9 +83,12 @@ export async function runCeremony(
       response: payload, clientExtensionResults: credential.getClientExtensionResults(),
     }),
   }));
-  return mode === 'register'
-    ? { mode: 'register', claimed: true }
-    : { mode: 'authenticate', grant: result as Grant };
+  if (mode === 'register') {
+    return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
+  }
+  return intent === 'TRANSFER'
+    ? { mode: 'authenticate', intent: 'TRANSFER', transfer: result as TransferStarted }
+    : { mode: 'authenticate', intent: 'PRESENT', grant: result as Grant };
 }
 
 export function passkeyError(error: unknown): string {

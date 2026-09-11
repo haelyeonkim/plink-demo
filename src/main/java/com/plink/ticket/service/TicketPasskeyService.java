@@ -2,6 +2,7 @@ package com.plink.ticket.service;
 
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Ticket;
+import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.TicketPasskeyRepository;
 import com.plink.ticket.repository.TicketRepository;
@@ -37,36 +38,43 @@ public class TicketPasskeyService {
     private final TicketPasskeyRepository passkeys;
     private final AdmissionRepository admissions;
     private final PresentationService presentations;
+    private final TransferService transfers;
     private final TicketProperties properties;
     private final RelyingParty rp;
     private final ObjectMapper mapper;
     private final SecureRandom random = new SecureRandom();
 
     public TicketPasskeyService(TicketRepository tickets, TicketPasskeyRepository passkeys,
-            AdmissionRepository admissions, PresentationService presentations, TicketProperties properties,
+            AdmissionRepository admissions, PresentationService presentations, TransferService transfers,
+            TicketProperties properties,
             @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper) {
         this.tickets = tickets;
         this.passkeys = passkeys;
         this.admissions = admissions;
         this.presentations = presentations;
+        this.transfers = transfers;
         this.properties = properties;
         this.rp = rp;
         this.mapper = mapper;
     }
 
     static class Pending {
-        final String ticketRef, direction, email;
+        final String ticketRef, direction, email, intent, toEmail;
         final long ticketId;
+        final Long transferId;
         final long expires = System.currentTimeMillis() + TIMEOUT_MS;
         final PublicKeyCredentialCreationOptions registration;
         final AssertionRequest assertion;
 
-        Pending(Ticket ticket, String direction, String email,
+        Pending(Ticket ticket, String intent, String direction, String email, String toEmail, Long transferId,
                 PublicKeyCredentialCreationOptions registration, AssertionRequest assertion) {
             this.ticketId = ticket.id;
             this.ticketRef = ticket.ticketRef;
+            this.intent = intent;
             this.direction = direction;
             this.email = email;
+            this.toEmail = toEmail;
+            this.transferId = transferId;
             this.registration = registration;
             this.assertion = assertion;
         }
@@ -82,17 +90,27 @@ public class TicketPasskeyService {
         return Optional.ofNullable(value == null ? null : value.toString());
     }
 
-    public Map<String, Object> start(Ticket ticket, String rawDirection, HttpSession session) {
+    /**
+     * Chooses the ceremony. A recipient opening a transfer link always registers, whatever
+     * binding the sender still holds; the existing holder authenticates, either to open a
+     * presentation grant or to sign off a transfer.
+     */
+    public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
+            String rawToEmail, HttpSession session) {
         synchronized (session) { session.removeAttribute(PENDING); }
-        boolean claimed = passkeys.findByTicketId(ticket.id).isPresent();
+        Ticket ticket = resolved.ticket;
+        boolean claimed = !resolved.viaTransfer() && passkeys.findByTicketId(ticket.id).isPresent();
         Pending pending;
         String options;
 
         try {
         if (!claimed) {
-            String email = verifiedEmail(session, ticket.id).orElseThrow(() -> new ResponseStatusException(
-                HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
-            if (ticket.claimExpiresAt != null
+            String expected = resolved.viaTransfer() ? resolved.claim.toEmail : ticket.issuedToEmail;
+            String email = verifiedEmail(session, ticket.id)
+                .filter(value -> value.equalsIgnoreCase(expected))
+                .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
+            if (!resolved.viaTransfer() && ticket.claimExpiresAt != null
                     && ticket.claimExpiresAt.toInstant().isBefore(java.time.Instant.now())) {
                 throw new ResponseStatusException(HttpStatus.GONE,
                     "등록 기한이 지났어요. 새 링크를 요청해 주세요.");
@@ -114,20 +132,32 @@ public class TicketPasskeyService {
                     .id(new ByteArray(handle)).build())
                 .authenticatorSelection(selection.build())
                 .timeout(TIMEOUT_MS).build());
-            pending = new Pending(ticket, null, email, request, null);
+            pending = new Pending(ticket, "CLAIM", null, email, null,
+                resolved.viaTransfer() ? resolved.claim.id : null, request, null);
             options = request.toCredentialsCreateJson();
         } else {
-            String direction = PresentationService.direction(rawDirection);
+            String direction = null;
+            String toEmail = null;
+            String resolvedIntent = intent == null ? "PRESENT" : intent.trim().toUpperCase(Locale.ROOT);
+            if ("TRANSFER".equals(resolvedIntent)) {
+                // The assertion is what authorises this specific handover; the recipient
+                // address is held server-side with the challenge, not taken on trust later.
+                toEmail = EmailOtpService.normalize(rawToEmail);
+            } else {
+                resolvedIntent = "PRESENT";
+                direction = PresentationService.direction(rawDirection);
+            }
             AssertionRequest request = rp.startAssertion(StartAssertionOptions.builder()
                 .username(ticket.ticketRef)
                 .userVerification(UserVerificationRequirement.REQUIRED)
                 .timeout(TIMEOUT_MS).build());
-            pending = new Pending(ticket, direction, null, null, request);
+            pending = new Pending(ticket, resolvedIntent, direction, null, toEmail, null, null, request);
             options = request.toCredentialsGetJson();
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", claimed ? "authenticate" : "register");
+        result.put("intent", pending.intent);
         result.put("options", mapper.readTree(options));
         synchronized (session) { session.setAttribute(PENDING, pending); }
         return result;
@@ -137,7 +167,9 @@ public class TicketPasskeyService {
     }
 
     @Transactional
-    public Map<String, Object> finish(Ticket ticket, JsonNode credential, HttpSession session) {
+    public Map<String, Object> finish(TicketService.Resolved resolved, JsonNode credential,
+            HttpSession session, String ip, String userAgent) {
+        Ticket ticket = resolved.ticket;
         Pending pending;
         synchronized (session) {
             pending = (Pending) session.getAttribute(PENDING);
@@ -154,13 +186,18 @@ public class TicketPasskeyService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
 
         return pending.registration != null
-            ? register(locked, pending, credential)
-            : authenticate(locked, pending, credential);
+            ? register(locked, pending, resolved, credential)
+            : authenticate(locked, pending, credential, ip, userAgent);
     }
 
-    private Map<String, Object> register(Ticket ticket, Pending pending, JsonNode credential) {
+    private Map<String, Object> register(Ticket ticket, Pending pending, TicketService.Resolved resolved,
+            JsonNode credential) {
         if (passkeys.findByTicketId(ticket.id).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 다른 기기에 등록된 입장권이에요.");
+            if (!resolved.viaTransfer()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 다른 기기에 등록된 입장권이에요.");
+            }
+            // The sender's binding falls away the moment the recipient registers theirs.
+            passkeys.deleteByTicketId(ticket.id);
         }
         RegistrationResult result;
         try {
@@ -181,18 +218,24 @@ public class TicketPasskeyService {
         }
         passkeys.insert(ticket.id, result.getKeyId().getId(), pending.registration.getUser().getId(),
             result.getPublicKeyCose(), result.getSignatureCount(), pending.email, aaguid);
-        tickets.bind(ticket.id, pending.email);
         if (!admissions.find(ticket.id).isPresent()) {
             admissions.create(ticket.id, ticket.sessionId);
+        }
+        if (resolved.viaTransfer()) {
+            transfers.accept(resolved.claim, ticket);
+        } else {
+            tickets.bind(ticket.id, pending.email);
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("claimed", true);
+        response.put("viaTransfer", resolved.viaTransfer());
         response.put("holderEmailMasked", TicketService.mask(pending.email));
         return response;
     }
 
-    private Map<String, Object> authenticate(Ticket ticket, Pending pending, JsonNode credential) {
+    private Map<String, Object> authenticate(Ticket ticket, Pending pending, JsonNode credential,
+            String ip, String userAgent) {
         TicketPasskeyRepository.Binding binding = passkeys.findByTicketId(ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                 "등록 정보가 변경되었어요. 페이지를 새로 고쳐 주세요."));
@@ -213,6 +256,13 @@ public class TicketPasskeyService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이 입장권에 등록된 패스키가 아니에요.");
         }
         passkeys.updateCount(ticket.id, result.getSignatureCount());
+        if ("TRANSFER".equals(pending.intent)) {
+            return transfers.initiate(ticket, pending.toEmail, ip, userAgent);
+        }
+        if (!ticket.bound()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+        }
         return presentations.issue(ticket, pending.direction, true);
     }
 

@@ -22,10 +22,19 @@ public class TicketMaintenance {
     private static final Logger log = LoggerFactory.getLogger(TicketMaintenance.class);
     private final NonceRepository nonces;
     private final AdmissionRepository admissions;
+    private final TransferService transfers;
 
-    public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions) {
+    public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions, TransferService transfers) {
         this.nonces = nonces;
         this.admissions = admissions;
+        this.transfers = transfers;
+    }
+
+    /** A transfer nobody claimed returns the ticket to the sender rather than stranding it. */
+    @Scheduled(initialDelay = 60_000, fixedDelay = 300_000)
+    public void expireStaleTransfers() {
+        int closed = transfers.expireStale();
+        if (closed > 0) log.info("Expired {} unclaimed transfers", closed);
     }
 
     @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)

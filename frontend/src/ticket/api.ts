@@ -1,8 +1,17 @@
 import { mutate } from '../auth';
 
+export interface TicketTransfer {
+  status: string;
+  toEmail: string;
+  expiresAt: string;
+}
+
 export interface TicketView {
   ticketRef: string;
   claimed: boolean;
+  /** HOLDER opened their own ticket; RECIPIENT opened a transfer link. */
+  role: 'HOLDER' | 'RECIPIENT';
+  transfer: TicketTransfer | null;
   seat: string | null;
   tier: string | null;
   holderEmailMasked: string | null;
@@ -54,6 +63,10 @@ export async function verifyOtp(sessionId: string, token: string, email: string,
   return read(await mutate(`${ticketBase(sessionId, token)}/otp/verify`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }),
   }));
+}
+
+export async function cancelTransfer(sessionId: string, token: string) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/transfer/cancel`, { method: 'POST' }));
 }
 
 export async function reissueTicket(sessionId: string, token: string) {

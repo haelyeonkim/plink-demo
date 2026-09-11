@@ -80,6 +80,21 @@ public class TicketRepository {
             + "claim_expires_at = NULL WHERE id = ?", holderEmail, id);
     }
 
+    public void updateStatus(long id, String status) {
+        jdbc.update("UPDATE ticket SET status = ? WHERE id = ?", status, id);
+    }
+
+    /**
+     * Hands the ticket to the recipient: their claim token becomes the ticket's own, so
+     * the sender's URL stops resolving from this moment.
+     */
+    public void completeTransfer(long id, String tokenHmac, String holderEmail) {
+        jdbc.update("UPDATE ticket SET token_hmac = ?, holder_email = ?, issued_to_email = ?, "
+            + "status = 'BOUND', bound_at = CURRENT_TIMESTAMP, claim_expires_at = NULL, "
+            + "transfer_count = transfer_count + 1 WHERE id = ?",
+            tokenHmac, holderEmail, holderEmail, id);
+    }
+
     /**
      * Transfer and lost-device recovery both rotate the token, which kills the old URL.
      * Presence and re-entry counters are deliberately left alone: the holder's movements

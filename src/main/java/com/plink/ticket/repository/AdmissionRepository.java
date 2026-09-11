@@ -67,6 +67,13 @@ public class AdmissionRepository {
             + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ?", gateId, ticketId);
     }
 
+    /** A new holder starts with a clean movement history; the ledger still holds the old one. */
+    public void resetPresence(long ticketId) {
+        jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE', entry_count = 0, reentry_count = 0, "
+            + "inside_since = NULL, last_exit_at = NULL, last_event_at = NULL, last_gate_id = NULL, "
+            + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ?", ticketId);
+    }
+
     /** Live occupancy, per-zone distribution and the unmatched-exit list all come from here. */
     public Map<String, Object> occupancy(long sessionId) {
         Map<String, Object> result = new LinkedHashMap<>();
