@@ -2,9 +2,7 @@ package com.plink.ticket.face;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
@@ -21,8 +19,6 @@ import java.util.List;
  * service so {@link HttpFaceEmbedder} takes over; until then the log says so on every
  * extraction.
  */
-@Component
-@ConditionalOnMissingBean(HttpFaceEmbedder.class)
 public class LocalFaceEmbedder implements FaceEmbedder {
     private static final Logger log = LoggerFactory.getLogger(LocalFaceEmbedder.class);
     private static final int DIMENSIONS = 128;

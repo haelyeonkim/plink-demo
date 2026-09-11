@@ -1,8 +1,6 @@
 package com.plink.ticket.face;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -15,15 +13,11 @@ import java.util.Map;
  * keeps the model, the vector store and their keys outside this application. A breach
  * of the ticket service therefore reaches no biometric data.
  */
-@Component
-@ConditionalOnProperty(prefix = "plink.ticket.face", name = "service-url")
 public class HttpFaceEmbedder implements FaceEmbedder {
     private final RestClient client;
     private String algoVersion = "unknown";
 
-    public HttpFaceEmbedder(
-            @org.springframework.beans.factory.annotation.Value("${plink.ticket.face.service-url}") String baseUrl,
-            @org.springframework.beans.factory.annotation.Value("${plink.ticket.face.service-token:}") String token) {
+    public HttpFaceEmbedder(String baseUrl, String token) {
         RestClient.Builder builder = RestClient.builder().baseUrl(baseUrl);
         if (!token.isEmpty()) builder.defaultHeader("Authorization", "Bearer " + token);
         this.client = builder.build();

@@ -29,7 +29,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * The presence ledger is what replaces "one ticket, one admission" once re-entry is
  * allowed, so these tests pin the invariant that keeps a forwarded QR useless.
  */
-@SpringBootTest
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = "spring.config.import=")
 @Import(RecordingEmail.class)
 class AdmissionLedgerTest {
 

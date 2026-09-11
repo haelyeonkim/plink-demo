@@ -61,42 +61,38 @@ export default function FaceEnrolment({ sessionId, token }: { sessionId: string;
   if (!status) return null;
 
   return (
-    <div className="ticket-face">
+    <>
       <h3>얼굴 입장 (선택)</h3>
-      {notice && <p className="ticket-notice" role="status">{notice}</p>}
-      {error && <p className="ticket-error" role="alert">{error}</p>}
+      {notice && <p className="notice-text" role="status">{notice}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
 
       {status.enrolled ? (
         <>
-          <p className="ticket-hint">
-            등록 완료. 게이트에서 폰을 꺼내지 않고 얼굴로 지나갈 수 있어요.
-          </p>
-          <button className="secondary" onClick={withdraw} disabled={busy}>얼굴 정보 삭제</button>
+          <p className="hint-text">등록 완료. 게이트에서 폰을 꺼내지 않고 얼굴로 지나갈 수 있어요.</p>
+          <button className="btn-secondary" onClick={withdraw} disabled={busy}>얼굴 정보 삭제</button>
         </>
       ) : !status.consented ? (
         <>
-          <p className="ticket-hint">
-            얼굴 정보는 민감정보입니다. 등록하지 않아도 <strong>패스키와 QR로 동일하게 입장</strong>할 수 있어요.
+          <p className="hint-text">
+            얼굴 정보는 민감정보입니다. 등록하지 않아도 <b>패스키와 QR로 동일하게 입장</b>할 수 있어요.
           </p>
-          <ul className="ticket-consent">
-            <li><strong>수집 항목</strong> 얼굴 특징값 (사진 원본은 저장하지 않습니다)</li>
-            <li><strong>이용 목적</strong> {status.purposes}</li>
-            <li><strong>보유 기간</strong> 회차 종료 후 정해진 기간이 지나면 자동 파기</li>
-            <li><strong>거부 권리</strong> 동의하지 않아도 입장에 불이익이 없습니다</li>
+          <ul className="consent-list">
+            <li><b>수집 항목</b> 얼굴 특징값 (사진 원본은 저장하지 않습니다)</li>
+            <li><b>이용 목적</b> {status.purposes}</li>
+            <li><b>보유 기간</b> 회차 종료 후 정해진 기간이 지나면 자동 파기</li>
+            <li><b>거부 권리</b> 동의하지 않아도 입장에 불이익이 없습니다</li>
           </ul>
-          <button className="secondary" onClick={agree} disabled={busy}>
-            위 내용에 동의하고 진행
-          </button>
+          <button className="btn-secondary" onClick={agree} disabled={busy}>위 내용에 동의하고 진행</button>
         </>
       ) : capturing ? (
         <>
-          <video ref={video} muted playsInline className="ticket-camera" />
-          <p className="ticket-hint">정면을 보고 밝은 곳에서 촬영해 주세요.</p>
-          <button className="primary" onClick={enroll} disabled={busy}>촬영하고 등록</button>
+          <video ref={video} muted playsInline className="camera-preview" />
+          <p className="hint-text">정면을 보고 밝은 곳에서 촬영해 주세요.</p>
+          <button className="btn-primary" onClick={enroll} disabled={busy}>촬영하고 등록</button>
         </>
       ) : (
-        <button className="secondary" onClick={startCamera} disabled={busy}>카메라 열기</button>
+        <button className="btn-secondary" onClick={startCamera} disabled={busy}>카메라 열기</button>
       )}
-    </div>
+    </>
   );
 }

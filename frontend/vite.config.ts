@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
-    allowedHosts: ['lyuni.ddak.app'],
+    allowedHosts: ['lyuni.ddak.app', 'plink.ddak.app'],
     proxy: {
       '/oauth2': { target: backend, changeOrigin: true },
       '/login/oauth2': { target: backend, changeOrigin: true },

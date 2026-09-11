@@ -34,7 +34,7 @@ public class RecordingEmail {
             return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
         }
 
-        private static final Pattern URL = Pattern.compile("(http://[^\\s]+/t/\\d+/[A-Za-z0-9_-]+)");
+        private static final Pattern URL = Pattern.compile("(https?://[^\\s]+/t/\\d+/[A-Za-z0-9_-]+)");
 
         /** Newest message that actually carries a ticket link. */
         public Optional<String> lastTicketUrl() {

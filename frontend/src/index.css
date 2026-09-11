@@ -854,119 +854,67 @@ a { color: inherit; text-decoration: none; }
 .cell-code code { overflow-wrap: anywhere; font-size: 11px; }
 .code-display code { overflow-wrap: anywhere; min-width: 0; font-size: 15px; }
 
-/* ---- Ticketing: holder page, gate terminal, organiser console ---- */
-.ticket-card, .gate-card {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 28px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.ticket-card h2 { font-size: 24px; }
-.ticket-card h3 { font-size: 17px; }
-.ticket-meta { display: grid; gap: 8px; margin: 0; }
-.ticket-meta > div { display: flex; justify-content: space-between; gap: 16px; font-size: 14px; }
-.ticket-meta dt { color: #66708a; }
-.ticket-meta dd { margin: 0; font-weight: 600; }
-.ticket-hint { font-size: 13px; color: #66708a; }
-.ticket-notice, .ticket-warning, .ticket-error {
-  font-size: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid transparent;
-}
-.ticket-notice { background: #eef6ff; border-color: #cfe3ff; color: #1b4bb8; }
-.ticket-warning { background: #fff7e6; border-color: #ffe2a8; color: #8a5a00; }
-.ticket-error { background: #fff0f0; border-color: #ffd2d2; color: #b32020; }
-.ticket-actions, .ticket-claim { display: flex; flex-direction: column; gap: 12px; }
-.ticket-claim form { display: flex; flex-direction: column; gap: 8px; }
-.ticket-card label, .gate-card label, .admin-panel label {
-  font-size: 13px; font-weight: 600; color: #44506e;
-}
-.ticket-card input, .gate-card input, .admin-panel input, .admin-panel select {
-  padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px;
-  font: inherit; background: #fff; width: 100%;
-}
-.ticket-card button, .gate-card button, .admin-panel button {
-  padding: 12px 18px; border-radius: 10px; border: 1px solid transparent;
-  font: inherit; font-weight: 600; cursor: pointer;
-}
-.ticket-card .primary, .gate-card .primary, .admin-panel .primary {
-  background: var(--blue); color: #fff;
-}
-.ticket-card .secondary, .gate-card .secondary, .admin-panel .secondary {
-  background: #fff; color: var(--ink); border-color: var(--line);
-}
-.ticket-card button:disabled { opacity: 0.5; cursor: not-allowed; }
-.ticket-code { align-items: center; text-align: center; }
-.ticket-code canvas { border-radius: 8px; background: #fff; max-width: 100%; height: auto; }
-.ticket-timer { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* ---- Ticketing ----
+   Reuses the P-Link vocabulary (page-section, access-card, field, btn-*). Only the
+   things the existing pages have no equivalent for are defined here: the rotating
+   code, the gate terminal screen, and the camera preview. ---- */
 
-.gate-screen {
-  min-height: calc(100vh - 140px);
-  display: flex; flex-direction: column; gap: 16px;
-  padding: 16px; transition: background 0.2s ease;
+.ticket-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  text-align: left;
+  margin-bottom: 20px;
 }
-.gate-ok { background: #e8f8f0; }
-.gate-deny { background: #fdecec; }
+.ticket-meta dt { font-size: 12px; color: #9ba2b4; font-weight: 600; }
+.ticket-meta dd { font-size: 13px; margin: 0; font-weight: 600; }
+
+.notice-text { color: #2f6fd0; font-size: 13px; margin: 8px 0 16px; }
+.warn-text { color: #8a5a00; background: #fff7e6; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin: 8px 0 16px; text-align: left; }
+.hint-text { color: #9198aa; font-size: 12px; margin: 8px 0 0; }
+
+.code-canvas { border-radius: var(--radius); background: white; max-width: 100%; height: auto; }
+.code-timer { font-weight: 700; font-size: 15px; margin: 16px 0 4px; font-variant-numeric: tabular-nums; }
+
+.consent-list { text-align: left; font-size: 12px; color: #3d4663; margin: 0 0 16px; padding-left: 18px; }
+.consent-list li { margin-bottom: 4px; }
+.camera-preview { width: 100%; border-radius: var(--radius); background: var(--ink); aspect-ratio: 4 / 3; object-fit: cover; margin-bottom: 12px; }
+
+/* Gate terminal: a tablet screen, not a page. */
+.gate-screen { display: flex; flex-direction: column; gap: 16px; padding: 16px; min-height: calc(100vh - 140px); transition: background 0.2s; }
+.gate-ok { background: #e9f9f1; }
+.gate-deny { background: #fdeeee; }
 .gate-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.gate-direction {
-  font-weight: 700; font-size: 15px; letter-spacing: 0.08em;
-  padding: 6px 14px; border-radius: 999px; color: #fff;
-}
-.gate-in { background: #12885c; }
-.gate-out { background: #315cf4; }
-.gate-bidirectional { background: #5a4bd6; }
-.gate-label { font-size: 14px; color: #44506e; margin-right: auto; }
-.gate-viewport {
-  position: relative; flex: 1; min-height: 320px; border-radius: var(--radius);
-  overflow: hidden; background: #0b1020;
-}
+.gate-direction { font-weight: 800; font-size: 13px; letter-spacing: 2px; padding: 6px 14px; border-radius: 999px; color: white; }
+.gate-in { background: #2cb68c; }
+.gate-out { background: var(--blue); }
+.gate-bidirectional { background: #6b5ce7; }
+.gate-label { font-size: 13px; color: #697590; margin-right: auto; }
+.gate-viewport { position: relative; flex: 1; min-height: 320px; border-radius: 18px; overflow: hidden; background: var(--ink); }
 .gate-viewport video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.gate-guides { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 24px; }
+.gate-guides { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 24px; pointer-events: none; }
 .gate-guide-qr { width: 180px; height: 180px; border: 3px solid rgba(255,255,255,0.85); border-radius: 12px; }
-.gate-guide-face { width: 150px; height: 200px; border: 3px dashed rgba(255,255,255,0.6); border-radius: 50%; }
-.gate-idle {
-  position: absolute; inset: auto 0 16px; text-align: center; color: #fff; font-size: 14px;
-}
-.gate-result {
-  display: flex; flex-direction: column; gap: 4px; padding: 18px;
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  font-size: 15px; min-height: 76px;
-}
+.gate-guide-face { width: 150px; height: 200px; border: 3px dashed rgba(255,255,255,0.55); border-radius: 50%; }
+.gate-idle { position: absolute; inset: auto 0 16px; text-align: center; color: white; font-size: 13px; }
+.gate-result { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 18px; min-height: 76px; display: flex; flex-direction: column; gap: 4px; }
 .gate-result strong { font-size: 26px; }
 
-.admin-tickets { display: flex; flex-direction: column; gap: 18px; }
-.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
-.admin-panel {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 20px; display: flex; flex-direction: column; gap: 12px;
-}
-.admin-panel h3 { font-size: 17px; }
-.admin-panel h4 { font-size: 14px; color: #44506e; }
-.admin-panel form { display: flex; flex-direction: column; gap: 8px; }
-.admin-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
-.admin-check input { width: auto; }
-.admin-sessions { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.admin-sessions button {
-  width: 100%; text-align: left; background: #f7f8fc; border: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 2px;
-}
-.admin-sessions button.chosen { border-color: var(--blue); background: #eef3ff; }
-.admin-sessions span { font-size: 12px; color: #66708a; font-weight: 400; }
-.admin-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 0; }
-.admin-stats > div { background: #f7f8fc; border-radius: 10px; padding: 10px 12px; }
-.admin-stats dt { font-size: 12px; color: #66708a; }
-.admin-stats dd { margin: 0; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.admin-events { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
-.admin-events li { display: grid; grid-template-columns: 84px 48px 1fr 1.4fr; gap: 8px; font-size: 12px; padding: 6px 8px; border-radius: 8px; background: #f7f8fc; }
-.admin-events li.denied { background: #fff0f0; color: #b32020; }
-.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.admin-table th, .admin-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
-.admin-table th { font-size: 11px; letter-spacing: 0.04em; color: #66708a; text-transform: uppercase; }
-.ticket-face { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
-.ticket-face h3 { font-size: 15px; }
-.ticket-consent { margin: 0; padding-left: 18px; font-size: 13px; color: #44506e; display: flex; flex-direction: column; gap: 4px; }
-.ticket-camera { width: 100%; border-radius: 10px; background: #0b1020; aspect-ratio: 4 / 3; object-fit: cover; }
+/* Organiser console */
+.session-list { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.session-list button { width: 100%; text-align: left; background: var(--bg-section); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 2px; }
+.session-list button.chosen { border-color: var(--blue); background: #eef3ff; }
+.session-list span { font-size: 11px; color: #9198aa; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-grid > div { background: var(--bg-section); border-radius: var(--radius); padding: 10px 14px; }
+.stat-grid dt { font-size: 11px; color: #9ba2b4; font-weight: 600; }
+.stat-grid dd { margin: 0; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.event-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.event-list li { display: grid; grid-template-columns: 80px 44px 1fr 1.4fr; gap: 8px; font-size: 11px; padding: 6px 8px; border-radius: 6px; background: var(--bg-section); }
+.event-list li.denied { background: #fdeeee; color: #c0392b; }
+.ticket-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+.ticket-table th, .ticket-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.ticket-table th { font-size: 10px; letter-spacing: 1px; color: #9ba2b4; text-transform: uppercase; }
+.field select, .field textarea { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 14px; outline: none; font-family: inherit; }
+.field select:focus { border-color: var(--blue); }
+.field-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3d4663; margin-bottom: 20px; }
+.field-inline input { width: auto; }

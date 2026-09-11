@@ -16,3 +16,7 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+
+face-service/.venv/
+face-service/models/
+face-service/logs/

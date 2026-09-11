@@ -115,50 +115,57 @@ export default function TicketAdmin() {
   const session = sessions.find(s => s.id === selected) ?? null;
 
   return (
-    <section className="page-section admin-tickets">
+    <section className="page-section">
+      <p className="eyebrow"><span></span> TICKETING</p>
       <h2>입장권 관리</h2>
-      {notice && <p className="ticket-notice" role="status">{notice}</p>}
-      {error && <p className="ticket-error" role="alert">{error}</p>}
+      {notice && <p className="notice-text" role="status">{notice}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
 
-      <div className="admin-grid">
-        <article className="admin-panel">
+      <div className="detail-grid">
+        <article className="detail-card">
           <h3>회차</h3>
-          <ul className="admin-sessions">
+          <ul className="session-list">
             {sessions.map(row => (
               <li key={row.id}>
                 <button className={row.id === selected ? 'chosen' : ''} onClick={() => setSelected(row.id)}>
-                  <strong>{row.name}</strong>
+                  <b>{row.name}</b>
                   <span>{new Date(row.startsAt).toLocaleString('ko-KR')}</span>
                 </button>
               </li>
             ))}
-            {sessions.length === 0 && <li className="ticket-hint">등록된 회차가 없어요.</li>}
+            {sessions.length === 0 && <li className="hint-text">등록된 회차가 없어요.</li>}
           </ul>
           <form onSubmit={e => { e.preventDefault(); createSession(e.currentTarget); }}>
-            <label htmlFor="session-name">회차 이름</label>
-            <input id="session-name" name="name" required />
-            <label htmlFor="session-venue">장소</label>
-            <input id="session-venue" name="venue" />
-            <label htmlFor="session-starts">시작 시각</label>
-            <input id="session-starts" name="startsAt" type="datetime-local" required />
-            <button className="secondary" type="submit">회차 추가</button>
+            <div className="field">
+              <label htmlFor="session-name">회차 이름</label>
+              <input id="session-name" name="name" required />
+            </div>
+            <div className="field">
+              <label htmlFor="session-venue">장소</label>
+              <input id="session-venue" name="venue" />
+            </div>
+            <div className="field">
+              <label htmlFor="session-starts">시작 시각</label>
+              <input id="session-starts" name="startsAt" type="datetime-local" required />
+            </div>
+            <button className="btn-secondary" type="submit">회차 추가</button>
           </form>
         </article>
 
         {session && (
           <>
-            <article className="admin-panel">
+            <article className="detail-card">
               <h3>실시간 장내</h3>
               {occupancy && (
-                <dl className="admin-stats">
+                <dl className="stat-grid">
                   <div><dt>장내</dt><dd>{occupancy.inside}</dd></div>
                   <div><dt>입장 이력</dt><dd>{occupancy.everEntered}</dd></div>
                   <div><dt>등록 완료</dt><dd>{occupancy.bound}</dd></div>
                   <div><dt>발급</dt><dd>{occupancy.tickets}</dd></div>
                 </dl>
               )}
-              <h4>최근 기록</h4>
-              <ul className="admin-events">
+              <h3>최근 기록</h3>
+              <ul className="event-list">
                 {occupancy?.recent.map((row, index) => (
                   <li key={index} className={String(row.result) === 'DENIED' ? 'denied' : ''}>
                     <span>{String(row.result)}</span>
@@ -167,22 +174,28 @@ export default function TicketAdmin() {
                     <span>{row.reason ? String(row.reason) : ''}</span>
                   </li>
                 ))}
-                {occupancy?.recent.length === 0 && <li className="ticket-hint">기록이 없어요.</li>}
+                {occupancy?.recent.length === 0 && <li className="hint-text">기록이 없어요.</li>}
               </ul>
             </article>
 
-            <article className="admin-panel">
+            <article className="detail-card">
               <h3>입장권 발급</h3>
               <form onSubmit={e => { e.preventDefault(); issueTicket(e.currentTarget); }}>
-                <label htmlFor="ticket-to">수신 이메일</label>
-                <input id="ticket-to" name="email" type="email" required />
-                <label htmlFor="ticket-seat">좌석</label>
-                <input id="ticket-seat" name="seat" />
-                <label htmlFor="ticket-tier">등급</label>
-                <input id="ticket-tier" name="tier" />
-                <button className="primary" type="submit">발급하고 메일 보내기</button>
+                <div className="field">
+                  <label htmlFor="ticket-to">수신 이메일</label>
+                  <input id="ticket-to" name="email" type="email" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="ticket-seat">좌석</label>
+                  <input id="ticket-seat" name="seat" />
+                </div>
+                <div className="field">
+                  <label htmlFor="ticket-tier">등급</label>
+                  <input id="ticket-tier" name="tier" />
+                </div>
+                <button className="btn-primary" type="submit">발급하고 메일 보내기</button>
               </form>
-              <table className="admin-table">
+              <table className="ticket-table">
                 <thead>
                   <tr><th>참조</th><th>좌석</th><th>상태</th><th>보유자</th><th>장내</th><th>재입장</th></tr>
                 </thead>
@@ -193,7 +206,7 @@ export default function TicketAdmin() {
                       <td>{row.seat ?? '-'}</td>
                       <td>{row.status}</td>
                       <td>{row.holderEmail ?? row.issuedToEmail}</td>
-                      <td>{row.inside ? '○' : '-'}</td>
+                      <td>{row.inside ? '\u25cb' : '-'}</td>
                       <td>{row.reentryCount}</td>
                     </tr>
                   ))}
@@ -201,61 +214,78 @@ export default function TicketAdmin() {
               </table>
             </article>
 
-            <article className="admin-panel">
-              <h3>재입장·퇴장 정책</h3>
+            <article className="detail-card">
+              <h3>재입장 · 퇴장 정책</h3>
               <form onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
-                <label htmlFor="policy-mode">재입장</label>
-                <select id="policy-mode" name="reentryMode" defaultValue={session.reentryMode}>
-                  <option value="DISABLED">DISABLED · 재입장 불가</option>
-                  <option value="LIMITED">LIMITED · 횟수 제한</option>
-                  <option value="UNLIMITED">UNLIMITED · 무제한</option>
-                </select>
-                <label htmlFor="policy-max">재입장 횟수</label>
-                <input id="policy-max" name="reentryMax" type="number" min={0}
-                  defaultValue={session.reentryMax} />
-                <label htmlFor="policy-grace">퇴장 후 유효 시간(분)</label>
-                <input id="policy-grace" name="reentryGraceMinutes" type="number" min={0}
-                  defaultValue={session.reentryGraceMinutes} />
-                <label htmlFor="policy-cooldown">중복 스캔 무시(초)</label>
-                <input id="policy-cooldown" name="reentryCooldownSeconds" type="number" min={0}
-                  defaultValue={session.reentryCooldownSeconds} />
-                <label htmlFor="policy-unmatched">퇴장 미스캔</label>
-                <select id="policy-unmatched" name="unmatchedExit" defaultValue={session.unmatchedExit}>
-                  <option value="STRICT">STRICT · 안내 데스크만</option>
-                  <option value="LENIENT">LENIENT · 장시간 후 자동 보정</option>
-                  <option value="AUTO_EXIT">AUTO_EXIT · 자동 정리까지</option>
-                </select>
-                <label className="admin-check">
+                <div className="field">
+                  <label htmlFor="policy-mode">재입장</label>
+                  <select id="policy-mode" name="reentryMode" defaultValue={session.reentryMode}>
+                    <option value="DISABLED">DISABLED · 재입장 불가</option>
+                    <option value="LIMITED">LIMITED · 횟수 제한</option>
+                    <option value="UNLIMITED">UNLIMITED · 무제한</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="policy-max">재입장 횟수</label>
+                  <input id="policy-max" name="reentryMax" type="number" min={0} defaultValue={session.reentryMax} />
+                </div>
+                <div className="field">
+                  <label htmlFor="policy-grace">퇴장 후 유효 시간(분)</label>
+                  <input id="policy-grace" name="reentryGraceMinutes" type="number" min={0}
+                    defaultValue={session.reentryGraceMinutes} />
+                </div>
+                <div className="field">
+                  <label htmlFor="policy-cooldown">중복 스캔 무시(초)</label>
+                  <input id="policy-cooldown" name="reentryCooldownSeconds" type="number" min={0}
+                    defaultValue={session.reentryCooldownSeconds} />
+                </div>
+                <div className="field">
+                  <label htmlFor="policy-unmatched">퇴장 미스캔</label>
+                  <select id="policy-unmatched" name="unmatchedExit" defaultValue={session.unmatchedExit}>
+                    <option value="STRICT">STRICT · 안내 데스크만</option>
+                    <option value="LENIENT">LENIENT · 장시간 후 자동 보정</option>
+                    <option value="AUTO_EXIT">AUTO_EXIT · 자동 정리까지</option>
+                  </select>
+                </div>
+                <label className="field-inline">
                   <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
                   퇴장 스캔 필수
                 </label>
-                <button className="secondary" type="submit">정책 저장</button>
+                <button className="btn-secondary" type="submit">정책 저장</button>
               </form>
-              <p className="ticket-hint">
+              <p className="hint-text">
                 장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
                 어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
               </p>
             </article>
 
-            <article className="admin-panel">
+            <article className="detail-card">
               <h3>게이트 단말</h3>
               <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
-                <label htmlFor="gate-new-id">게이트 ID</label>
-                <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_-]{1,32}" required />
-                <label htmlFor="gate-new-label">이름</label>
-                <input id="gate-new-label" name="label" />
-                <label htmlFor="gate-new-zone">구역</label>
-                <input id="gate-new-zone" name="zone" />
-                <label htmlFor="gate-new-direction">방향</label>
-                <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
-                  <option value="IN">IN · 입장 전용</option>
-                  <option value="OUT">OUT · 퇴장 전용</option>
-                  <option value="BIDIRECTIONAL">BIDIRECTIONAL · 겸용</option>
-                </select>
-                <button className="secondary" type="submit">단말 등록</button>
+                <div className="field">
+                  <label htmlFor="gate-new-id">게이트 ID</label>
+                  <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_-]{1,32}" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="gate-new-label">이름</label>
+                  <input id="gate-new-label" name="label" />
+                </div>
+                <div className="field">
+                  <label htmlFor="gate-new-zone">구역</label>
+                  <input id="gate-new-zone" name="zone" />
+                </div>
+                <div className="field">
+                  <label htmlFor="gate-new-direction">방향</label>
+                  <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
+                    <option value="IN">IN · 입장 전용</option>
+                    <option value="OUT">OUT · 퇴장 전용</option>
+                    <option value="BIDIRECTIONAL">BIDIRECTIONAL · 겸용</option>
+                  </select>
+                </div>
+                <button className="btn-secondary" type="submit">단말 등록</button>
               </form>
               {gateToken && (
-                <p className="ticket-notice" role="status">
+                <p className="notice-text" role="status">
                   게이트 토큰: <code>{gateToken}</code><br />
                   다시 확인할 수 없어요. 단말의 <code>/gate</code> 화면에 바로 입력해 주세요.
                 </p>

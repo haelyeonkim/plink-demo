@@ -25,7 +25,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * Transfer moves the right and nothing else: the recipient registers their own passkey
  * against their own mailbox, and the sender's link dies the moment that completes.
  */
-@SpringBootTest
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = "spring.config.import=")
 @Import(RecordingEmail.class)
 class TransferFlowTest {
 

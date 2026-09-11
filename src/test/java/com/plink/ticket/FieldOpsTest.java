@@ -30,7 +30,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Location binding, offline replay, anomaly signals and staff corrections. */
-@SpringBootTest
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = "spring.config.import=")
 @Import(RecordingEmail.class)
 class FieldOpsTest {
 
