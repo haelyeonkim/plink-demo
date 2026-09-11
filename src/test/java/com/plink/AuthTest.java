@@ -12,7 +12,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(properties = {"plink.auth.google-client-id=test-client", "plink.auth.google-client-secret=test-secret"})
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = {"spring.config.import=",
+    "plink.auth.base-url=http://localhost:3000","plink.auth.google-client-id=test-client", "plink.auth.google-client-secret=test-secret"})
 @AutoConfigureMockMvc
 class AuthTest {
     @Autowired MockMvc mvc;

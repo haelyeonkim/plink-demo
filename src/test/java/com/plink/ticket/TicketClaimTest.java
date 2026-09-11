@@ -26,7 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The claim path: a personal URL plus control of the mailbox it was sent to. The
  * mobile-only policy is set to ENFORCE here so both sides of it are exercised.
  */
-@SpringBootTest(properties = { "plink.ticket.mobile-only=ENFORCE" })
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = {"spring.config.import=", "plink.ticket.mobile-only=ENFORCE" })
 @AutoConfigureMockMvc
 @Import(RecordingEmail.class)
 class TicketClaimTest {

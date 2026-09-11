@@ -1,0 +1,5 @@
+# numpy is left to opencv's own resolution: pinning it conflicts with the wheel.
+fastapi>=0.120
+uvicorn[standard]>=0.38
+pydantic>=2.12
+opencv-python-headless>=4.12

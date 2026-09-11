@@ -33,7 +33,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * bytes rather than people, which is enough to pin the parts that are ours: consent,
  * encrypted storage, de-duplication, the 1:N margin rule, retention and withdrawal.
  */
-@SpringBootTest
+// Pinned to the local backend so the suite never depends on a developer's .env
+// pointing at a running face service.
+// Isolated from ./.env: the suite must not depend on whichever origin, secret or
+// face service a developer happens to have configured locally.
+@SpringBootTest(properties = {"spring.config.import=", "plink.ticket.face.service-url="})
 @Import(RecordingEmail.class)
 class FaceTrackTest {
 

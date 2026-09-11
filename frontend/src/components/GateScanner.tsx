@@ -222,18 +222,23 @@ export default function GateScanner() {
   if (!gate) {
     return (
       <section className="page-section">
-        <div className="gate-card">
+        <div className="access-card">
+          <p className="eyebrow center"><span></span> GATE TERMINAL</p>
           <h2>게이트 단말 연결</h2>
-          <p className="ticket-hint">주최자 콘솔에서 발급한 게이트 ID와 토큰을 입력하세요. 토큰은 이 단말에만 저장됩니다.</p>
+          <p className="hint-text">주최자 콘솔에서 발급한 게이트 ID와 토큰을 입력하세요. 토큰은 이 단말에만 저장됩니다.</p>
           <form onSubmit={connect}>
-            <label htmlFor="gate-id">게이트 ID</label>
-            <input id="gate-id" value={gateId} onChange={e => setGateId(e.target.value)} required />
-            <label htmlFor="gate-token">게이트 토큰</label>
-            <input id="gate-token" type="password" value={gateToken}
-              onChange={e => setGateToken(e.target.value)} required />
-            <button className="primary" type="submit">연결</button>
+            <div className="field">
+              <label htmlFor="gate-id">게이트 ID</label>
+              <input id="gate-id" value={gateId} onChange={e => setGateId(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label htmlFor="gate-token">게이트 토큰</label>
+              <input id="gate-token" type="password" value={gateToken}
+                onChange={e => setGateToken(e.target.value)} required />
+            </div>
+            <button className="btn-primary" type="submit">연결</button>
           </form>
-          {error && <p className="ticket-error" role="alert">{error}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
         </div>
       </section>
     );
@@ -250,10 +255,10 @@ export default function GateScanner() {
           {gate.label || gate.gateId} · {gate.sessionName}
           {queued > 0 && <strong> · 오프라인 대기 {queued}건</strong>}
         </span>
-        <button className="secondary" onClick={() => setScanning(value => !value)}>
+        <button className="btn-tiny" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
-        <button className="secondary" onClick={() => setFaceMode(value => !value)}>
+        <button className="btn-tiny" onClick={() => setFaceMode(value => !value)}>
           {faceMode ? '얼굴 인식 끄기' : '얼굴 인식 켜기'}
         </button>
       </header>
@@ -273,7 +278,7 @@ export default function GateScanner() {
           ? <><strong>{outcome.headline}</strong><span>{outcome.detail}</span></>
           : <span>입장권을 비춰 주세요.</span>}
       </div>
-      {error && <p className="ticket-error" role="alert">{error}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
     </section>
   );
 }
