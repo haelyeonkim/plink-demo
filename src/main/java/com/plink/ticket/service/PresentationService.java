@@ -46,8 +46,12 @@ public class PresentationService {
         return value;
     }
 
-    /** Issued only after a successful user-verifying assertion on the bound passkey. */
     public Map<String, Object> issue(Ticket ticket, String direction, boolean uv) {
+        return issue(ticket, direction, uv, new GeoCheck.Result(null, null, null));
+    }
+
+    /** Issued only after a successful user-verifying assertion on the bound passkey. */
+    public Map<String, Object> issue(Ticket ticket, String direction, boolean uv, GeoCheck.Result geo) {
         Instant now = Instant.now();
         if (grants.countSince(ticket.id, Timestamp.from(now.minus(1, ChronoUnit.HOURS)))
                 >= properties.getPresentationsPerHour()) {
@@ -63,6 +67,8 @@ public class PresentationService {
         grant.direction = direction;
         grant.secret = Secrets.randomToken(32);
         grant.uv = uv;
+        grant.geoOk = geo.ok;
+        grant.geoDistanceMeters = geo.distanceMeters;
         grant.issuedAt = Timestamp.from(now);
         grant.expiresAt = Timestamp.from(now.plusSeconds(properties.getPresentationTtlSeconds()));
         grants.insert(grant);
@@ -75,6 +81,7 @@ public class PresentationService {
         result.put("periodSeconds", properties.getCodePeriodSeconds());
         result.put("expiresAt", grant.expiresAt.toInstant().toString());
         result.put("serverTime", now.toString());
+        if (geo.note != null) result.put("locationNote", geo.note);
         return result;
     }
 
@@ -90,6 +97,15 @@ public class PresentationService {
      * refusal, never a partial acceptance.
      */
     public Verified verify(String code) {
+        return verify(code, false);
+    }
+
+    /**
+     * @param captured true when replaying a movement a terminal recorded offline: the
+     *                 grant was live at capture time, so expiry alone must not discard a
+     *                 real entry. Signature, counter and single-use nonce still hold.
+     */
+    public Verified verify(String code, boolean captured) {
         String[] parts = code == null ? new String[0] : code.trim().split("\\.");
         if (parts.length != 6 || !PREFIX.equals(parts[0])) {
             throw deny("입장권 코드가 아니에요.");
@@ -100,7 +116,10 @@ public class PresentationService {
         }
         Grant grant = grants.lockById(grantId).orElseThrow(() -> deny("만료된 코드예요. 다시 인증해 주세요."));
         if (grant.consumed()) throw deny("이미 사용한 코드예요.");
-        if (grant.expired()) throw deny("코드 유효 시간이 지났어요. 다시 인증해 주세요.");
+        // A superseded grant is dead online, but an offline capture of it is still a
+        // movement that happened.
+        if (!captured && grant.revoked) throw deny("만료된 코드예요. 다시 인증해 주세요.");
+        if (!captured && grant.expired()) throw deny("코드 유효 시간이 지났어요. 다시 인증해 주세요.");
 
         long counter, seconds;
         try {
@@ -114,7 +133,7 @@ public class PresentationService {
             throw deny("코드 서명이 올바르지 않아요.");
         }
         long skew = Math.abs(Instant.now().getEpochSecond() - seconds);
-        if (skew > properties.getClockSkewSeconds() + properties.getCodePeriodSeconds()) {
+        if (!captured && skew > properties.getClockSkewSeconds() + properties.getCodePeriodSeconds()) {
             throw deny("코드가 만료되었어요. 화면을 새로 고쳐 주세요.");
         }
         if (counter <= grant.lastCounter) throw deny("이미 지난 코드예요.");

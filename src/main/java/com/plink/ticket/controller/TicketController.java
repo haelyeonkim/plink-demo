@@ -91,7 +91,8 @@ public class TicketController {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         Map<String, String> input = body == null ? Map.of() : body;
         return passkeyService.start(resolved, input.get("intent"), input.get("direction"),
-            input.get("toEmail"), session);
+            input.get("toEmail"), session, decimal(input.get("lat")), decimal(input.get("lon")),
+            decimal(input.get("accuracy")));
     }
 
     /** Binds the passkey, issues a presentation grant, or records the transfer request. */
@@ -187,6 +188,12 @@ public class TicketController {
     private String purpose(TicketService.Resolved resolved) {
         if (resolved.viaTransfer()) return "ticket-transfer:" + resolved.claim.id;
         return (isClaimed(resolved) ? "ticket-recover:" : "ticket-claim:") + resolved.ticket.id;
+    }
+
+    private static Double decimal(String value) {
+        if (value == null || value.isBlank()) return null;
+        try { return Double.valueOf(value); }
+        catch (NumberFormatException ignored) { return null; }
     }
 
     private static String trim(String value) {

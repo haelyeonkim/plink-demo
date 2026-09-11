@@ -5,11 +5,13 @@ import com.plink.ticket.model.Gate;
 import com.plink.ticket.face.FaceService;
 import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.GateAuthService;
+import com.plink.ticket.service.OfflineSyncService;
 import com.plink.ticket.service.TicketService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,13 +25,15 @@ public class GateController {
     private final AdmissionService admissions;
     private final TicketService tickets;
     private final FaceService faces;
+    private final OfflineSyncService offline;
 
     public GateController(GateAuthService auth, AdmissionService admissions, TicketService tickets,
-            FaceService faces) {
+            FaceService faces, OfflineSyncService offline) {
         this.auth = auth;
         this.admissions = admissions;
         this.tickets = tickets;
         this.faces = faces;
+        this.offline = offline;
     }
 
     @GetMapping
@@ -77,6 +81,31 @@ public class GateController {
             admissions.recordDenied(gate, null, "FACE", refused.getReason());
             throw refused;
         }
+    }
+
+    /**
+     * Hands back what the movements the terminal queued while offline. Nothing here is
+     * accepted on the terminal's word: each code is re-verified and anything that
+     * contradicts the ledger is flagged for investigation instead of applied.
+     */
+    @PostMapping("/sync")
+    public Map<String, Object> sync(@PathVariable String gateId,
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestBody Map<String, Object> body) {
+        Gate gate = auth.authenticate(gateId, token);
+        Object events = body.get("events");
+        if (!(events instanceof List<?> list)) {
+            return Map.of("received", 0, "applied", 0, "flagged", 0, "conflicts", List.of());
+        }
+        List<Map<String, Object>> queued = new java.util.ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                Map<String, Object> event = new java.util.LinkedHashMap<>();
+                map.forEach((key, value) -> event.put(String.valueOf(key), value));
+                queued.add(event);
+            }
+        }
+        return offline.replay(gate, queued);
     }
 
     @PostMapping("/scan")

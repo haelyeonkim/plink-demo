@@ -41,6 +41,51 @@ public class AdmissionRepository {
             ticketId, sessionId, direction, gateId, method, result, reason, grantId);
     }
 
+    /** Ledger row with the extra provenance the field tools need. */
+    public void appendDetailed(Long ticketId, Long sessionId, String direction, String gateId, String method,
+            String result, String reason, String grantId, String operator, boolean offline, boolean flagged) {
+        jdbc.update("INSERT INTO admission_event (ticket_id, session_id, direction, gate_id, method, result, "
+            + "reason, presentation_session_id, operator, offline, flagged) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ticketId, sessionId, direction, gateId, method, result, reason, grantId, operator, offline, flagged);
+    }
+
+    /** Movements a terminal recorded while it could not reach the presence state. */
+    public List<Map<String, Object>> flaggedEvents(long sessionId) {
+        return jdbc.queryForList("SELECT ticket_id, direction, gate_id, result, reason, occurred_at "
+            + "FROM admission_event WHERE session_id = ? AND flagged = TRUE ORDER BY id DESC", sessionId);
+    }
+
+    public List<Map<String, Object>> repeatedRefusals(long sessionId, int minimum) {
+        return jdbc.queryForList("SELECT ticket_id, COUNT(*) AS refusals FROM admission_event "
+            + "WHERE session_id = ? AND result = 'DENIED' AND ticket_id IS NOT NULL "
+            + "GROUP BY ticket_id HAVING COUNT(*) >= ? ORDER BY COUNT(*) DESC", sessionId, minimum);
+    }
+
+    /**
+     * Two accepted movements for one ticket at different gates inside a short window:
+     * nobody walks that fast, so the pair is worth a human look.
+     */
+    public List<Map<String, Object>> impossibleMovements(long sessionId, int withinSeconds) {
+        return jdbc.queryForList(
+            "SELECT a.ticket_id, a.gate_id AS first_gate, b.gate_id AS second_gate, "
+            + "a.occurred_at AS first_at, b.occurred_at AS second_at "
+            + "FROM admission_event a JOIN admission_event b ON b.ticket_id = a.ticket_id AND b.id > a.id "
+            + "WHERE a.session_id = ? AND b.session_id = ? "
+            + "AND a.result IN ('ADMITTED','EXITED') AND b.result IN ('ADMITTED','EXITED') "
+            + "AND a.gate_id IS NOT NULL AND b.gate_id IS NOT NULL AND a.gate_id <> b.gate_id "
+            + "AND b.occurred_at <= ? ORDER BY a.ticket_id",
+            sessionId, sessionId, java.sql.Timestamp.from(java.time.Instant.now()))
+            .stream()
+            .filter(row -> {
+                java.sql.Timestamp first = (java.sql.Timestamp) row.get("first_at");
+                java.sql.Timestamp second = (java.sql.Timestamp) row.get("second_at");
+                long gap = (second.getTime() - first.getTime()) / 1000;
+                return gap >= 0 && gap <= withinSeconds;
+            })
+            .toList();
+    }
+
     public Optional<Presence> lock(long ticketId) {
         return jdbc.query("SELECT * FROM ticket_presence WHERE ticket_id = ? FOR UPDATE", PRESENCE, ticketId)
             .stream().findFirst();

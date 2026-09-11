@@ -6,7 +6,9 @@ import java.sql.Timestamp;
 public class Grant {
     public String id, direction, secret;
     public long ticketId, lastCounter;
-    public boolean uv;
+    public boolean uv, revoked;
+    public Boolean geoOk;
+    public Double geoDistanceMeters;
     public Timestamp issuedAt, expiresAt, consumedAt;
 
     public boolean consumed() { return consumedAt != null; }

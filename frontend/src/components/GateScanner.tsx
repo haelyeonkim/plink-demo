@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan } from '../ticket/api';
+import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan, gateSync } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 
 interface GateInfo {
@@ -19,6 +19,18 @@ interface Outcome {
 }
 
 const STORAGE = 'plink.gate.credentials';
+const QUEUE = 'plink.gate.queue';
+
+interface Queued { code: string; method: string; capturedAt: string }
+
+function readQueue(): Queued[] {
+  try { return JSON.parse(localStorage.getItem(QUEUE) || '[]') as Queued[]; }
+  catch { return []; }
+}
+
+function writeQueue(events: Queued[]) {
+  localStorage.setItem(QUEUE, JSON.stringify(events));
+}
 
 /**
  * Gate terminal. One tablet camera handles both jobs: every frame is offered to the QR
@@ -34,6 +46,7 @@ export default function GateScanner() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [scanning, setScanning] = useState(false);
   const [faceMode, setFaceMode] = useState(false);
+  const [queued, setQueued] = useState(readQueue().length);
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLCanvasElement>(null);
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
@@ -74,12 +87,21 @@ export default function GateScanner() {
         at: Date.now(),
       });
     } catch (err) {
-      setOutcome({
-        kind: 'deny',
-        headline: '거부',
-        detail: err instanceof Error ? err.message : '확인할 수 없는 코드예요.',
-        at: Date.now(),
-      });
+      // A transport failure is not a refusal: the visitor is in front of us and the
+      // read was real, so it is queued and replayed when the network returns.
+      if (err instanceof TypeError) {
+        const events = [...readQueue(), { code, method: 'QR', capturedAt: new Date().toISOString() }];
+        writeQueue(events);
+        setQueued(events.length);
+        setOutcome({ kind: 'ok', headline: '오프라인 기록', detail: '연결이 돌아오면 서버와 맞춥니다.', at: Date.now() });
+      } else {
+        setOutcome({
+          kind: 'deny',
+          headline: '거부',
+          detail: err instanceof Error ? err.message : '확인할 수 없는 코드예요.',
+          at: Date.now(),
+        });
+      }
     } finally {
       // Hold briefly so the operator sees the result before the next read.
       window.setTimeout(() => { inFlight.current = false; }, 1200);
@@ -173,6 +195,30 @@ export default function GateScanner() {
     };
   }, [gate, scanning, submit]);
 
+  const flush = useCallback(async () => {
+    const events = readQueue();
+    if (events.length === 0 || !gate) return;
+    try {
+      const result = await gateSync(gateId.trim(), gateToken.trim(), events);
+      writeQueue([]);
+      setQueued(0);
+      if (result.flagged > 0) {
+        setError(`오프라인 기록 ${result.flagged}건이 장내 상태와 어긋나 조사 큐로 넘어갔어요.`);
+      }
+    } catch { /* stay queued until the network is back */ }
+  }, [gate, gateId, gateToken]);
+
+  useEffect(() => {
+    if (!gate) return;
+    void flush();
+    const timer = window.setInterval(() => { void flush(); }, 15000);
+    window.addEventListener('online', flush);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('online', flush);
+    };
+  }, [gate, flush]);
+
   if (!gate) {
     return (
       <section className="page-section">
@@ -200,7 +246,10 @@ export default function GateScanner() {
         <span className={`gate-direction gate-${gate.direction.toLowerCase()}`}>
           {gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
         </span>
-        <span className="gate-label">{gate.label || gate.gateId} · {gate.sessionName}</span>
+        <span className="gate-label">
+          {gate.label || gate.gateId} · {gate.sessionName}
+          {queued > 0 && <strong> · 오프라인 대기 {queued}건</strong>}
+        </span>
         <button className="secondary" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>

@@ -12,6 +12,9 @@ public class EventSession {
     public boolean faceRequired, reentryRequiresFace;
     public String faceLiveness, faceChallengeOn;
     public int faceRetentionDays;
+    public Double venueLat, venueLon;
+    public int geoRadiusMeters;
+    public String geoMode;
     public boolean exitScanRequired;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }
