@@ -1,13 +1,24 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { accessLink } from '../api';
 
 export default function Hero() {
   const [code, setCode] = useState('');
   const navigate = useNavigate();
 
-  const handleAccess = (e: React.FormEvent) => {
+  const handleAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (code.trim()) navigate(`/s/${code.trim()}`);
+    const value = code.trim();
+    if (!value) {
+      window.alert('공유받은 코드를 입력해 주세요.');
+      return;
+    }
+    try {
+      await accessLink(value);
+      navigate(`/s/${encodeURIComponent(value)}`);
+    } catch {
+      window.alert('유효한 링크 코드를 찾을 수 없습니다. 코드를 다시 확인해 주세요.');
+    }
   };
 
   return (
@@ -44,7 +55,7 @@ export default function Hero() {
               <img className="card-logo" src="/logo-small.svg" alt="P" width="28" height="28" />
               <span className="dots">&bull;&bull;&bull;</span>
             </div>
-            <div className="lock"><span>&#x25CF;</span></div>
+            <div className="lock"><img src="/icon-lock.svg" alt="보호" /></div>
             <p className="secure">PROTECTED LINK</p>
             <h2>2026 브랜드 리뉴얼<br />최종 제안서</h2>
             <div className="recipient">
@@ -53,18 +64,18 @@ export default function Hero() {
               <em>인증됨</em>
             </div>
             <div className="expires">
-              <span>&#x25F7;</span>
+              <span><img src="/icon-clock.svg" alt="만료" /></span>
               <div><small>링크 만료까지</small><b>2일 14시간</b></div>
             </div>
             <button>안전하게 링크 열기 <span>&rarr;</span></button>
             <p className="notice">이 링크는 수신을 확정한 패스키로 열 수 있어요.</p>
           </div>
           <div className="float-card check">
-            <span>&#x2713;</span>
+            <span><img src="/icon-check.svg" alt="확인" /></span>
             <div><small>열람 확인</small><b>방금 링크를 확인했어요</b></div>
           </div>
           <div className="float-card shield">
-            <span>&#x25C6;</span>
+            <span><img src="/icon-shield.svg" alt="보안" /></span>
             <div><small>P-LINK SECURITY</small><b>보호 중</b></div>
           </div>
         </div>
@@ -77,21 +88,21 @@ export default function Hero() {
         <p className="section-lead">링크 하나에도 배려와 안전, 우선순위를 담았습니다.</p>
         <div className="feature-grid">
           <article className="violet">
-            <div className="feature-icon">&#x2301;</div>
+            <div className="feature-icon"><img src="/icon-link.svg" alt="링크" /></div>
             <p>P for</p>
             <h3>Private<span>.</span></h3>
             <h4>보여줄 사람만</h4>
             <p className="feature-text">받을 사람에게 링크를 전달하면, 처음 등록한 패스키에 접근 권한이 연결돼요.</p>
           </article>
           <article className="blue">
-            <div className="feature-icon">&#x25C7;</div>
+            <div className="feature-icon"><img src="/icon-lock.svg" alt="보호" /></div>
             <p>P for</p>
             <h3>Protected<span>.</span></h3>
             <h4>안전하게 보호</h4>
             <p className="feature-text">비밀번호와 만료일을 설정해 중요한 콘텐츠를 지켜요.</p>
           </article>
           <article className="mint">
-            <div className="feature-icon">&#x2197;</div>
+            <div className="feature-icon"><img src="/icon-check.svg" alt="확인" /></div>
             <p>P for</p>
             <h3>Priority<span>.</span></h3>
             <h4>중요한 순간 먼저</h4>
@@ -116,14 +127,14 @@ export default function Hero() {
 
       {/* Mini sections */}
       <section className="mini-sections">
-        <article id="manage-intro">
+        <Link className="mini-section-link" to="/manage" id="manage-intro">
           <b>링크 관리</b>
           <p>공유한 링크의 상태와 대상을 한눈에 관리하세요.</p>
-        </article>
-        <article id="stats">
+        </Link>
+        <Link className="mini-section-link" to="/stats" id="stats">
           <b>링크 통계</b>
           <p>열람 여부와 시간을 확인해 중요한 순간을 놓치지 마세요.</p>
-        </article>
+        </Link>
       </section>
 
       {/* Access code form */}

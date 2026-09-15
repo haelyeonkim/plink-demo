@@ -3,6 +3,7 @@ package com.plink.controller;
 import com.plink.model.LinkView;
 import com.plink.model.ProtectedLink;
 import com.plink.service.LinkService;
+import com.plink.service.RecipientContact;
 import com.plink.repository.PasskeyRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
@@ -53,6 +54,7 @@ public class LinkController {
             Map<String, Object> vm = new LinkedHashMap<String, Object>();
             vm.put("viewerName", v.getViewerName());
             vm.put("viewedAt", v.getViewedAt());
+            vm.put("eventType", v.getEventType());
             views.add(vm);
         }
         body.put("views", views);
@@ -66,6 +68,9 @@ public class LinkController {
             return ResponseEntity.badRequest().build();
         }
         String title = (String) req.get("title");
+        if (title != null && title.length() > 50) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "링크 제목은 50자 이내로 입력해 주세요.");
+        }
         String password = (String) req.get("password");
         String recipientNames = (String) req.get("recipientNames");
 
@@ -83,6 +88,43 @@ public class LinkController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(link));
     }
 
+    @PostMapping("/batch")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<List<Map<String, Object>>> createBatch(@RequestBody Map<String, Object> req,
+            @AuthenticationPrincipal OidcUser user) {
+        owner(user);
+        Object raw = req.get("recipients");
+        if (!(raw instanceof List) || ((List<?>) raw).isEmpty() || ((List<?>) raw).size() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "수신자는 1~100명 입력해 주세요.");
+        }
+        List<String> recipients = new ArrayList<>();
+        Set<String> unique = new HashSet<>();
+        for (Object value : (List<?>) raw) {
+            if (!(value instanceof String)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "수신자 형식이 올바르지 않습니다.");
+            String contact = ((String) value).trim();
+            String kind = RecipientContact.type(contact);
+            boolean email = "email".equals(kind);
+            String phone = contact.replace("-", "");
+            if (kind == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이메일 또는 휴대폰 번호를 입력해 주세요.");
+            }
+            String normalized = email ? contact.toLowerCase(Locale.ROOT) : phone;
+            if (!unique.add(normalized)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "중복된 수신자가 있습니다.");
+            recipients.add(email ? contact : phone);
+        }
+        Object original = req.get("originalUrl");
+        if (!(original instanceof String) || !((String) original).matches("(?i)^https?://[^\\s]+$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "올바른 원본 링크를 입력해 주세요.");
+        }
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String recipient : recipients) {
+            Map<String, Object> single = new HashMap<>(req);
+            single.put("recipientNames", recipient);
+            results.add(createLink(single, user).getBody());
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(results);
+    }
+
     @GetMapping("/s/{shortCode}")
     public ResponseEntity<Map<String, Object>> accessLink(@PathVariable String shortCode) {
         Optional<ProtectedLink> optLink = linkService.getLinkByShortCode(shortCode);
@@ -90,13 +132,20 @@ public class LinkController {
             return ResponseEntity.notFound().build();
         }
         ProtectedLink link = optLink.get();
+        linkService.recordInitialOpen(link.getId());
         Map<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("shortCode", link.getShortCode());
         body.put("title", link.getTitle());
+        body.put("recipientContact", link.getRecipientNames());
+        body.put("senderLabel", "P-Link 관리자");
+        body.put("expiresAt", link.getExpiresAt());
+        body.put("maxViews", link.getMaxViews());
+        body.put("viewCount", link.getViewCount());
         body.put("hasPassword", link.hasPassword());
         body.put("expired", link.isExpired());
         body.put("exhausted", link.getMaxViews() > 0 && link.getViewCount() >= link.getMaxViews());
         body.put("claimed", passkeys.findByLinkId(link.getId()).isPresent());
+        body.put("recipientType", Boolean.TRUE.equals(body.get("claimed")) ? null : RecipientContact.type(link.getRecipientNames()));
         return ResponseEntity.ok(body);
     }
 

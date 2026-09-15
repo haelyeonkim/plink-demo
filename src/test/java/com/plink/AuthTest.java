@@ -12,7 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(properties = {"plink.auth.google-client-id=test-client", "plink.auth.google-client-secret=test-secret"})
+@SpringBootTest(properties = {"plink.auth.google-client-id=test-client", "plink.auth.google-client-secret=test-secret",
+    "plink.auth.base-url=http://localhost:3000"})
 @AutoConfigureMockMvc
 class AuthTest {
     @Autowired MockMvc mvc;
@@ -39,6 +40,7 @@ class AuthTest {
             .andExpect(header().string("Location", startsWith("https://accounts.google.com/")))
             .andExpect(header().string("Location", containsString("state=")))
             .andExpect(header().string("Location", containsString("nonce=")))
+            .andExpect(header().string("Location", containsString("prompt=select_account")))
             .andExpect(header().string("Location", containsString("redirect_uri=http://localhost:3000/login/oauth2/code/google")));
     }
 

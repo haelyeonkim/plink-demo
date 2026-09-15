@@ -7,6 +7,7 @@ public class LinkView {
     private Long linkId;
     private String viewerName;
     private Timestamp viewedAt;
+    private String eventType;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -19,4 +20,6 @@ public class LinkView {
 
     public Timestamp getViewedAt() { return viewedAt; }
     public void setViewedAt(Timestamp viewedAt) { this.viewedAt = viewedAt; }
+    public String getEventType() { return eventType; }
+    public void setEventType(String eventType) { this.eventType = eventType; }
 }

@@ -7,6 +7,7 @@ export default function Footer() {
         <img src="/logo.svg" alt="P-Link" height="22" />
       </Link>
       <p>Private by design. Priority by choice.</p>
+      <Link className="footer-privacy" to="/privacy">개인정보처리방침</Link>
       <small>&copy; 2026 P-Link. All rights reserved.</small>
     </footer>
   );

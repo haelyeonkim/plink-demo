@@ -60,15 +60,22 @@ export default function LinkList() {
           </div>
           {links.map((link) => (
             <div key={link.id} className="table-row" onClick={() => navigate(`/manage/${link.id}`)}>
-              <span className="cell-title">{link.title || link.originalUrl}</span>
+              <span className="cell-title">{link.title || link.originalUrl}<small className="link-recipient">{link.recipientNames}</small></span>
               <span className="cell-code">
                 <code>{link.shortCode}</code>
                 <button
-                  className="btn-tiny"
-                  onClick={(e) => { e.stopPropagation(); navigate(`/s/${link.shortCode}`); }}
-                  title="수신 화면 열기"
+                  className="btn-tiny code-action"
+                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`${window.location.origin}/s/${link.shortCode}`); }}
+                  title="공유 링크 복사"
                 >
-                  &#x2197;
+                  링크 복사
+                </button>
+                <button
+                  className="btn-tiny code-action"
+                  onClick={(e) => { e.stopPropagation(); navigate(`/s/${link.shortCode}`); }}
+                  title="공유 링크 열기"
+                >
+                  열기
                 </button>
               </span>
               <span className="cell-views">
@@ -84,7 +91,7 @@ export default function LinkList() {
                   onClick={(e) => { e.stopPropagation(); handleDelete(link.id); }}
                   title="삭제"
                 >
-                  &times;
+                  <img src="/delete.svg" alt="삭제" />
                 </button>
               </span>
             </div>

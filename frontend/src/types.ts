@@ -19,9 +19,16 @@ export interface LinkDetail extends ProtectedLink {
 export interface LinkViewRecord {
   viewerName: string;
   viewedAt: string;
+  eventType: 'INITIAL_OPEN' | 'PASSKEY_AUTHENTICATED' | string;
 }
 
 export interface AccessInfo {
+  recipientType: 'email' | 'phone' | null;
+  recipientContact: string | null;
+  senderLabel: string;
+  expiresAt: string | null;
+  maxViews: number;
+  viewCount: number;
   shortCode: string;
   title: string | null;
   hasPassword: boolean;

@@ -19,11 +19,11 @@ export function supportsPasskeys() {
   return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
 }
 
-export async function openWithPasskey(code: string, password: string, viewerName: string): Promise<string> {
+export async function openWithPasskey(code: string, password: string, viewerName: string, recipientContact: string): Promise<string> {
   const base = `/api/links/s/${encodeURIComponent(code)}/passkey`;
   const { mode, options } = await readResponse(await mutate(`${base}/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, viewerName }),
+    body: JSON.stringify({ password, viewerName, recipientContact }),
   }));
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);

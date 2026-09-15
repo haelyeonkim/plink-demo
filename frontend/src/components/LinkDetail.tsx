@@ -54,10 +54,12 @@ export default function LinkDetail() {
             <dt>공유 코드</dt>
             <dd>
               <code>{link.shortCode}</code>
-              <button className="btn-tiny" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/s/${link.shortCode}`)}>복사</button>
-              <button className="btn-tiny" onClick={() => navigate(`/s/${link.shortCode}`)}>수신 화면</button>
+              <span className="detail-actions">
+                <button className="btn-tiny" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/s/${link.shortCode}`)}>링크 복사</button>
+                <button className="btn-tiny" onClick={() => navigate(`/s/${link.shortCode}`)}>공유 링크 열기</button>
+              </span>
             </dd>
-            <dt>수신자 메모 (관리용)</dt>
+            <dt>수신자 연락처</dt>
             <dd>{link.recipientNames || '-'}</dd>
             <dt>수신 안내</dt><dd>수신 화면에서 직접 패스키를 등록하면 관리자 본인에게 귀속됩니다. 수신자에게 전달할 링크는 먼저 등록하지 마세요.</dd>
             <dt>생성일</dt>
@@ -79,7 +81,8 @@ export default function LinkDetail() {
                 <li key={i}>
                   <span className="viewer-avatar">{v.viewerName.charAt(0)}</span>
                   <div>
-                    <b>{v.viewerName}</b>
+                    <b>{v.eventType === 'INITIAL_OPEN' ? '처음 열람' : '패스키 인증'}</b>
+                    {v.viewerName && <span className="view-viewer"> · {v.viewerName}</span>}
                     <small>{timeAgo(v.viewedAt)}</small>
                   </div>
                 </li>

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS link_view (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     link_id     BIGINT NOT NULL,
     viewer_name VARCHAR(100),
+    event_type  VARCHAR(32) DEFAULT 'PASSKEY_AUTHENTICATED',
     viewed_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (link_id) REFERENCES protected_link(id) ON DELETE CASCADE
 );

@@ -44,7 +44,7 @@ public class PasskeyService {
         if (link.getMaxViews() > 0 && link.getViewCount() >= link.getMaxViews())
             throw fail(HttpStatus.GONE, "열람 가능한 횟수를 모두 사용했어요.");
     }
-    public Map<String,Object> start(String code, String password, String name, HttpSession session) {
+    public Map<String,Object> start(String code, String password, String name, String recipientContact, HttpSession session) {
         // Only one outstanding ceremony per browser session. Starting again replaces the old challenge.
         synchronized (session) { session.removeAttribute(PENDING); }
         ProtectedLink link = links.findByShortCode(code).orElseThrow(() -> fail(HttpStatus.NOT_FOUND, "링크를 찾을 수 없어요."));
@@ -57,6 +57,10 @@ public class PasskeyService {
             String options;
             boolean claimed = passkeys.findByLinkId(link.getId()).isPresent();
             if (!claimed) {
+                if (RecipientContact.type(link.getRecipientNames()) != null
+                        && !RecipientContact.matches(link.getRecipientNames(), recipientContact)) {
+                    throw fail(HttpStatus.FORBIDDEN, "링크를 전달받은 수신자의 정보와 일치하지 않아요. 링크를 전달받은 이메일 또는 전화번호를 확인해 주세요.");
+                }
                 byte[] handle = new byte[32]; random.nextBytes(handle);
                 PublicKeyCredentialCreationOptions request = rp.startRegistration(StartRegistrationOptions.builder()
                     .user(UserIdentity.builder().name(code).displayName("P-Link · " + (link.getTitle() == null ? code : link.getTitle()))
@@ -121,7 +125,7 @@ public class PasskeyService {
             name = saved.receiverName;
         }
         links.incrementViewCount(link.getId());
-        views.save(link.getId(), name);
+        views.save(link.getId(), name, "PASSKEY_AUTHENTICATED");
         return link.getOriginalUrl();
     }
 }

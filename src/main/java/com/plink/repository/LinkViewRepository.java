@@ -17,6 +17,7 @@ public class LinkViewRepository {
         view.setLinkId(rs.getLong("link_id"));
         view.setViewerName(rs.getString("viewer_name"));
         view.setViewedAt(rs.getTimestamp("viewed_at"));
+        view.setEventType(rs.getString("event_type"));
         return view;
     };
 
@@ -31,7 +32,17 @@ public class LinkViewRepository {
     }
 
     public void save(Long linkId, String viewerName) {
-        jdbc.update("INSERT INTO link_view (link_id, viewer_name) VALUES (?, ?)",
-                linkId, viewerName);
+        save(linkId, viewerName, "PASSKEY_AUTHENTICATED");
+    }
+
+    public void save(Long linkId, String viewerName, String eventType) {
+        jdbc.update("INSERT INTO link_view (link_id, viewer_name, event_type) VALUES (?, ?, ?)",
+                linkId, viewerName, eventType);
+    }
+
+    public void saveInitialOpen(Long linkId) {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM link_view WHERE link_id = ? AND event_type = 'INITIAL_OPEN'", Integer.class, linkId) == 0) {
+            save(linkId, null, "INITIAL_OPEN");
+        }
     }
 }

@@ -62,7 +62,8 @@ cd "$PROJECT_DIR"
 ./mvnw -q clean package -DskipTests -Dserver.port="$BACKEND_PORT"
 
 echo "==> Starting backend on :$BACKEND_PORT ..."
-nohup env APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 < /dev/null &
+# Let Spring resolve APP_BASE_URL from the environment or the project's .env.
+nohup java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 < /dev/null &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 
@@ -72,7 +73,7 @@ cd "$PROJECT_DIR/frontend"
 npm install --silent
 
 echo "==> Starting frontend on :$FRONTEND_PORT ..."
-nohup env BACKEND_URL="http://localhost:$BACKEND_PORT" npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" >> "$LOG_DIR/frontend.log" 2>&1 < /dev/null &
+nohup env BACKEND_URL="http://localhost:$BACKEND_PORT" node "$PROJECT_DIR/frontend/node_modules/vite/bin/vite.js" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort >> "$LOG_DIR/frontend.log" 2>&1 < /dev/null &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "$PID_DIR/frontend.pid"
 

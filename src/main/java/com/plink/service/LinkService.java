@@ -58,6 +58,10 @@ public class LinkService {
         return linkViewRepository.findByLinkId(linkId);
     }
 
+    public void recordInitialOpen(Long linkId) {
+        linkViewRepository.saveInitialOpen(linkId);
+    }
+
     public void deleteLink(Long id) {
         linkRepository.deleteById(id);
     }
