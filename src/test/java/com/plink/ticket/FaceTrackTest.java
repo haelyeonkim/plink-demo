@@ -8,6 +8,7 @@ import com.plink.ticket.model.Ticket;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.FaceRepository;
 import com.plink.ticket.repository.GateRepository;
+import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.GateAuthService;
@@ -37,7 +38,10 @@ import static org.junit.jupiter.api.Assertions.*;
 // pointing at a running face service.
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = {"spring.config.import=", "plink.ticket.face.service-url="})
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:facetracktest;DB_CLOSE_DELAY=-1",
+    "spring.datasource.username=sa", "spring.datasource.password=",
+    "spring.config.import=", "plink.admin.email=", "plink.admin.password=", "plink.ticket.face.service-url="})
 @Import(RecordingEmail.class)
 class FaceTrackTest {
 
@@ -46,10 +50,12 @@ class FaceTrackTest {
     @Autowired TemplateCipher cipher;
     @Autowired TicketService tickets;
     @Autowired TicketRepository ticketRepository;
+    @Autowired HolderRepository holders;
     @Autowired EventSessionRepository sessions;
     @Autowired GateRepository gates;
     @Autowired GateAuthService gateAuth;
     @Autowired AdmissionService admissions;
+    @Autowired com.plink.ticket.repository.AdmissionRepository admissionRepository;
 
     private long newSession() {
         return sessions.insert("얼굴 테스트 " + Secrets.randomAlnum(6), "테스트홀",
@@ -58,9 +64,10 @@ class FaceTrackTest {
     }
 
     private Ticket boundTicket(long sessionId, String email) {
-        Map<String, Object> issued = tickets.issue(sessionId, email, "A-1", null);
+        // A unique seat per ticket: one seat now belongs to one ticket per session.
+        Map<String, Object> issued = tickets.issue(sessionId, email, "A-" + Secrets.randomAlnum(5), null);
         long id = ((Number) issued.get("ticketId")).longValue();
-        ticketRepository.bind(id, email);
+        ticketRepository.bind(id, holderFor(email), email);
         return ticketRepository.findById(id).orElseThrow();
     }
 
@@ -69,10 +76,26 @@ class FaceTrackTest {
         return List.of((face + "-frame-with-enough-bytes-to-pass-the-size-check").getBytes(StandardCharsets.UTF_8));
     }
 
+    private long holderFor(String email) {
+        return holders.findByEmail(email).map(h -> h.id)
+            .orElseGet(() -> holders.create(email, tickets.userHandleFor(email)));
+    }
+
     private Gate gate(long sessionId, String direction) {
         String id = "g" + Secrets.randomAlnum(10);
-        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"));
+        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null);
         return gates.findById(id).orElseThrow();
+    }
+
+    @Test void aTicketAlreadyInsideCannotEnrolAFace() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "inside@example.com");
+        faces.consent(ticket, "inside@example.com", true);
+        admissionRepository.markInside(ticket.id, 1, 0, "entry");
+
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> faces.enrol(ticket, capture("inside")));
+        assertTrue(refused.getReason().contains("장내에 있는 동안"), refused.getReason());
     }
 
     @Test void enrolmentRequiresConsentFirst() {
@@ -122,7 +145,7 @@ class FaceTrackTest {
 
         ResponseStatusException refused = assertThrows(ResponseStatusException.class,
             () -> faces.enrol(second, capture("same-person")));
-        assertTrue(refused.getReason().contains("이미 이 회차의 다른 입장권"), refused.getReason());
+        assertTrue(refused.getReason().contains("이미 이 행사의 다른 입장권"), refused.getReason());
     }
 
     @Test void aFaceAtTheGateAdmitsThroughTheSameLedger() {
@@ -199,7 +222,7 @@ class FaceTrackTest {
     }
 
     @Test void templatesArePurgedWhenTheRetentionWindowEnds() {
-        long sessionId = sessions.insert("지난 회차", null,
+        long sessionId = sessions.insert("지난 행사", null,
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)),
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)));
         sessions.updateFacePolicy(sessionId, false, false, "PASSIVE", "LOW_SCORE_ONLY", 7);

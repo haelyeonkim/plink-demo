@@ -9,12 +9,23 @@ public class EventSession {
     public int reentryMax, reentryGraceMinutes, reentryCooldownSeconds, autoExitAfterMinutes;
     public int transferMax, transferClosesMinutesBefore;
     public boolean transferAfterFirstEntry;
-    public boolean faceRequired, reentryRequiresFace;
+    public boolean faceRequired, reentryRequiresFace, claimRequiresOtp;
     public String faceLiveness, faceChallengeOn;
     public int faceRetentionDays;
     public Double venueLat, venueLon;
     public int geoRadiusMeters;
     public String geoMode;
+    /** Newline-separated catalogue; empty means the console falls back to free text. */
+    public String seats, tiers;
+
+    public java.util.List<String> seatList() { return split(seats); }
+    public java.util.List<String> tierList() { return split(tiers); }
+
+    private static java.util.List<String> split(String raw) {
+        if (raw == null || raw.isBlank()) return java.util.List.of();
+        return java.util.Arrays.stream(raw.split("[\\r\\n,]"))
+            .map(String::trim).filter(value -> !value.isEmpty()).distinct().toList();
+    }
     public boolean exitScanRequired;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }

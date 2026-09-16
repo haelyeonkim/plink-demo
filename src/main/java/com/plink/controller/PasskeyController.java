@@ -7,13 +7,13 @@ import jakarta.servlet.http.HttpSession;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/links/s/{code}/passkey")
+@RequestMapping({ "/api/links/s/{code}/passkey", "/api/links/s/{slug}/{code}/passkey" })
 public class PasskeyController {
     private final PasskeyService service;
     public PasskeyController(PasskeyService service) { this.service=service; }
     @PostMapping("/options")
     public Map<String,Object> options(@PathVariable String code, @RequestBody Map<String,String> body, HttpSession session) {
-        return service.start(code, body.get("password"), body.get("viewerName"), session);
+        return service.start(code, body.get("password"), session);
     }
     @PostMapping("/finish")
     public Map<String,String> finish(@PathVariable String code, @RequestBody JsonNode credential, HttpSession session) {

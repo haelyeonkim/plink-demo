@@ -112,6 +112,15 @@ public class AdmissionRepository {
             + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ?", gateId, ticketId);
     }
 
+    /**
+     * Moves an existing INSIDE row back in time. Operations never call this; it exists so
+     * the day-change path can be exercised without waiting for midnight.
+     */
+    public void backdateInside(long ticketId, java.sql.Timestamp insideSince) {
+        jdbc.update("UPDATE ticket_presence SET inside_since = ?, last_event_at = ? WHERE ticket_id = ?",
+            insideSince, insideSince, ticketId);
+    }
+
     /** A new holder starts with a clean movement history; the ledger still holds the old one. */
     public void resetPresence(long ticketId) {
         jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE', entry_count = 0, reentry_count = 0, "
@@ -134,9 +143,51 @@ public class AdmissionRepository {
         return value == null ? 0 : value;
     }
 
+    /** The ledger as the console reads it: which ticket, which terminal, when. */
     public List<Map<String, Object>> recentEvents(long sessionId, int limit) {
-        return jdbc.queryForList("SELECT ticket_id, direction, gate_id, method, result, reason, occurred_at "
-            + "FROM admission_event WHERE session_id = ? ORDER BY id DESC LIMIT ?", sessionId, limit);
+        return jdbc.queryForList(
+            "SELECT e.ticket_id, t.ticket_ref, t.seat, e.direction, e.gate_id, g.label AS gate_label, "
+            + "e.method, e.result, e.reason, e.occurred_at "
+            + "FROM admission_event e "
+            + "LEFT JOIN gate g ON g.id = e.gate_id "
+            + "LEFT JOIN ticket t ON t.id = e.ticket_id "
+            + "WHERE e.session_id = ? ORDER BY e.id DESC LIMIT ?", sessionId, limit);
+    }
+
+    /**
+     * Per-terminal totals. Which door people actually used, and which one is refusing
+     * more than it admits, are operational questions the ledger can already answer.
+     */
+    public List<Map<String, Object>> byGate(long sessionId) {
+        return jdbc.queryForList(
+            "SELECT e.gate_id, MAX(g.label) AS gate_label, MAX(g.direction) AS direction, "
+            + "COUNT(*) AS total, "
+            + "SUM(CASE WHEN e.result = 'ADMITTED' THEN 1 ELSE 0 END) AS admitted, "
+            + "SUM(CASE WHEN e.result = 'EXITED' THEN 1 ELSE 0 END) AS exited, "
+            + "SUM(CASE WHEN e.result = 'DENIED' THEN 1 ELSE 0 END) AS denied, "
+            + "SUM(CASE WHEN e.result = 'DUPLICATE' THEN 1 ELSE 0 END) AS duplicate, "
+            + "MAX(e.occurred_at) AS last_at "
+            + "FROM admission_event e LEFT JOIN gate g ON g.id = e.gate_id "
+            + "WHERE e.session_id = ? AND e.gate_id IS NOT NULL "
+            + "GROUP BY e.gate_id ORDER BY COUNT(*) DESC", sessionId);
+    }
+
+    /**
+     * Crowding by place. A zone's occupancy is what walked in through its terminals
+     * minus what walked back out, which is the number staff actually want when they ask
+     * how busy the second floor is.
+     */
+    public List<Map<String, Object>> byZone(long sessionId) {
+        return jdbc.queryForList(
+            "SELECT COALESCE(g.zone, '(미지정)') AS zone, "
+            + "COUNT(DISTINCT g.id) AS gates, "
+            + "SUM(CASE WHEN e.result = 'ADMITTED' THEN 1 ELSE 0 END) AS admitted, "
+            + "SUM(CASE WHEN e.result = 'EXITED' THEN 1 ELSE 0 END) AS exited, "
+            + "SUM(CASE WHEN e.result = 'DENIED' THEN 1 ELSE 0 END) AS denied, "
+            + "MAX(e.occurred_at) AS last_at "
+            + "FROM gate g LEFT JOIN admission_event e ON e.gate_id = g.id "
+            + "WHERE g.session_id = ? "
+            + "GROUP BY COALESCE(g.zone, '(미지정)') ORDER BY 1", sessionId);
     }
 
     /**
@@ -150,6 +201,14 @@ public class AdmissionRepository {
         return jdbc.queryForList("SELECT p.ticket_id, p.session_id, p.inside_since, "
             + "s.auto_exit_after_minutes FROM ticket_presence p JOIN event_session s ON s.id = p.session_id "
             + "WHERE p.state = 'INSIDE' AND s.unmatched_exit = 'AUTO_EXIT' AND p.inside_since IS NOT NULL");
+    }
+
+    /** Whether this ticket has ever been carried through a gate as a QR code. */
+    public int countQrMovements(long ticketId) {
+        Integer value = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM admission_event WHERE ticket_id = ? AND method = 'QR' "
+            + "AND result IN ('ADMITTED', 'EXITED')", Integer.class, ticketId);
+        return value == null ? 0 : value;
     }
 
     /** Tickets left INSIDE: the operations report that drives staff follow-up. */

@@ -1,6 +1,6 @@
 package com.plink.ticket.config;
 
-import com.plink.ticket.repository.TicketPasskeyRepository;
+import com.plink.ticket.repository.HolderRepository;
 import com.yubico.webauthn.RelyingParty;
 import com.yubico.webauthn.data.AttestationConveyancePreference;
 import com.yubico.webauthn.data.PublicKeyCredentialParameters;
@@ -17,12 +17,13 @@ import java.util.Collections;
 public class TicketRelyingPartyConfig {
 
     /**
-     * A second relying party for tickets. Attestation is requested directly so the
-     * registration can read the authenticator's AAGUID and refuse desktop
-     * authenticators when the session is mobile-only.
+     * The relying party for every passkey on this domain - tickets and private links
+     * alike, since both bind to the same person. Attestation is requested directly so a
+     * registration can read the authenticator's AAGUID and refuse desktop authenticators
+     * when a session is mobile-only.
      */
     @Bean
-    RelyingParty ticketRelyingParty(TicketPasskeyRepository repository,
+    RelyingParty ticketRelyingParty(HolderRepository repository,
             @Value("${plink.auth.base-url}") String baseUrl) {
         URI origin = URI.create(baseUrl);
         if (origin.getHost() == null
@@ -31,7 +32,7 @@ public class TicketRelyingPartyConfig {
             throw new IllegalArgumentException("APP_BASE_URL must be an HTTPS origin or http://localhost");
         }
         return RelyingParty.builder()
-            .identity(RelyingPartyIdentity.builder().id(origin.getHost()).name("P-Link Gate").build())
+            .identity(RelyingPartyIdentity.builder().id(origin.getHost()).name("Passlink").build())
             .credentialRepository(repository)
             .origins(Collections.singleton(baseUrl))
             .preferredPubkeyParams(Arrays.asList(PublicKeyCredentialParameters.ES256, PublicKeyCredentialParameters.RS256))

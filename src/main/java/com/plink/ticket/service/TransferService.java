@@ -6,7 +6,6 @@ import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
-import com.plink.ticket.repository.TicketPasskeyRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.repository.TransferRepository;
 import org.springframework.http.HttpStatus;
@@ -35,7 +34,6 @@ public class TransferService {
 
     private final TicketRepository tickets;
     private final TransferRepository transfers;
-    private final TicketPasskeyRepository passkeys;
     private final AdmissionRepository admissions;
     private final PresentationService presentations;
     private final TicketService ticketService;
@@ -43,12 +41,11 @@ public class TransferService {
     private final TicketProperties properties;
 
     public TransferService(TicketRepository tickets, TransferRepository transfers,
-            TicketPasskeyRepository passkeys, AdmissionRepository admissions,
+            AdmissionRepository admissions,
             PresentationService presentations, TicketService ticketService, EmailSender mail,
             TicketProperties properties) {
         this.tickets = tickets;
         this.transfers = transfers;
-        this.passkeys = passkeys;
         this.admissions = admissions;
         this.presentations = presentations;
         this.ticketService = ticketService;
@@ -133,9 +130,11 @@ public class TransferService {
      * sender's token is replaced by the claim token here, so their link stops resolving.
      */
     @Transactional
-    public void accept(Transfer transfer, Ticket ticket) {
+    public void accept(Transfer transfer, Ticket ticket, long holderId) {
         transfers.accept(transfer.id);
-        tickets.completeTransfer(ticket.id, transfer.toTokenHmac, transfer.toEmail);
+        // The sender keeps their passkey - it carries their other tickets. Only this
+        // ticket changes hands.
+        tickets.completeTransfer(ticket.id, transfer.toTokenHmac, holderId, transfer.toEmail);
         // A new holder starts with a clean movement history for this session.
         admissions.resetPresence(ticket.id);
         admissions.append(ticket.id, ticket.sessionId, null, null, "STAFF", "TRANSFERRED",

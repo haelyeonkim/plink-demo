@@ -5,7 +5,7 @@ import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
-import com.plink.ticket.repository.TicketPasskeyRepository;
+import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.yubico.webauthn.*;
 import com.yubico.webauthn.data.*;
@@ -36,7 +36,7 @@ public class TicketPasskeyService {
     private static final long TIMEOUT_MS = 120_000;
 
     private final TicketRepository tickets;
-    private final TicketPasskeyRepository passkeys;
+    private final HolderRepository holders;
     private final AdmissionRepository admissions;
     private final PresentationService presentations;
     private final TransferService transfers;
@@ -46,12 +46,12 @@ public class TicketPasskeyService {
     private final ObjectMapper mapper;
     private final SecureRandom random = new SecureRandom();
 
-    public TicketPasskeyService(TicketRepository tickets, TicketPasskeyRepository passkeys,
+    public TicketPasskeyService(TicketRepository tickets, HolderRepository holders,
             AdmissionRepository admissions, PresentationService presentations, TransferService transfers,
             TicketService ticketService, TicketProperties properties,
             @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper) {
         this.tickets = tickets;
-        this.passkeys = passkeys;
+        this.holders = holders;
         this.admissions = admissions;
         this.presentations = presentations;
         this.transfers = transfers;
@@ -66,6 +66,7 @@ public class TicketPasskeyService {
         GeoCheck.Result geo = new GeoCheck.Result(null, null, null);
         final long ticketId;
         final Long transferId;
+        Long holderId;
         final long expires = System.currentTimeMillis() + TIMEOUT_MS;
         final PublicKeyCredentialCreationOptions registration;
         final AssertionRequest assertion;
@@ -108,42 +109,66 @@ public class TicketPasskeyService {
             String rawToEmail, HttpSession session, Double lat, Double lon, Double accuracy) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Ticket ticket = resolved.ticket;
-        boolean claimed = !resolved.viaTransfer() && passkeys.findByTicketId(ticket.id).isPresent();
+        boolean claimed = !resolved.viaTransfer() && ticket.claimed();
         Pending pending;
         String options;
 
         try {
         if (!claimed) {
             String expected = resolved.viaTransfer() ? resolved.claim.toEmail : ticket.issuedToEmail;
-            String email = verifiedEmail(session, ticket.id)
-                .filter(value -> value.equalsIgnoreCase(expected))
-                .orElseThrow(() -> new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
+            EventSession claimSession = ticketService.requireSession(ticket.sessionId);
+            // With the policy off, holding the link is the whole claim. That is the
+            // trade the organiser chose; the address is still recorded either way.
+            String email = claimSession.claimRequiresOtp
+                ? verifiedEmail(session, ticket.id)
+                    .filter(value -> value.equalsIgnoreCase(expected))
+                    .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."))
+                : expected;
             if (!resolved.viaTransfer() && ticket.claimExpiresAt != null
                     && ticket.claimExpiresAt.toInstant().isBefore(java.time.Instant.now())) {
                 throw new ResponseStatusException(HttpStatus.GONE,
                     "등록 기한이 지났어요. 새 링크를 요청해 주세요.");
             }
-            byte[] handle = new byte[32];
-            random.nextBytes(handle);
-            AuthenticatorSelectionCriteria.AuthenticatorSelectionCriteriaBuilder selection =
-                AuthenticatorSelectionCriteria.builder()
-                    .residentKey(ResidentKeyRequirement.REQUIRED)
-                    .userVerification(UserVerificationRequirement.REQUIRED);
-            if (!"OFF".equalsIgnoreCase(properties.getMobileOnly())) {
-                // Layer 2 of the mobile-only policy: no USB or cross-platform authenticators.
-                selection.authenticatorAttachment(AuthenticatorAttachment.PLATFORM);
+
+            HolderRepository.Holder holder = holders.findByEmail(email).orElse(null);
+            boolean known = holder != null && !holders.findByHolder(holder.id).isEmpty();
+            if (known) {
+                // This person already has a passkey for the domain; attaching another
+                // ticket asks them to prove it rather than minting a second credential.
+                AssertionRequest request = rp.startAssertion(StartAssertionOptions.builder()
+                    .username(email)
+                    .userVerification(UserVerificationRequirement.REQUIRED)
+                    .timeout(TIMEOUT_MS).build());
+                pending = new Pending(ticket, "CLAIM", null, email, null,
+                    resolved.viaTransfer() ? resolved.claim.id : null, null, request);
+                pending.holderId = holder.id;
+                options = request.toCredentialsGetJson();
+            } else {
+                long holderId = holder != null ? holder.id
+                    : holders.create(email, ticketService.userHandleFor(email));
+                AuthenticatorSelectionCriteria.AuthenticatorSelectionCriteriaBuilder selection =
+                    AuthenticatorSelectionCriteria.builder()
+                        .residentKey(ResidentKeyRequirement.REQUIRED)
+                        .userVerification(UserVerificationRequirement.REQUIRED);
+                if (!"OFF".equalsIgnoreCase(properties.getMobileOnly())) {
+                    // Layer 2 of the mobile-only policy: no USB or cross-platform authenticators.
+                    selection.authenticatorAttachment(AuthenticatorAttachment.PLATFORM);
+                }
+                HolderRepository.Holder created = holders.findById(holderId).orElseThrow();
+                PublicKeyCredentialCreationOptions request = rp.startRegistration(
+                    StartRegistrationOptions.builder()
+                        .user(UserIdentity.builder()
+                            .name(created.email)
+                            .displayName(created.email)
+                            .id(HolderRepository.decode(created.userHandle)).build())
+                        .authenticatorSelection(selection.build())
+                        .timeout(TIMEOUT_MS).build());
+                pending = new Pending(ticket, "CLAIM", null, email, null,
+                    resolved.viaTransfer() ? resolved.claim.id : null, request, null);
+                pending.holderId = holderId;
+                options = request.toCredentialsCreateJson();
             }
-            PublicKeyCredentialCreationOptions request = rp.startRegistration(StartRegistrationOptions.builder()
-                .user(UserIdentity.builder()
-                    .name(ticket.ticketRef)
-                    .displayName(displayName(ticket))
-                    .id(new ByteArray(handle)).build())
-                .authenticatorSelection(selection.build())
-                .timeout(TIMEOUT_MS).build());
-            pending = new Pending(ticket, "CLAIM", null, email, null,
-                resolved.viaTransfer() ? resolved.claim.id : null, request, null);
-            options = request.toCredentialsCreateJson();
         } else {
             String direction = null;
             String toEmail = null;
@@ -157,10 +182,12 @@ public class TicketPasskeyService {
                 direction = PresentationService.direction(rawDirection);
             }
             AssertionRequest request = rp.startAssertion(StartAssertionOptions.builder()
-                .username(ticket.ticketRef)
+                .username(holders.findById(ticket.holderId).orElseThrow(() ->
+                    new ResponseStatusException(HttpStatus.CONFLICT, "등록 정보를 찾을 수 없어요.")).email)
                 .userVerification(UserVerificationRequirement.REQUIRED)
                 .timeout(TIMEOUT_MS).build());
             pending = new Pending(ticket, resolvedIntent, direction, null, toEmail, null, null, request);
+            pending.holderId = ticket.holderId;
             if ("PRESENT".equals(resolvedIntent)) {
                 // Checked before the biometric prompt so a holder who is nowhere near the
                 // venue is told so rather than being asked for a fingerprint first.
@@ -175,7 +202,9 @@ public class TicketPasskeyService {
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("mode", claimed ? "authenticate" : "register");
+        // Read from the ceremony that was actually built, not from whether the ticket is
+        // claimed: an unclaimed ticket now asks a known person to authenticate.
+        result.put("mode", pending.registration != null ? "register" : "authenticate");
         result.put("intent", pending.intent);
         result.put("options", mapper.readTree(options));
         synchronized (session) { session.setAttribute(PENDING, pending); }
@@ -206,18 +235,11 @@ public class TicketPasskeyService {
 
         return pending.registration != null
             ? register(locked, pending, resolved, credential)
-            : authenticate(locked, pending, credential, ip, userAgent);
+            : authenticate(locked, pending, resolved, credential, ip, userAgent);
     }
 
     private Map<String, Object> register(Ticket ticket, Pending pending, TicketService.Resolved resolved,
             JsonNode credential) {
-        if (passkeys.findByTicketId(ticket.id).isPresent()) {
-            if (!resolved.viaTransfer()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 다른 기기에 등록된 입장권이에요.");
-            }
-            // The sender's binding falls away the moment the recipient registers theirs.
-            passkeys.deleteByTicketId(ticket.id);
-        }
         RegistrationResult result;
         try {
             result = rp.finishRegistration(FinishRegistrationOptions.builder()
@@ -235,15 +257,25 @@ public class TicketPasskeyService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                 "휴대폰의 지문·얼굴 인증으로 등록해 주세요. 데스크톱 인증기는 사용할 수 없어요.");
         }
-        passkeys.insert(ticket.id, result.getKeyId().getId(), pending.registration.getUser().getId(),
-            result.getPublicKeyCose(), result.getSignatureCount(), pending.email, aaguid);
+        holders.insert(pending.holderId, result.getKeyId().getId(), result.getPublicKeyCose(),
+            result.getSignatureCount(), aaguid);
+        return attach(ticket, pending, resolved);
+    }
+
+    /** Binds the ticket to the person the ceremony proved, whichever ceremony it was. */
+    private Map<String, Object> attach(Ticket ticket, Pending pending, TicketService.Resolved resolved) {
+        // Re-read under the row lock: someone may have claimed the link between the
+        // challenge and the response, and whoever got there first keeps the ticket.
+        if (ticket.claimed() && !resolved.viaTransfer()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록이 끝난 입장권이에요.");
+        }
         if (!admissions.find(ticket.id).isPresent()) {
             admissions.create(ticket.id, ticket.sessionId);
         }
         if (resolved.viaTransfer()) {
-            transfers.accept(resolved.claim, ticket);
+            transfers.accept(resolved.claim, ticket, pending.holderId);
         } else {
-            tickets.bind(ticket.id, pending.email);
+            tickets.bind(ticket.id, pending.holderId, pending.email);
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -253,11 +285,8 @@ public class TicketPasskeyService {
         return response;
     }
 
-    private Map<String, Object> authenticate(Ticket ticket, Pending pending, JsonNode credential,
-            String ip, String userAgent) {
-        TicketPasskeyRepository.Binding binding = passkeys.findByTicketId(ticket.id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                "등록 정보가 변경되었어요. 페이지를 새로 고쳐 주세요."));
+    private Map<String, Object> authenticate(Ticket ticket, Pending pending,
+            TicketService.Resolved resolved, JsonNode credential, String ip, String userAgent) {
         AssertionResult result;
         try {
             result = rp.finishAssertion(FinishAssertionOptions.builder()
@@ -265,16 +294,22 @@ public class TicketPasskeyService {
                 .response(PublicKeyCredential.parseAssertionResponseJson(credential.toString()))
                 .build());
         } catch (Exception invalid) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "처음 등록한 패스키로 다시 시도해 주세요.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "등록한 패스키로 다시 시도해 주세요.");
         }
-        // The browser offers every passkey for this domain, so the asserted credential
-        // must be checked against this ticket's binding rather than trusted as-is.
-        if (!result.isSuccess()
-                || !binding.credentialId.equals(result.getCredentialId().getBase64Url())
-                || !binding.userHandle.equals(result.getUserHandle().getBase64Url())) {
+        // The browser offers every passkey for the domain, so the asserted credential has
+        // to be checked against the identity this ceremony was started for.
+        HolderRepository.Credential used = holders
+            .findByCredentialId(result.getCredentialId().getBase64Url())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "등록되지 않은 패스키예요."));
+        if (!result.isSuccess() || pending.holderId == null || used.holderId != pending.holderId) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이 입장권에 등록된 패스키가 아니에요.");
         }
-        passkeys.updateCount(ticket.id, result.getSignatureCount());
+        holders.recordUse(used.credentialId, result.getSignatureCount());
+
+        if ("CLAIM".equals(pending.intent)) {
+            return attach(ticket, pending, resolved);
+        }
         if ("TRANSFER".equals(pending.intent)) {
             return transfers.initiate(ticket, pending.toEmail, ip, userAgent);
         }
@@ -285,9 +320,4 @@ public class TicketPasskeyService {
         return presentations.issue(ticket, pending.direction, true, pending.geo);
     }
 
-    private String displayName(Ticket ticket) {
-        StringBuilder name = new StringBuilder("입장권 ").append(ticket.ticketRef);
-        if (ticket.seat != null && !ticket.seat.isEmpty()) name.append(" · ").append(ticket.seat);
-        return name.toString();
-    }
 }

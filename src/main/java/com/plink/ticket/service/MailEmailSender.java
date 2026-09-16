@@ -21,25 +21,37 @@ public class MailEmailSender implements EmailSender {
     private final String from;
 
     public MailEmailSender(ObjectProvider<JavaMailSender> mailer,
-            @Value("${plink.ticket.mail-from:no-reply@plink.local}") String from) {
+            @Value("${plink.ticket.mail-from:no-reply@passlink.local}") String from) {
         this.mailer = mailer;
         this.from = from;
     }
 
     @Override
-    public void send(String to, String subject, String body) {
+    public boolean send(String to, String subject, String body) {
         JavaMailSender sender = mailer.getIfAvailable();
         if (sender == null) {
             log.warn("SMTP is not configured; mail was not delivered.\n  to: {}\n  subject: {}\n  body:\n{}",
                 to, subject, body);
-            return;
+            return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(from);
         message.setTo(to);
         message.setSubject(subject);
         message.setText(body);
-        sender.send(message);
+        try {
+            sender.send(message);
+        } catch (org.springframework.mail.MailException refused) {
+            // A relay that is down must not lose the ticket that was just issued: the
+            // link exists, and the console says it has to be delivered by hand.
+            log.error("SMTP refused a message to {}: {}", to, refused.getMessage());
+            return false;
+        }
         log.info("Sent \"{}\" to {}", subject, to);
+        return true;
     }
+
+    @Override public boolean configured() { return mailer.getIfAvailable() != null; }
+
+    @Override public String from() { return from; }
 }

@@ -23,6 +23,8 @@ export interface TicketView {
     gateOpensAt: string | null;
     exitScanRequired: boolean;
     reentryMode: string;
+    /** When false, opening the link is the whole claim: no verification code is sent. */
+    claimRequiresOtp: boolean;
   };
   presence: {
     inside: boolean;
@@ -45,7 +47,7 @@ async function read(response: Response) {
 }
 
 export function ticketBase(sessionId: string, token: string) {
-  return `/api/t/${encodeURIComponent(sessionId)}/${encodeURIComponent(token)}`;
+  return `/api/tickets/${encodeURIComponent(sessionId)}/${encodeURIComponent(token)}`;
 }
 
 export async function fetchTicket(sessionId: string, token: string): Promise<TicketView> {
@@ -74,6 +76,9 @@ export async function reissueTicket(sessionId: string, token: string) {
 }
 
 export interface FaceStatus {
+  /** Why enrolment may be closed: already inside, or the ticket has travelled as a QR. */
+  inside?: boolean;
+  qrUsed?: boolean;
   consented: boolean;
   enrolled: boolean;
   consentVersion: string;
@@ -104,39 +109,54 @@ export async function withdrawFace(sessionId: string, token: string) {
 
 export async function gateFaceChallenge(gateId: string, gateToken: string) {
   return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/face/challenge`, {
-    headers: { 'X-Gate-Token': gateToken },
+    headers: gateHeaders(gateToken),
   }));
 }
 
 export async function gateFaceScan(gateId: string, gateToken: string, frames: string[], challenge?: string) {
   const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/face`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Gate-Token': gateToken },
-    body: JSON.stringify({ frames, challenge }),
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ frames, challenge }),
   });
   return read(response);
 }
 
+/**
+ * This terminal's identity, kept for the life of the browser profile. A gate is held by
+ * one terminal at a time, so the server needs to tell tablets apart.
+ */
+export function gateDeviceId(): string {
+  const key = 'plink.gate.device';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function gateHeaders(gateToken: string, json = false): Record<string, string> {
+  const headers: Record<string, string> = {
+    'X-Gate-Token': gateToken,
+    'X-Gate-Device': gateDeviceId(),
+  };
+  if (json) headers['Content-Type'] = 'application/json';
+  return headers;
+}
+
 export async function gateSync(gateId: string, gateToken: string, events: unknown[]) {
   const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Gate-Token': gateToken },
-    body: JSON.stringify({ events }),
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ events }),
   });
   return read(response);
 }
 
 export async function gateInfo(gateId: string, gateToken: string) {
-  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}`, {
-    headers: { 'X-Gate-Token': gateToken },
-  }));
+  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}`, { headers: gateHeaders(gateToken) }));
 }
 
 export async function gateScan(gateId: string, gateToken: string, code: string) {
   const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/scan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Gate-Token': gateToken },
-    body: JSON.stringify({ code }),
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ code }),
   });
   return read(response);
 }

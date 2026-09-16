@@ -62,6 +62,7 @@ export async function runCeremony(
   | { mode: 'register'; claimed: true; viaTransfer: boolean }
   | { mode: 'authenticate'; intent: 'PRESENT'; grant: Grant }
   | { mode: 'authenticate'; intent: 'TRANSFER'; transfer: TransferStarted }
+  | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true; viaTransfer: boolean }
 > {
   const base = ticketBase(sessionId, token);
   const position = options_.intent === 'TRANSFER' ? {} : await coarsePosition();
@@ -112,9 +113,16 @@ export async function runCeremony(
   if (mode === 'register') {
     return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
   }
-  return intent === 'TRANSFER'
-    ? { mode: 'authenticate', intent: 'TRANSFER', transfer: result as TransferStarted }
-    : { mode: 'authenticate', intent: 'PRESENT', grant: result as Grant };
+  if (intent === 'TRANSFER') {
+    return { mode: 'authenticate', intent: 'TRANSFER', transfer: result as TransferStarted };
+  }
+  if (intent === 'CLAIM') {
+    // A person who already has a passkey attaches a new ticket by proving it, so a
+    // claim can finish through an assertion rather than a registration.
+    return { mode: 'authenticate', intent: 'CLAIM', claimed: true,
+             viaTransfer: Boolean(result.viaTransfer) };
+  }
+  return { mode: 'authenticate', intent: 'PRESENT', grant: result as Grant };
 }
 
 export function passkeyError(error: unknown): string {

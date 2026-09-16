@@ -73,9 +73,20 @@ public class LinkRepository {
         return findById(link.getId()).get();
     }
 
-    public Optional<ProtectedLink> lockByShortCode(String code) {
-        List<ProtectedLink> links = jdbc.query("SELECT * FROM protected_link WHERE short_code = ? FOR UPDATE", ROW_MAPPER, code);
+    public Optional<ProtectedLink> lockById(Long id) {
+        List<ProtectedLink> links = jdbc.query("SELECT * FROM protected_link WHERE id = ? FOR UPDATE", ROW_MAPPER, id);
         return links.isEmpty() ? Optional.empty() : Optional.of(links.get(0));
+    }
+
+    /** Title, deadline and view cap. The password is set separately so that "leave it
+     *  alone" and "remove it" stay different requests. */
+    public void updateSettings(Long id, String title, Timestamp expiresAt, int maxViews) {
+        jdbc.update("UPDATE protected_link SET title = ?, expires_at = ?, max_views = ? WHERE id = ?",
+            title, expiresAt, maxViews, id);
+    }
+
+    public void updatePassword(Long id, String passwordHash) {
+        jdbc.update("UPDATE protected_link SET password_hash = ? WHERE id = ?", passwordHash, id);
     }
 
     public void incrementViewCount(Long id) {

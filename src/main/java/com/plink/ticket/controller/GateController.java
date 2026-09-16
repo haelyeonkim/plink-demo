@@ -5,6 +5,7 @@ import com.plink.ticket.model.Gate;
 import com.plink.ticket.face.FaceService;
 import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.GateAuthService;
+import com.plink.ticket.service.GateSetupService;
 import com.plink.ticket.service.OfflineSyncService;
 import com.plink.ticket.service.TicketService;
 import org.springframework.web.bind.annotation.*;
@@ -19,27 +20,43 @@ import java.util.Map;
  * direction — the scanned code never gets to claim whether it is an entry or an exit.
  */
 @RestController
-@RequestMapping("/api/gates/{gateId}")
+@RequestMapping("/api/gates")
 public class GateController {
     private final GateAuthService auth;
     private final AdmissionService admissions;
     private final TicketService tickets;
     private final FaceService faces;
     private final OfflineSyncService offline;
+    private final GateSetupService setup;
 
     public GateController(GateAuthService auth, AdmissionService admissions, TicketService tickets,
-            FaceService faces, OfflineSyncService offline) {
+            FaceService faces, OfflineSyncService offline, GateSetupService setup) {
         this.auth = auth;
         this.admissions = admissions;
         this.tickets = tickets;
         this.faces = faces;
         this.offline = offline;
+        this.setup = setup;
     }
 
-    @GetMapping
+    /** What the setup link shows before the code is entered. Carries no secret. */
+    @GetMapping("/setup/{setupToken}")
+    public Map<String, Object> setupInfo(@PathVariable String setupToken) {
+        return setup.describe(setupToken);
+    }
+
+    /** Exchanges the code for the terminal token and claims the gate for this device. */
+    @PostMapping("/setup/{setupToken}")
+    public Map<String, Object> completeSetup(@PathVariable String setupToken,
+            @RequestBody Map<String, String> body) {
+        return setup.complete(setupToken, body.get("code"), body.get("deviceId"));
+    }
+
+    @GetMapping("/{gateId}")
     public Map<String, Object> info(@PathVariable String gateId,
-            @RequestHeader(value = "X-Gate-Token", required = false) String token) {
-        Gate gate = auth.authenticate(gateId, token);
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device) {
+        Gate gate = auth.authenticate(gateId, token, device);
         EventSession session = tickets.requireSession(gate.sessionId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("gateId", gate.id);
@@ -49,6 +66,7 @@ public class GateController {
         result.put("sessionId", session.id);
         result.put("sessionName", session.name);
         result.put("exitScanRequired", session.exitScanRequired);
+        result.put("deviceBound", gate.boundDevice != null);
         return result;
     }
 
@@ -56,7 +74,7 @@ public class GateController {
      * A challenge for the terminal to render as a light pattern. The server keeps the
      * expected value and grades the response, so a terminal cannot pass itself.
      */
-    @GetMapping("/face/challenge")
+    @GetMapping("/{gateId}/face/challenge")
     public Map<String, Object> faceChallenge(@PathVariable String gateId,
             @RequestHeader(value = "X-Gate-Token", required = false) String token) {
         auth.authenticate(gateId, token);
@@ -65,11 +83,12 @@ public class GateController {
     }
 
     /** Face track: 1:N inside the session, then the same movement rules as a scan. */
-    @PostMapping("/face")
+    @PostMapping("/{gateId}/face")
     public Map<String, Object> face(@PathVariable String gateId,
             @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
             @RequestBody Map<String, Object> body) {
-        Gate gate = auth.authenticate(gateId, token);
+        Gate gate = auth.authenticate(gateId, token, device);
         EventSession session = tickets.requireSession(gate.sessionId);
         String challenge = body.get("challenge") == null ? null : String.valueOf(body.get("challenge"));
         try {
@@ -88,7 +107,7 @@ public class GateController {
      * accepted on the terminal's word: each code is re-verified and anything that
      * contradicts the ledger is flagged for investigation instead of applied.
      */
-    @PostMapping("/sync")
+    @PostMapping("/{gateId}/sync")
     public Map<String, Object> sync(@PathVariable String gateId,
             @RequestHeader(value = "X-Gate-Token", required = false) String token,
             @RequestBody Map<String, Object> body) {
@@ -108,11 +127,12 @@ public class GateController {
         return offline.replay(gate, queued);
     }
 
-    @PostMapping("/scan")
+    @PostMapping("/{gateId}/scan")
     public Map<String, Object> scan(@PathVariable String gateId,
             @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
             @RequestBody Map<String, String> body) {
-        Gate gate = auth.authenticate(gateId, token);
+        Gate gate = auth.authenticate(gateId, token, device);
         String code = body.get("code");
         String method = body.getOrDefault("method", "QR");
         if (!"QR".equals(method) && !"FACE".equals(method)) method = "QR";

@@ -14,7 +14,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = {"spring.config.import=",
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:authtest;DB_CLOSE_DELAY=-1",
+    "spring.datasource.username=sa", "spring.datasource.password=",
+    "spring.config.import=", "plink.admin.email=", "plink.admin.password=",
     "plink.auth.base-url=http://localhost:3000","plink.auth.google-client-id=test-client", "plink.auth.google-client-secret=test-secret"})
 @AutoConfigureMockMvc
 class AuthTest {

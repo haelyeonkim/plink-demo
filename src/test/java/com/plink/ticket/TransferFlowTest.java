@@ -4,6 +4,7 @@ import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
+import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.repository.TransferRepository;
 import com.plink.ticket.service.TicketService;
@@ -27,13 +28,17 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = "spring.config.import=")
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:transferflowtest;DB_CLOSE_DELAY=-1",
+    "spring.datasource.username=sa", "spring.datasource.password=",
+    "spring.config.import=", "plink.admin.email=", "plink.admin.password="})
 @Import(RecordingEmail.class)
 class TransferFlowTest {
 
     @Autowired TicketService tickets;
     @Autowired TransferService transfers;
     @Autowired TicketRepository ticketRepository;
+    @Autowired HolderRepository holders;
     @Autowired TransferRepository transferRepository;
     @Autowired EventSessionRepository sessions;
     @Autowired AdmissionRepository admissions;
@@ -49,8 +54,14 @@ class TransferFlowTest {
         mailbox.clear();
         Map<String, Object> issued = tickets.issue(sessionId, email, "A-1", "STANDARD");
         long id = ((Number) issued.get("ticketId")).longValue();
-        ticketRepository.bind(id, email);
+        ticketRepository.bind(id, holderFor(email), email);
         return ticketRepository.findById(id).orElseThrow();
+    }
+
+    /** A ticket is claimed by a person now, so tests need one to bind to. */
+    private long holderFor(String email) {
+        return holders.findByEmail(email).map(h -> h.id)
+            .orElseGet(() -> holders.create(email, tickets.userHandleFor(email)));
     }
 
     private String tokenFromLastMail() {
@@ -104,7 +115,7 @@ class TransferFlowTest {
         String claimToken = tokenFor("recipient@example.com");
 
         Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
-        transfers.accept(transfer, ticket);
+        transfers.accept(transfer, ticket, holderFor("recipient@example.com"));
 
         Ticket moved = ticketRepository.findById(ticket.id).orElseThrow();
         assertEquals("BOUND", moved.status);
@@ -219,7 +230,7 @@ class TransferFlowTest {
 
         transfers.initiate(ticket, "recipient@example.com", null, null);
         Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
-        transfers.accept(transfer, ticket);
+        transfers.accept(transfer, ticket, holderFor("recipient@example.com"));
 
         var presence = admissions.find(ticket.id).orElseThrow();
         assertEquals(0, presence.entryCount);

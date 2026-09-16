@@ -21,6 +21,16 @@ public class GateRepository {
         g.zone = rs.getString("zone");
         g.direction = rs.getString("direction");
         g.tokenHmac = rs.getString("token_hmac");
+        g.tokenCipher = rs.getString("token_cipher");
+        g.boundDevice = rs.getString("bound_device");
+        g.boundAt = rs.getTimestamp("bound_at");
+        g.lastSeenAt = rs.getTimestamp("last_seen_at");
+        g.setupTokenHmac = rs.getString("setup_token_hmac");
+        g.setupTokenCipher = rs.getString("setup_token_cipher");
+        g.setupCodeHash = rs.getString("setup_code_hash");
+        g.setupCodeCipher = rs.getString("setup_code_cipher");
+        g.setupExpiresAt = rs.getTimestamp("setup_expires_at");
+        g.setupAttempts = rs.getInt("setup_attempts");
         return g;
     };
 
@@ -32,9 +42,48 @@ public class GateRepository {
         return jdbc.query("SELECT * FROM gate WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }
 
-    public void insert(String id, long sessionId, String label, String zone, String direction, String tokenHmac) {
-        jdbc.update("INSERT INTO gate (id, session_id, label, zone, direction, token_hmac) VALUES (?, ?, ?, ?, ?, ?)",
-            id, sessionId, label, zone, direction, tokenHmac);
+    /** Name, place and direction: everything about a terminal that staff can correct. */
+    public void updateDetails(String id, String label, String zone, String direction) {
+        jdbc.update("UPDATE gate SET label = ?, zone = ?, direction = ? WHERE id = ?",
+            label, zone, direction, id);
+    }
+
+    public void insert(String id, long sessionId, String label, String zone, String direction,
+            String tokenHmac, String tokenCipher) {
+        jdbc.update("INSERT INTO gate (id, session_id, label, zone, direction, token_hmac, token_cipher) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?)", id, sessionId, label, zone, direction, tokenHmac, tokenCipher);
+    }
+
+    /** Claims the gate for one terminal. */
+    public void bindDevice(String id, String deviceId) {
+        jdbc.update("UPDATE gate SET bound_device = ?, bound_at = CURRENT_TIMESTAMP, "
+            + "last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", deviceId, id);
+    }
+
+    /** Frees the gate so another terminal can take it, from the console. */
+    public void releaseDevice(String id) {
+        jdbc.update("UPDATE gate SET bound_device = NULL, bound_at = NULL WHERE id = ?", id);
+    }
+
+    public void rotateToken(String id, String tokenHmac, String tokenCipher) {
+        jdbc.update("UPDATE gate SET token_hmac = ?, token_cipher = ?, bound_device = NULL, bound_at = NULL "
+            + "WHERE id = ?", tokenHmac, tokenCipher, id);
+    }
+
+    public java.util.Optional<Gate> findBySetupToken(String setupTokenHmac) {
+        return jdbc.query("SELECT * FROM gate WHERE setup_token_hmac = ?", MAPPER, setupTokenHmac)
+            .stream().findFirst();
+    }
+
+    public void saveSetup(String id, String tokenHmac, String tokenCipher, String codeHash,
+            String codeCipher, java.sql.Timestamp expiresAt) {
+        jdbc.update("UPDATE gate SET setup_token_hmac = ?, setup_token_cipher = ?, setup_code_hash = ?, "
+            + "setup_code_cipher = ?, setup_expires_at = ?, setup_attempts = 0 WHERE id = ?",
+            tokenHmac, tokenCipher, codeHash, codeCipher, expiresAt, id);
+    }
+
+    public void countSetupAttempt(String id) {
+        jdbc.update("UPDATE gate SET setup_attempts = setup_attempts + 1 WHERE id = ?", id);
     }
 
     public void touch(String id) {

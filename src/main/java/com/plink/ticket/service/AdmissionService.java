@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -31,6 +33,9 @@ import java.util.Map;
  */
 @Service
 public class AdmissionService {
+    /** The venue's day, which is the one a visitor means by "yesterday". */
+    private static final ZoneId VENUE_ZONE = ZoneId.systemDefault();
+
     private final TicketRepository tickets;
     private final EventSessionRepository sessions;
     private final AdmissionRepository admissions;
@@ -74,16 +79,24 @@ public class AdmissionService {
             String grantId, Runnable onAccepted) {
         if (!ticket.bound()) throw deny("등록이 완료되지 않은 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        if (ticket.sessionId != gate.sessionId) throw deny("다른 회차의 입장권이에요.");
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
 
         EventSession session = sessions.findById(ticket.sessionId)
-            .orElseThrow(() -> deny("회차 정보를 찾을 수 없어요."));
+            .orElseThrow(() -> deny("행사 정보를 찾을 수 없어요."));
         Presence presence = presence(ticket);
         String direction = resolveDirection(gate, requestedDirection, presence);
         Instant now = Instant.now();
 
-        // An accidental second scan must not toggle the state.
-        if (presence.lastEventAt != null && gate.id.equals(presence.lastGateId)
+        // An accidental second read must not toggle the state: a face passing the camera
+        // twice in a second is one arrival, not an arrival and a departure.
+        //
+        // A direction the holder asked for is different. It cost them a passkey ceremony
+        // and it says which way they are going, so it is honoured even seconds after the
+        // last move - walking straight back out used to be swallowed here, leaving the
+        // ticket INSIDE and the phone still offering only "exit".
+        boolean repeatsState = "IN".equals(direction) == presence.inside();
+        boolean accidental = requestedDirection == null || repeatsState;
+        if (accidental && presence.lastEventAt != null && gate.id.equals(presence.lastGateId)
                 && presence.lastEventAt.toInstant().isAfter(now.minusSeconds(session.reentryCooldownSeconds))) {
             onAccepted.run();
             admissions.append(ticket.id, session.id, direction, gate.id, method, "DUPLICATE",
@@ -116,20 +129,28 @@ public class AdmissionService {
             String policy = session.unmatchedExit == null ? "LENIENT" : session.unmatchedExit;
             boolean forgiveDue = presence.insideSince != null && presence.insideSince.toInstant()
                 .isBefore(now.minus(session.autoExitAfterMinutes, ChronoUnit.MINUTES));
-            if ("STRICT".equals(policy) || !forgiveDue) {
+            // A multi-day ticket whose holder never scanned out cannot still be "inside"
+            // the next day: nobody stays in the venue overnight, and refusing them at the
+            // door on day two is the wrong answer to a missed exit scan. The calendar day
+            // is therefore forgiven even under STRICT, which only governs the same day.
+            boolean dayChanged = presence.insideSince != null && !LocalDate.ofInstant(
+                    presence.insideSince.toInstant(), VENUE_ZONE)
+                .equals(LocalDate.ofInstant(now, VENUE_ZONE));
+            if (!dayChanged && ("STRICT".equals(policy) || !forgiveDue)) {
                 throw deny("이미 장내에 있는 입장권이에요. 퇴장을 먼저 처리하거나 안내 데스크에서 확인해 주세요.");
             }
+            String correction = dayChanged ? "날짜 변경" : policy;
             admissions.markOutside(ticket.id, gate.id);
             admissions.append(ticket.id, session.id, "OUT", gate.id, method, "EXITED",
-                "짝 없는 퇴장 보정 (" + policy + ")", null);
+                "짝 없는 퇴장 보정 (" + correction + ")", null);
             presence = admissions.find(ticket.id).orElse(presence);
-            note = "짝 없는 퇴장 보정 후 입장";
+            note = "짝 없는 퇴장 보정 후 입장 (" + correction + ")";
         }
         if (session.gateOpensAt != null && now.isBefore(session.gateOpensAt.toInstant())) {
             throw deny("입장 시작 시간 전이에요.");
         }
         if (session.faceRequired && !"FACE".equals(method) && !"STAFF".equals(method)) {
-            throw deny("이 회차는 얼굴 인식으로만 입장할 수 있어요.");
+            throw deny("이 행사는 얼굴 인식으로만 입장할 수 있어요.");
         }
         if (presence.entryCount > 0) {
             // Requiring a face only for re-entry is the cheapest control that actually
@@ -137,7 +158,7 @@ public class AdmissionService {
             if (session.reentryRequiresFace && !"FACE".equals(method) && !"STAFF".equals(method)) {
                 throw deny("재입장은 얼굴 인식으로만 가능해요.");
             }
-            if (!session.reentryAllowed()) throw deny("재입장이 허용되지 않는 회차예요.");
+            if (!session.reentryAllowed()) throw deny("재입장이 허용되지 않는 행사예요.");
             if (session.reentryLimited() && presence.reentryCount >= session.reentryMax) {
                 throw deny("재입장 횟수를 모두 사용했어요.");
             }

@@ -21,6 +21,8 @@ public class TicketRepository {
         Ticket t = new Ticket();
         t.id = rs.getLong("id");
         t.sessionId = rs.getLong("session_id");
+        long holder = rs.getLong("holder_id");
+        t.holderId = rs.wasNull() ? null : holder;
         t.ticketRef = rs.getString("ticket_ref");
         t.seat = rs.getString("seat");
         t.tier = rs.getString("tier");
@@ -32,23 +34,27 @@ public class TicketRepository {
         t.createdAt = rs.getTimestamp("created_at");
         t.transferCount = rs.getInt("transfer_count");
         t.reissueCount = rs.getInt("reissue_count");
+        t.phone = rs.getString("phone");
+        t.deliveredVia = rs.getString("delivered_via");
+        t.deliveredAt = rs.getTimestamp("delivered_at");
         return t;
     };
 
     public long insert(long sessionId, String ticketRef, String tokenHmac, String seat, String tier,
-            String issuedToEmail, Timestamp claimExpiresAt) {
+            String issuedToEmail, String phone, Timestamp claimExpiresAt) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO ticket (session_id, ticket_ref, token_hmac, seat, tier, issued_to_email, claim_expires_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                "INSERT INTO ticket (session_id, ticket_ref, token_hmac, seat, tier, issued_to_email, phone, "
+                + "claim_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setLong(1, sessionId);
             ps.setString(2, ticketRef);
             ps.setString(3, tokenHmac);
             ps.setString(4, seat);
             ps.setString(5, tier);
             ps.setString(6, issuedToEmail);
-            ps.setTimestamp(7, claimExpiresAt);
+            ps.setString(7, phone);
+            ps.setTimestamp(8, claimExpiresAt);
             return ps;
         }, keys);
         return keys.getKey().longValue();
@@ -75,9 +81,23 @@ public class TicketRepository {
         return jdbc.query("SELECT * FROM ticket WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }
 
-    public void bind(long id, String holderEmail) {
-        jdbc.update("UPDATE ticket SET status = 'BOUND', holder_email = ?, bound_at = CURRENT_TIMESTAMP, "
-            + "claim_expires_at = NULL WHERE id = ?", holderEmail, id);
+    public void bind(long id, long holderId, String holderEmail) {
+        jdbc.update("UPDATE ticket SET status = 'BOUND', holder_id = ?, holder_email = ?, "
+            + "bound_at = CURRENT_TIMESTAMP, claim_expires_at = NULL WHERE id = ?",
+            holderId, holderEmail, id);
+    }
+
+    /**
+     * Detaches the ticket from its holder without touching their credential: the person
+     * keeps the passkey their other tickets depend on.
+     */
+    public void unbind(long id) {
+        jdbc.update("UPDATE ticket SET holder_id = NULL WHERE id = ?", id);
+    }
+
+    public void recordDelivery(long id, String via) {
+        jdbc.update("UPDATE ticket SET delivered_via = ?, delivered_at = CURRENT_TIMESTAMP WHERE id = ?",
+            via, id);
     }
 
     public void updateStatus(long id, String status) {
@@ -88,11 +108,11 @@ public class TicketRepository {
      * Hands the ticket to the recipient: their claim token becomes the ticket's own, so
      * the sender's URL stops resolving from this moment.
      */
-    public void completeTransfer(long id, String tokenHmac, String holderEmail) {
-        jdbc.update("UPDATE ticket SET token_hmac = ?, holder_email = ?, issued_to_email = ?, "
-            + "status = 'BOUND', bound_at = CURRENT_TIMESTAMP, claim_expires_at = NULL, "
-            + "transfer_count = transfer_count + 1 WHERE id = ?",
-            tokenHmac, holderEmail, holderEmail, id);
+    public void completeTransfer(long id, String tokenHmac, long holderId, String holderEmail) {
+        jdbc.update("UPDATE ticket SET token_hmac = ?, holder_id = ?, holder_email = ?, "
+            + "issued_to_email = ?, status = 'BOUND', bound_at = CURRENT_TIMESTAMP, "
+            + "claim_expires_at = NULL, transfer_count = transfer_count + 1 WHERE id = ?",
+            tokenHmac, holderId, holderEmail, holderEmail, id);
     }
 
     /**
@@ -103,7 +123,7 @@ public class TicketRepository {
     public void rotateToken(long id, String tokenHmac, String issuedToEmail, Timestamp claimExpiresAt,
             boolean countAsReissue) {
         jdbc.update("UPDATE ticket SET token_hmac = ?, issued_to_email = ?, claim_expires_at = ?, "
-            + "status = 'ISSUED', holder_email = NULL, bound_at = NULL, "
+            + "status = 'ISSUED', holder_id = NULL, holder_email = NULL, bound_at = NULL, "
             + "reissue_count = reissue_count + ? WHERE id = ?",
             tokenHmac, issuedToEmail, claimExpiresAt, countAsReissue ? 1 : 0, id);
     }

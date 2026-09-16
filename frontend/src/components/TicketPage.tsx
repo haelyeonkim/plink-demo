@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  cancelTransfer, fetchTicket, reissueTicket, requestOtp, verifyOtp, type TicketView,
+  cancelTransfer, fetchFaceStatus, fetchTicket, reissueTicket, requestOtp, verifyOtp,
+  type TicketView,
 } from '../ticket/api';
-import { runCeremony, supportsPasskeys } from '../ticket/passkey';
+import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import FaceEnrolment from './FaceEnrolment';
 
@@ -14,6 +15,10 @@ const IN_APP = [/KAKAOTALK/i, /Instagram/i, /NAVER\(inapp/i, /Line\//i, /FBAN|FB
 
 function inAppBrowser(): boolean {
   return IN_APP.some(pattern => pattern.test(navigator.userAgent));
+}
+
+function ticketRequiresNoOtp(ticket: TicketView | null): boolean {
+  return ticket != null && ticket.event.claimRequiresOtp === false;
 }
 
 function timeText(value: string): string {
@@ -31,6 +36,7 @@ export default function TicketPage() {
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'email' | 'code' | 'passkey'>('email');
   const [grant, setGrant] = useState<Grant | null>(null);
+  const [faceEnrolled, setFaceEnrolled] = useState(false);
   const [transferTo, setTransferTo] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
 
@@ -38,6 +44,8 @@ export default function TicketPage() {
     try {
       setTicket(await fetchTicket(sessionId, token));
       setLoadError('');
+      const face = await fetchFaceStatus(sessionId, token).catch(() => null);
+      setFaceEnrolled(face?.enrolled ?? false);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.');
     }
@@ -45,12 +53,27 @@ export default function TicketPage() {
 
   useEffect(() => { void reload(); }, [reload]);
 
+  // The gate changes this ticket's state, not the phone. Coming back to the screen -
+  // after a scan, after the screen locked - has to show where the holder actually is.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') void reload(); };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [reload]);
+
   async function guard(action: () => Promise<void>) {
     if (busy) return;
     setBusy(true); setError(''); setNotice('');
     try { await action(); }
-    catch (err) { setError(err instanceof Error ? err.message : '요청을 처리하지 못했어요.'); }
-    finally { setBusy(false); }
+    catch (err) {
+      // A cancelled WebAuthn ceremony can carry an empty message, and setting that would
+      // leave the screen looking as though the button did nothing at all.
+      setError(passkeyError(err) || '요청을 처리하지 못했어요. 다시 시도해 주세요.');
+    } finally { setBusy(false); }
   }
 
   const sendCode = () => guard(async () => {
@@ -67,15 +90,23 @@ export default function TicketPage() {
 
   const claim = () => guard(async () => {
     const result = await runCeremony(sessionId, token);
-    setNotice(result.mode === 'register' && result.viaTransfer
+    const viaTransfer = result.mode === 'register' ? result.viaTransfer
+      : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
+    setNotice(viaTransfer
       ? '양도받은 입장권을 이 기기에 등록했어요. 보낸 사람의 링크는 이제 사용할 수 없어요.'
-      : '이 기기에 입장권을 등록했어요.');
+      : '입장권을 등록했어요.');
     await reload();
   });
 
   const present = (direction: Direction) => guard(async () => {
     const result = await runCeremony(sessionId, token, { direction });
-    if (result.mode === 'authenticate' && result.intent === 'PRESENT') setGrant(result.grant);
+    if (result.mode === 'authenticate' && result.intent === 'PRESENT') {
+      setGrant(result.grant);
+      return;
+    }
+    // The server answered with a registration: this device is not the bound one.
+    setNotice('이 기기가 입장권에 등록되어 있지 않아요. 등록을 먼저 완료해 주세요.');
+    await reload();
   });
 
   const startTransfer = () => guard(async () => {
@@ -103,7 +134,7 @@ export default function TicketPage() {
 
   if (loadError) {
     return (
-      <section className="page-section">
+      <section className="page-section page-tight">
         <div className="access-card">
           <h2>입장권을 열 수 없어요</h2>
           <p className="error-text" role="alert">{loadError}</p>
@@ -113,19 +144,21 @@ export default function TicketPage() {
     );
   }
   if (!ticket) {
-    return <section className="page-section"><p className="loading" role="status">입장권을 확인하고 있어요.</p></section>;
+    return <section className="page-section page-tight"><p className="loading" role="status">입장권을 확인하고 있어요.</p></section>;
   }
   if (grant) {
     return (
-      <section className="page-section">
+      <section className="page-section page-tight">
         <RotatingCode grant={grant} ticket={ticket}
           onDone={async () => { setGrant(null); await reload(); }} onRefresh={reload} />
       </section>
     );
   }
 
+  const skipOtp = ticketRequiresNoOtp(ticket);
+
   return (
-    <section className="page-section">
+    <section className="page-section page-tight">
       <div className="access-card">
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
         <h2>{ticket.seat ? `${ticket.seat} 좌석` : '입장권'}</h2>
@@ -166,31 +199,42 @@ export default function TicketPage() {
 
         {ticket.claimed ? (
           <>
-            {!ticket.presence.inside
-              ? <button className="btn-primary" onClick={() => present('IN')} disabled={busy}>입장하기</button>
-              : <button className="btn-primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>}
-
-            {!ticket.transfer && !ticket.presence.inside && (
-              showTransfer ? (
-                <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
-                  <div className="field">
-                    <label htmlFor="transfer-to">받는 사람 이메일</label>
-                    <input id="transfer-to" type="email" required value={transferTo}
-                      onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
-                  </div>
-                  <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
-                  <button className="btn-secondary" type="button" onClick={() => setShowTransfer(false)}>취소</button>
-                </form>
-              ) : (
-                <button className="btn-secondary" onClick={() => setShowTransfer(true)} disabled={busy}>양도하기</button>
-              )
+            {faceEnrolled ? (
+              <p className="notice-text" role="status">
+                얼굴이 등록되어 있어요. 게이트 카메라를 보고 지나가시면 됩니다 — QR은 필요하지 않아요.
+              </p>
+            ) : !ticket.presence.inside ? (
+              <button className="btn-primary" onClick={() => present('IN')} disabled={busy}>입장하기</button>
+            ) : (
+              <button className="btn-primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>
             )}
-            <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
-            <p className="hint-text">
-              버튼을 누르면 지문·얼굴 인증을 거친 뒤에만 QR이 표시됩니다. QR은 10초마다 새로 만들어지고
-              한 번 사용하면 사라져요.
-            </p>
-            <FaceEnrolment sessionId={sessionId} token={token} />
+
+            <div className="button-row">
+              {!ticket.transfer && !ticket.presence.inside && (
+                <button className="btn-secondary" onClick={() => setShowTransfer(value => !value)} disabled={busy}>
+                  {showTransfer ? '양도 취소' : '양도하기'}
+                </button>
+              )}
+              <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
+            </div>
+            {showTransfer && !ticket.transfer && !ticket.presence.inside && (
+              <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
+                <div className="field">
+                  <label htmlFor="transfer-to">받는 사람 이메일</label>
+                  <input id="transfer-to" type="email" required value={transferTo}
+                    onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
+                </div>
+                <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
+              </form>
+            )}
+            {!faceEnrolled && (
+              <p className="hint-text">
+                버튼을 누르면 지문·얼굴 인증을 거친 뒤에만 QR이 표시됩니다. QR은 10초마다 새로 만들어지고
+                한 번 사용하면 사라져요.
+              </p>
+            )}
+            <FaceEnrolment sessionId={sessionId} token={token}
+              inside={ticket.presence.inside} onChange={reload} />
           </>
         ) : ticket.claimExpired ? (
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
@@ -200,8 +244,15 @@ export default function TicketPage() {
             <p className="hint-text">
               {ticket.role === 'RECIPIENT'
                 ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
-                : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
+                : skipOtp
+                  ? '이 휴대폰 하나에만 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
+                  : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
             </p>
+            {skipOtp ? (
+              <button className="btn-primary" onClick={claim} disabled={busy || !supportsPasskeys()}>
+                이 휴대폰에 등록하기
+              </button>
+            ) : (<>
             {stage === 'email' && (
               <form onSubmit={e => { e.preventDefault(); sendCode(); }}>
                 <div className="field">
@@ -230,6 +281,7 @@ export default function TicketPage() {
                 이 휴대폰에 등록하기
               </button>
             )}
+            </>)}
           </>
         )}
       </div>

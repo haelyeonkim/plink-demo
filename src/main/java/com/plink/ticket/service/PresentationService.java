@@ -27,6 +27,8 @@ import java.util.Map;
 @Service
 public class PresentationService {
     public static final String PREFIX = "PLK2S";
+    /** Camera decode plus the round trip: how late a scan of the current code can land. */
+    private static final int SCAN_GRACE_SECONDS = 3;
 
     private final PresentationRepository grants;
     private final NonceRepository nonces;
@@ -132,9 +134,18 @@ public class PresentationService {
                 grantId + "|" + counterText + "|" + timeText + "|" + nonce))) {
             throw deny("코드 서명이 올바르지 않아요.");
         }
-        long skew = Math.abs(Instant.now().getEpochSecond() - seconds);
-        if (!captured && skew > properties.getClockSkewSeconds() + properties.getCodePeriodSeconds()) {
-            throw deny("코드가 만료되었어요. 화면을 새로 고쳐 주세요.");
+        // The phone mints against server time - it is handed serverTime with the grant -
+        // so a code from the past is an old code, not a slow clock. It may live one
+        // rotation plus the time a scan takes; the code the screen just replaced must
+        // not still open a gate, which is the whole point of rotating.
+        long now = Instant.now().getEpochSecond();
+        if (!captured && now - seconds > properties.getCodePeriodSeconds() + SCAN_GRACE_SECONDS) {
+            throw deny("지난 코드예요. 화면의 새 코드를 보여 주세요.");
+        }
+        // Ahead of the server is the direction a mis-set device clock shows, and nothing
+        // is gained by accepting a code minted in the future.
+        if (!captured && seconds - now > properties.getClockSkewSeconds()) {
+            throw deny("코드 시각이 올바르지 않아요. 화면을 새로 고쳐 주세요.");
         }
         if (counter <= grant.lastCounter) throw deny("이미 지난 코드예요.");
         if (!nonces.tryUse(nonce)) throw deny("이미 사용한 코드예요.");

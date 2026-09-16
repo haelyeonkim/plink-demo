@@ -4,13 +4,33 @@ export interface Session {
   googleEnabled: boolean;
   csrfToken: string;
   csrfHeader: string;
-  user: { name: string | null; email: string | null } | null;
+  user: {
+    name: string | null;
+    email: string | null;
+    /** Which consoles this account may open. The server enforces the same thing. */
+    canLinks: boolean;
+    canTickets: boolean;
+    canAccounts: boolean;
+  } | null;
 }
 
 export async function fetchSession(): Promise<Session> {
   const res = await fetch('/api/auth/session', { cache: 'no-store' });
   if (!res.ok) throw new Error('로그인 상태를 확인하지 못했습니다.');
   return res.json();
+}
+
+/** Local administrator sign-in, for deployments without a Google tenancy. */
+export async function signIn(email: string, password: string): Promise<void> {
+  const res = await mutate('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '로그인하지 못했습니다.');
+  }
 }
 
 export async function mutate(url: string, init: RequestInit): Promise<Response> {

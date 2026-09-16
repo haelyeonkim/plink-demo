@@ -1,7 +1,6 @@
 package com.plink.ticket.controller;
 
 import com.plink.ticket.face.FaceService;
-import com.plink.ticket.repository.TicketPasskeyRepository;
 import com.plink.ticket.service.EmailOtpService;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
@@ -17,7 +16,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * The holder-facing ticket URL: {@code /t/{sessionId}/{personalToken}}.
+ * The holder-facing ticket URL: {@code /tickets/{sessionId}/{personalToken}}.
  *
  * <p>The token identifies the ticket and, before it is claimed, is a bearer secret.
  * Everything after the claim requires the bound passkey, so the URL alone opens nothing.
@@ -25,21 +24,19 @@ import java.util.Map;
  * same ticket but means the opposite thing.
  */
 @RestController
-@RequestMapping("/api/t/{sessionId}/{token}")
+@RequestMapping("/api/tickets/{sessionId}/{token}")
 public class TicketController {
     private final TicketService tickets;
     private final TicketPasskeyService passkeyService;
-    private final TicketPasskeyRepository passkeys;
     private final TransferService transfers;
     private final FaceService faces;
     private final EmailOtpService otp;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
-            TicketPasskeyRepository passkeys, TransferService transfers, FaceService faces,
+            TransferService transfers, FaceService faces,
             EmailOtpService otp) {
         this.tickets = tickets;
         this.passkeyService = passkeyService;
-        this.passkeys = passkeys;
         this.transfers = transfers;
         this.faces = faces;
         this.otp = otp;
@@ -170,14 +167,23 @@ public class TicketController {
         return faces.withdraw(resolved.ticket);
     }
 
+    /**
+     * Face enrolment follows the session's claim policy: where claiming needed the
+     * mailbox, so does this. Device recovery and cancelling a transfer always ask for it,
+     * because both take a ticket away from a device that already holds it.
+     */
     private String requireVerifiedEmail(TicketService.Resolved resolved, HttpSession session) {
-        return passkeyService.verifiedEmail(session, resolved.ticket.id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-                "이메일 인증을 먼저 완료해 주세요."));
+        return passkeyService.verifiedEmail(session, resolved.ticket.id).orElseGet(() -> {
+            if (tickets.requireSession(resolved.ticket.sessionId).claimRequiresOtp) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요.");
+            }
+            return resolved.ticket.holderEmail != null
+                ? resolved.ticket.holderEmail : resolved.ticket.issuedToEmail;
+        });
     }
 
     private boolean isClaimed(TicketService.Resolved resolved) {
-        return !resolved.viaTransfer() && passkeys.findByTicketId(resolved.ticket.id).isPresent();
+        return !resolved.viaTransfer() && resolved.ticket.claimed();
     }
 
     private String expectedEmail(TicketService.Resolved resolved) {

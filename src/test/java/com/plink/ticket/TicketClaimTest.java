@@ -1,6 +1,8 @@
 package com.plink.ticket;
 
 import com.plink.ticket.repository.EventSessionRepository;
+import com.plink.ticket.repository.HolderRepository;
+import com.yubico.webauthn.data.ByteArray;
 import com.plink.ticket.service.TicketService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +30,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = {"spring.config.import=", "plink.ticket.mobile-only=ENFORCE" })
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:ticketclaimtest;DB_CLOSE_DELAY=-1",
+    "spring.datasource.username=sa", "spring.datasource.password=",
+    "spring.config.import=", "plink.admin.email=", "plink.admin.password=", "plink.ticket.mobile-only=ENFORCE" })
 @AutoConfigureMockMvc
 @Import(RecordingEmail.class)
 class TicketClaimTest {
@@ -40,6 +45,7 @@ class TicketClaimTest {
     @Autowired TicketService tickets;
     @Autowired EventSessionRepository sessions;
     @Autowired RecordingEmail.Mailbox mailbox;
+    @Autowired HolderRepository holders;
 
     private long sessionId;
     private String token;
@@ -54,7 +60,7 @@ class TicketClaimTest {
         token = url.substring(url.lastIndexOf('/') + 1);
     }
 
-    private String path() { return "/api/t/" + sessionId + "/" + token; }
+    private String path() { return "/api/tickets/" + sessionId + "/" + token; }
 
     @Test void aDesktopIsTurnedAwayWhenMobileOnlyIsEnforced() throws Exception {
         mvc.perform(get(path()).header("User-Agent", DESKTOP))
@@ -90,9 +96,9 @@ class TicketClaimTest {
     }
 
     @Test void anUnknownTokenIsIndistinguishableFromAWrongSession() throws Exception {
-        mvc.perform(get("/api/t/" + sessionId + "/" + "z".repeat(22)).header("User-Agent", PHONE))
+        mvc.perform(get("/api/tickets/" + sessionId + "/" + "z".repeat(22)).header("User-Agent", PHONE))
             .andExpect(status().isNotFound());
-        mvc.perform(get("/api/t/" + (sessionId + 9999) + "/" + token).header("User-Agent", PHONE))
+        mvc.perform(get("/api/tickets/" + (sessionId + 9999) + "/" + token).header("User-Agent", PHONE))
             .andExpect(status().isNotFound());
     }
 
@@ -160,6 +166,91 @@ class TicketClaimTest {
         mvc.perform(get("/api/gates/nope")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/gates/nope/scan").contentType("application/json").content("{\"code\":\"x\"}"))
             .andExpect(status().isUnauthorized());
+    }
+
+    @Test void thePageReportsWhetherClaimingNeedsTheMailbox() throws Exception {
+        mvc.perform(get(path()).header("User-Agent", PHONE))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.event.claimRequiresOtp").value(true));
+    }
+
+    @Test void turningTheClaimPolicyOffLetsTheLinkStandAlone() throws Exception {
+        sessions.updateClaimPolicy(sessionId, false);
+        // No code has been verified in this session, yet the ceremony is issued. Whether
+        // it registers or authenticates depends on whether this person already has a
+        // passkey, which is not what this test is about.
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.options").exists());
+
+        sessions.updateClaimPolicy(sessionId, true);
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The reason this identity exists: a person accumulates tickets, not passkeys. The
+     * second ticket for the same address asks them to prove the passkey they already
+     * have instead of creating another entry on their device.
+     */
+    @Test void aSecondTicketForTheSamePersonAuthenticatesInsteadOfRegistering() throws Exception {
+        MockHttpSession first = verifiedSession("holder@example.com");
+        mvc.perform(post(path() + "/passkey/options").session(first).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mode").value("register"));
+
+        // Stand in for a completed registration on this person's device.
+        long holderId = holders.findByEmail("holder@example.com").orElseThrow().id;
+        holders.insert(holderId, new ByteArray(new byte[] { 1, 2, 3, 4 }),
+            new ByteArray(new byte[] { 5, 6, 7, 8 }), 0, "test");
+
+        tickets.issue(sessionId, "holder@example.com", "D-9", null);
+        String secondUrl = mailbox.lastTicketUrl().orElseThrow();
+        String secondToken = secondUrl.substring(secondUrl.lastIndexOf('/') + 1);
+        MockHttpSession second = verifiedSession("holder@example.com",
+            "/api/tickets/" + sessionId + "/" + secondToken);
+
+        mvc.perform(post("/api/tickets/" + sessionId + "/" + secondToken + "/passkey/options")
+                .session(second).with(csrf()).header("User-Agent", PHONE)
+                .contentType("application/json").content("{}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mode").value("authenticate"));
+    }
+
+    @Test void adifferentPersonStillRegistersTheirOwnPasskey() throws Exception {
+        long otherSession = sessions.insert("다른 회차", null,
+            Timestamp.from(Instant.now().plus(2, ChronoUnit.HOURS)), null);
+        tickets.issue(otherSession, "someone.else@example.com", "E-1", null);
+        String url = mailbox.lastTicketUrl().orElseThrow();
+        String token = url.substring(url.lastIndexOf('/') + 1);
+        MockHttpSession session = verifiedSession("someone.else@example.com",
+            "/api/tickets/" + otherSession + "/" + token);
+
+        mvc.perform(post("/api/tickets/" + otherSession + "/" + token + "/passkey/options")
+                .session(session).with(csrf()).header("User-Agent", PHONE)
+                .contentType("application/json").content("{}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mode").value("register"));
+    }
+
+    private MockHttpSession verifiedSession(String email) throws Exception {
+        return verifiedSession(email, path());
+    }
+
+    private MockHttpSession verifiedSession(String email, String base) throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(post(base + "/otp").session(session).with(csrf()).header("User-Agent", PHONE)
+                .contentType("application/json").content("{\"email\":\"" + email + "\"}"))
+            .andExpect(status().isOk());
+        String code = mailbox.lastCode().orElseThrow();
+        mvc.perform(post(base + "/otp/verify").session(session).with(csrf()).header("User-Agent", PHONE)
+                .contentType("application/json")
+                .content("{\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
+            .andExpect(status().isOk());
+        return session;
     }
 
     @Test void maskingNeverLeaksTheLocalPart() {

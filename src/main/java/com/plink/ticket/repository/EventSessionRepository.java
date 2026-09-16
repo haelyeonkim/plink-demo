@@ -34,6 +34,7 @@ public class EventSessionRepository {
         s.transferMax = rs.getInt("transfer_max");
         s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
         s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
+        s.claimRequiresOtp = rs.getBoolean("claim_requires_otp");
         s.faceRequired = rs.getBoolean("face_required");
         s.reentryRequiresFace = rs.getBoolean("reentry_requires_face");
         s.faceLiveness = rs.getString("face_liveness");
@@ -45,6 +46,8 @@ public class EventSessionRepository {
         s.venueLon = rs.wasNull() ? null : lon;
         s.geoRadiusMeters = rs.getInt("geo_radius_meters");
         s.geoMode = rs.getString("geo_mode");
+        s.seats = rs.getString("seats");
+        s.tiers = rs.getString("tiers");
         return s;
     };
 
@@ -71,9 +74,29 @@ public class EventSessionRepository {
         return keys.getKey().longValue();
     }
 
+    /** Name, venue and the two times. Everything else about the event is policy. */
+    public void updateDetails(long id, String name, String venue, Timestamp startsAt,
+            Timestamp gateOpensAt) {
+        jdbc.update("UPDATE event_session SET name = ?, venue = ?, starts_at = ?, gate_opens_at = ? "
+            + "WHERE id = ?", name, venue, startsAt, gateOpensAt, id);
+    }
+
     public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
         jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
             + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
+    }
+
+    /** Cascades to tickets, presence and the ledger through the foreign keys. */
+    public int delete(long id) {
+        return jdbc.update("DELETE FROM event_session WHERE id = ?", id);
+    }
+
+    public void updateClaimPolicy(long id, boolean requiresOtp) {
+        jdbc.update("UPDATE event_session SET claim_requires_otp = ? WHERE id = ?", requiresOtp, id);
+    }
+
+    public void updateCatalog(long id, String seats, String tiers) {
+        jdbc.update("UPDATE event_session SET seats = ?, tiers = ? WHERE id = ?", seats, tiers, id);
     }
 
     public void updateGeoPolicy(long id, Double lat, Double lon, int radiusMeters, String mode) {

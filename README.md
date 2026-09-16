@@ -235,6 +235,39 @@ Google 클라이언트에 위 리디렉션 URI 두 개를 모두 등록하면 �
 
 `./mvnw test`로 세션 조회, Google 인증 시작, 잘못된 콜백 거부, CSRF 보호, 로그아웃 및 기존 링크 생성 API를 검증합니다. 테스트에는 가짜 클라이언트 설정과 인증 사용자를 사용하므로 실제 Google 계정이 필요하지 않습니다. 실제 계정 선택·동의 과정은 위 설정 후 브라우저에서 확인해야 합니다.
 
+## 메일 발송 (Resend)
+
+안내 메일(입장권 링크, 양도 알림, 보호 링크 주소, 인증번호)은 `EmailSender` 한 곳을 지나 SMTP로 나갑니다.
+`spring.mail.host`가 없으면 발송하지 않고 **경고 로그만 남기므로**, 로컬 개발에는 메일 서버가 필요 없습니다.
+운영에서는 Resend의 SMTP 릴레이를 씁니다. 코드는 표준 SMTP만 사용하므로 다른 제공자로 바꿔도 설정만 달라집니다.
+
+1. [resend.com](https://resend.com)에서 **Domains → Add Domain**으로 `ddak.app`을 등록합니다.
+2. Resend가 보여주는 DNS 레코드를 Cloudflare(`ddak.app` 영역)에 추가합니다. 보통 세 가지입니다.
+   - `resend._domainkey` **TXT** — DKIM 서명 키
+   - `send` (또는 Resend가 지정하는 이름) **MX**와 **TXT(SPF)** — 반송 처리용 서브도메인
+   - 이 서브도메인 레코드는 **프록시 끄기(DNS only)** 로 두세요.
+   기존 수신용 MX(`route1~3.mx.cloudflare.net`)는 그대로 둡니다. Email Routing은 수신, Resend는 발신이라 서로 간섭하지 않습니다.
+3. 도메인 상태가 **Verified**가 되면 **API Keys**에서 발송 권한 키를 하나 만듭니다(`re_`로 시작).
+4. 서버 `.env`에 넣고 재시작합니다.
+
+   ```
+   spring.mail.host=smtp.resend.com
+   spring.mail.username=resend
+   spring.mail.password=re_xxxxxxxxxxxxxxxxxxxx
+   SMTP_PORT=587
+   MAIL_FROM=no-reply@ddak.app
+   ```
+
+   `.env`는 properties 파일로 읽히므로 점이 들어간 이름을 그대로 씁니다. 포트는 587(STARTTLS)이 기본이며,
+   25번이 막힌 환경에서도 동작합니다.
+5. **계정 관리 → 메일 발송**에서 상태가 "발송 준비됨"으로 바뀌고, **테스트 메일 보내기**로 실제 도착을 확인합니다.
+
+DMARC는 아직 없습니다. 발송을 시작한 뒤 `_dmarc.ddak.app` **TXT**에 `v=DMARC1; p=none; rua=mailto:...`를
+추가해 리포트를 받아 보고, 정상으로 확인되면 `p=quarantine`으로 올리세요.
+
+발송이 꺼져 있거나 릴레이가 거부하면 요청은 실패하지 않습니다. 입장권과 보호 링크 주소는 그대로 발급되고
+콘솔이 `LINK`(= 직접 전달 필요)로 표시하므로, 메일 장애가 발급을 막지 않습니다.
+
 ## 데모 데이터와 제한 사항
 
 - 기본값이 H2 인메모리 DB이므로 백엔드를 종료하면 변경 데이터가 사라집니다. 시작할 때 Flyway가 `db/migration`의 스키마와 `db/dev`의 샘플 링크 3개·열람 기록을 적용합니다. 영속 저장이 필요하면 아래 **데이터베이스** 절을 따라 Supabase로 전환하세요.

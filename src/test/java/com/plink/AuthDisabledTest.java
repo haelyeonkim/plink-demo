@@ -11,7 +11,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = {"spring.config.import=","plink.auth.google-client-id=", "plink.auth.google-client-secret=",
+@SpringBootTest(properties = {"spring.config.import=", "plink.admin.email=", "plink.admin.password=","plink.auth.google-client-id=", "plink.auth.google-client-secret=",
     "plink.auth.base-url=https://lyuni.ddak.app", "spring.datasource.url=jdbc:h2:mem:auth-disabled",
     // An HTTPS origin must carry a real ticket secret; see TicketStartupCheckTest.
     "plink.ticket.token-secret=test-only-secret"})

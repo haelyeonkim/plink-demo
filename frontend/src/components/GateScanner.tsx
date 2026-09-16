@@ -19,6 +19,8 @@ interface Outcome {
 }
 
 const STORAGE = 'plink.gate.credentials';
+const CAMERA = 'plink.gate.camera';
+const FACE_MODE = 'plink.gate.face';
 const QUEUE = 'plink.gate.queue';
 
 interface Queued { code: string; method: string; capturedAt: string }
@@ -43,9 +45,18 @@ export default function GateScanner() {
   const [gateToken, setGateToken] = useState('');
   const [gate, setGate] = useState<GateInfo | null>(null);
   const [error, setError] = useState('');
+  const faceFailures = useRef(0);
+  // Which way the tablet's camera faces. A terminal on a stand usually wants the rear
+  // lens; one on a desk wants the front, so the choice is remembered per device.
+  const [facing, setFacing] = useState<'user' | 'environment'>(
+    () => (localStorage.getItem(CAMERA) === 'environment' ? 'environment' : 'user'));
+
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [scanning, setScanning] = useState(false);
-  const [faceMode, setFaceMode] = useState(false);
+  // A terminal is opened to be used: the camera starts reading as soon as the gate is
+  // known, and both ways in are live. Either toggle can still be turned off by staff.
+  const [scanning, setScanning] = useState(true);
+  const [faceMode, setFaceMode] = useState(
+    () => localStorage.getItem(FACE_MODE) !== 'off');
   const [queued, setQueued] = useState(readQueue().length);
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLCanvasElement>(null);
@@ -62,17 +73,13 @@ export default function GateScanner() {
     } catch { localStorage.removeItem(STORAGE); }
   }, []);
 
-  async function connect(event: React.FormEvent) {
-    event.preventDefault();
-    setError('');
-    try {
-      const info = await gateInfo(gateId.trim(), gateToken.trim()) as GateInfo;
-      setGate(info);
-      localStorage.setItem(STORAGE, JSON.stringify({ gateId: gateId.trim(), gateToken: gateToken.trim() }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '단말을 연결하지 못했어요.');
-    }
-  }
+  // Stored credentials come from the setup link, so connecting is automatic.
+  useEffect(() => {
+    if (!gateId || !gateToken || gate) return;
+    gateInfo(gateId, gateToken)
+      .then(info => setGate(info as GateInfo))
+      .catch(err => setError(err instanceof Error ? err.message : '단말을 연결하지 못했어요.'));
+  }, [gateId, gateToken, gate]);
 
   const submit = useCallback(async (code: string) => {
     if (inFlight.current) return;
@@ -127,11 +134,20 @@ export default function GateScanner() {
           detail: `얼굴 · ${result.ticketRef}${seat}`,
           at: Date.now(),
         });
+        faceFailures.current = 0;
       } catch (err) {
         const message = err instanceof Error ? err.message : '';
         // "no match" is the normal state between visitors, not something to flash.
         if (message && !message.includes('찾지 못했')) {
+          faceFailures.current += 1;
           setOutcome({ kind: 'deny', headline: '거부', detail: message, at: Date.now() });
+          // A face service that is down would otherwise deny every two seconds and bury
+          // the QR lane in red. Three in a row is enough to call it out and step back.
+          if (faceFailures.current >= 3) {
+            setFaceMode(false);
+            localStorage.setItem(FACE_MODE, 'off');
+            setError('얼굴 인식을 사용할 수 없어 껐어요. QR은 그대로 동작합니다.');
+          }
         }
       } finally {
         window.setTimeout(() => { inFlight.current = false; }, 1200);
@@ -149,7 +165,7 @@ export default function GateScanner() {
     async function start() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
         if (stopped || !video.current) return;
@@ -193,7 +209,15 @@ export default function GateScanner() {
       window.cancelAnimationFrame(raf);
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [gate, scanning, submit]);
+  }, [gate, scanning, submit, facing]);
+
+  function flipCamera() {
+    setFacing(current => {
+      const next = current === 'user' ? 'environment' : 'user';
+      localStorage.setItem(CAMERA, next);
+      return next;
+    });
+  }
 
   const flush = useCallback(async () => {
     const events = readQueue();
@@ -221,24 +245,16 @@ export default function GateScanner() {
 
   if (!gate) {
     return (
-      <section className="page-section">
+      <section className="page-section page-tight">
         <div className="access-card">
           <p className="eyebrow center"><span></span> GATE TERMINAL</p>
-          <h2>게이트 단말 연결</h2>
-          <p className="hint-text">주최자 콘솔에서 발급한 게이트 ID와 토큰을 입력하세요. 토큰은 이 단말에만 저장됩니다.</p>
-          <form onSubmit={connect}>
-            <div className="field">
-              <label htmlFor="gate-id">게이트 ID</label>
-              <input id="gate-id" value={gateId} onChange={e => setGateId(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="gate-token">게이트 토큰</label>
-              <input id="gate-token" type="password" value={gateToken}
-                onChange={e => setGateToken(e.target.value)} required />
-            </div>
-            <button className="btn-primary" type="submit">연결</button>
-          </form>
+          <h2>단말이 연결되어 있지 않아요</h2>
+          <p className="hint-text">
+            관리 화면에서 발급한 <b>설정 링크</b>를 이 태블릿에서 열고 인증번호를 입력하면 연결됩니다.
+            토큰을 직접 입력할 필요는 없어요.
+          </p>
           {error && <p className="error-text" role="alert">{error}</p>}
+          <button className="btn-secondary" onClick={() => window.location.reload()}>다시 확인</button>
         </div>
       </section>
     );
@@ -258,18 +274,21 @@ export default function GateScanner() {
         <button className="btn-tiny" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
-        <button className="btn-tiny" onClick={() => setFaceMode(value => !value)}>
+        <button className="btn-tiny" onClick={() => setFaceMode(value => {
+          localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
+          return !value;
+        })}>
           {faceMode ? '얼굴 인식 끄기' : '얼굴 인식 켜기'}
+        </button>
+        <button className="btn-tiny" onClick={flipCamera} title="앞뒤 카메라 전환">
+          카메라 {facing === 'user' ? '전면' : '후면'} ⟳
         </button>
       </header>
 
       <div className="gate-viewport">
-        <video ref={video} muted playsInline />
+        <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
         <canvas ref={frame} hidden />
-        <div className="gate-guides" aria-hidden="true">
-          <span className="gate-guide-qr" />
-          <span className="gate-guide-face" />
-        </div>
+        <div className="gate-grid" aria-hidden="true" />
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
       </div>
 

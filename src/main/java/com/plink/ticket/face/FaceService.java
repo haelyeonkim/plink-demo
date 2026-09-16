@@ -34,15 +34,18 @@ public class FaceService {
     private final FaceEmbedder embedder;
     private final TemplateCipher cipher;
     private final TicketProperties properties;
+    private final com.plink.ticket.repository.AdmissionRepository admissions;
 
     public FaceService(FaceRepository faces, TicketRepository tickets, TicketService ticketService,
-            FaceEmbedder embedder, TemplateCipher cipher, TicketProperties properties) {
+            FaceEmbedder embedder, TemplateCipher cipher, TicketProperties properties,
+            com.plink.ticket.repository.AdmissionRepository admissions) {
         this.faces = faces;
         this.tickets = tickets;
         this.ticketService = ticketService;
         this.embedder = embedder;
         this.cipher = cipher;
         this.properties = properties;
+        this.admissions = admissions;
     }
 
     public static final String PURPOSES = "게이트 본인 확인, 중복 등록 방지";
@@ -73,6 +76,18 @@ public class FaceService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "패스키 등록을 먼저 마쳐 주세요.");
         }
+        // Enrolling from inside the venue would attach a face to a ticket that is
+        // already through the door, which is the one moment the check cannot help.
+        if (admissions.find(ticket.id).filter(com.plink.ticket.model.Presence::inside).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "장내에 있는 동안에는 얼굴을 등록할 수 없어요. 퇴장 후에 등록해 주세요.");
+        }
+        // One ticket, one way in. A ticket that has already travelled as a QR code stays
+        // a QR ticket, so a face cannot be added to it later.
+        if (admissions.countQrMovements(ticket.id) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "이미 QR로 사용한 입장권이에요. 얼굴 등록은 QR을 쓰기 전에만 할 수 있어요.");
+        }
         FaceRepository.Consent consent = faces.activeConsent(ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
                 "얼굴 정보 수집 동의가 필요해요."));
@@ -100,9 +115,9 @@ public class FaceService {
             double score = FaceVector.similarity(vector.values, cipher.open(other.vector));
             if (score >= config.getDedupThreshold()) {
                 faces.recordAttempt(ticket.sessionId, ticket.id, null, "ENROL", "DUPLICATE",
-                    score, null, liveness, "회차 내 중복 얼굴");
+                    score, null, liveness, "행사 내 중복 얼굴");
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "이미 이 회차의 다른 입장권에 등록된 얼굴이에요. 안내 데스크에서 확인해 주세요.");
+                    "이미 이 행사의 다른 입장권에 등록된 얼굴이에요. 안내 데스크에서 확인해 주세요.");
             }
         }
 
@@ -137,6 +152,10 @@ public class FaceService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("consented", faces.activeConsent(ticket.id).isPresent());
         result.put("enrolled", faces.findByTicket(ticket.id).isPresent());
+        // Why the screen may not offer enrolment, so it can say so rather than fail late.
+        result.put("inside", admissions.find(ticket.id)
+            .filter(com.plink.ticket.model.Presence::inside).isPresent());
+        result.put("qrUsed", admissions.countQrMovements(ticket.id) > 0);
         result.put("consentVersion", properties.getFace().getConsentVersion());
         result.put("purposes", PURPOSES);
         return result;

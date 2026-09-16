@@ -30,8 +30,8 @@ public class LinkViewRepository {
                 ROW_MAPPER, linkId);
     }
 
-    public void save(Long linkId, String viewerName) {
-        jdbc.update("INSERT INTO link_view (link_id, viewer_name) VALUES (?, ?)",
-                linkId, viewerName);
+    public void save(Long linkId, Long recipientId, String viewerName) {
+        jdbc.update("INSERT INTO link_view (link_id, recipient_id, viewer_name) VALUES (?, ?, ?)",
+                linkId, recipientId, viewerName);
     }
 }

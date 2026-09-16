@@ -7,6 +7,7 @@ import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.PresentationRepository;
+import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.GateAuthService;
@@ -32,12 +33,16 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Location binding, offline replay, anomaly signals and staff corrections. */
 // Isolated from ./.env: the suite must not depend on whichever origin, secret or
 // face service a developer happens to have configured locally.
-@SpringBootTest(properties = "spring.config.import=")
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:fieldopstest;DB_CLOSE_DELAY=-1",
+    "spring.datasource.username=sa", "spring.datasource.password=",
+    "spring.config.import=", "plink.admin.email=", "plink.admin.password="})
 @Import(RecordingEmail.class)
 class FieldOpsTest {
 
     @Autowired TicketService tickets;
     @Autowired TicketRepository ticketRepository;
+    @Autowired HolderRepository holders;
     @Autowired EventSessionRepository sessions;
     @Autowired GateRepository gates;
     @Autowired GateAuthService gateAuth;
@@ -56,13 +61,18 @@ class FieldOpsTest {
     private Ticket boundTicket(long sessionId) {
         Map<String, Object> issued = tickets.issue(sessionId, "holder@example.com", "A-1", null);
         long id = ((Number) issued.get("ticketId")).longValue();
-        ticketRepository.bind(id, "holder@example.com");
+        ticketRepository.bind(id, holderFor("holder@example.com"), "holder@example.com");
         return ticketRepository.findById(id).orElseThrow();
+    }
+
+    private long holderFor(String email) {
+        return holders.findByEmail(email).map(h -> h.id)
+            .orElseGet(() -> holders.create(email, tickets.userHandleFor(email)));
     }
 
     private Gate gate(long sessionId, String direction) {
         String id = "g" + Secrets.randomAlnum(10);
-        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"));
+        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null);
         return gates.findById(id).orElseThrow();
     }
 

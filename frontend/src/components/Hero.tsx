@@ -25,7 +25,7 @@ export default function Hero() {
             수신자에게 링크를 전달하고, 패스키 수신 확정과 열람을 관리하세요.
           </p>
           <div className="actions">
-            <Link className="primary" to="/create">보호 링크 만들기 <b>&rarr;</b></Link>
+            <Link className="primary" to="/links/new">보호 링크 만들기 <b>&rarr;</b></Link>
             <Link className="secondary" to="/guide">사용 방법 보기</Link>
           </div>
           <div className="trust">
@@ -70,7 +70,7 @@ export default function Hero() {
         </div>
       </section>
 
-      {/* Why P-Link */}
+      {/* Why Passlink */}
       <section className="meaning" id="guide">
         <p className="eyebrow center"><span></span> WHY P-LINK?</p>
         <h2>P에 담긴 세 가지 약속</h2>
@@ -110,7 +110,7 @@ export default function Hero() {
         <ol>
           <li><b>01</b><span>원본 링크 입력</span></li>
           <li><b>02</b><span>보호 옵션 설정</span></li>
-          <li><b>03</b><span>P-Link 공유</span></li>
+          <li><b>03</b><span>패스링크 공유</span></li>
         </ol>
       </section>
 

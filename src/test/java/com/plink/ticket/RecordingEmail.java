@@ -18,9 +18,12 @@ public class RecordingEmail {
     public static class Mailbox implements EmailSender {
         public final List<String[]> sent = new CopyOnWriteArrayList<>();
 
-        @Override public void send(String to, String subject, String body) {
+        @Override public boolean send(String to, String subject, String body) {
             sent.add(new String[] { to, subject, body });
+            return true;
         }
+
+        @Override public String from() { return "no-reply@test.local"; }
 
         public void clear() { sent.clear(); }
 
@@ -34,7 +37,7 @@ public class RecordingEmail {
             return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
         }
 
-        private static final Pattern URL = Pattern.compile("(https?://[^\\s]+/t/\\d+/[A-Za-z0-9_-]+)");
+        private static final Pattern URL = Pattern.compile("(https?://[^\\s]+/tickets/\\d+/[A-Za-z0-9_-]+)");
 
         /** Newest message that actually carries a ticket link. */
         public Optional<String> lastTicketUrl() {
