@@ -65,7 +65,9 @@ def decode_frames(request: FrameRequest) -> List[bytes]:
 def startup() -> None:
     global BACKEND, LIVENESS
     BACKEND = build_backend()
-    LIVENESS = Liveness()
+    # The same YuNet that finds the face for recognition finds it for liveness, so the
+    # model sees the crop it was trained on rather than the whole room.
+    LIVENESS = Liveness(getattr(BACKEND, "detect", None) and BACKEND)
     log.info("Recognition backend: %s (%s)", CONFIG.backend, BACKEND.algo_version)
     if not LIVENESS.configured:
         log.warning(

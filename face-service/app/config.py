@@ -30,6 +30,14 @@ class Config:
     # "disabled" always passes and says so; "onnx" runs a passive anti-spoofing model.
     liveness_mode: str = os.environ.get("FACE_LIVENESS_MODE", "disabled")
     liveness_model: str = os.environ.get("FACE_LIVENESS_MODEL", "")
+    # Which output column means "a real face". The two common open models disagree:
+    # MiniFASNet's binary heads put the live class at 0, others at 1, and getting it
+    # backwards rejects every live face while waving photographs through.
+    liveness_real_index: int = int(os.environ.get("FACE_LIVENESS_REAL_INDEX", "0"))
+    # These models are trained on a face crop with margin, not on the whole frame.
+    liveness_crop_scale: float = _float("FACE_LIVENESS_CROP_SCALE", 1.5)
+    # Below this the capture is treated as a presentation attack by the ticket service.
+    liveness_threshold: float = _float("FACE_LIVENESS_THRESHOLD", 0.55)
 
     # Captures below this are rejected rather than enrolled badly; enrolment quality is
     # most of what later matching accuracy depends on.

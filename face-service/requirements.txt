@@ -3,3 +3,5 @@ fastapi>=0.120
 uvicorn[standard]>=0.38
 pydantic>=2.12
 opencv-python-headless>=4.12
+# Runs the anti-spoofing model; the recognition backend can also use it.
+onnxruntime>=1.18

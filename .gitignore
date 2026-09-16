@@ -20,3 +20,7 @@ frontend/dist/
 face-service/.venv/
 face-service/models/
 face-service/logs/
+
+# Python bytecode from the face service
+__pycache__/
+*.pyc

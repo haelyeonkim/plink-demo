@@ -27,4 +27,16 @@ fetch() {
 echo "==> Models"
 fetch "$ZOO/face_detection_yunet/face_detection_yunet_2023mar.onnx" models/face_detection_yunet.onnx
 fetch "$ZOO/face_recognition_sface/face_recognition_sface_2021dec.onnx" models/face_recognition_sface.onnx
+
+# Anti-spoofing. This one is a MiniFASNet-architecture binary head trained on
+# CelebA-Spoof; its repository publishes no licence, so treat it as evaluation-only
+# and swap in weights you may ship before selling this. The live class is column 0
+# for these weights: FACE_LIVENESS_REAL_INDEX exists because other heads use 1.
+ANTISPOOF="https://github.com/hairymax/Face-AntiSpoofing/raw/main/saved_models/AntiSpoofing_bin_1.5_128.onnx"
+if [ -s models/face_antispoof.onnx ]; then
+  echo "  have face_antispoof.onnx"
+else
+  echo "  fetching face_antispoof.onnx"
+  curl -fsSL "$ANTISPOOF" -o models/face_antispoof.onnx
+fi
 ls -lh models

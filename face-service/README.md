@@ -46,13 +46,26 @@ plink.ticket.face.service-token=<FACE_SERVICE_TOKEN와 동일한 값>
 
 **InsightFace(ArcFace, `buffalo_l`)** 는 정확도가 가장 좋지만 **사전학습 가중치가 비상업 연구용**입니다. 유료 서비스에 쓰려면 라이선스를 먼저 확인하세요. 라이선스는 바뀔 수 있으니 도입 전에 직접 확인하는 것이 안전합니다.
 
-## 라이브니스 — 솔직한 한계
+## 라이브니스
 
-**인증(iBeta 등)을 받은 오픈 라이브니스 모델은 없습니다.** `FACE_LIVENESS_MODE=disabled`(기본)이면 모든 캡처가 통과하며, 서비스는 이를 숨기지 않습니다 — 기동 시 경고하고, `/health`의 `livenessConfigured: false`와 응답의 `basis: "not-configured"`로 매번 알립니다.
+`fetch-models.sh`가 안티스푸핑 모델(`models/face_antispoof.onnx`)을 함께 내려받고, 모델 파일이 있으면 `run.sh`가 `FACE_LIVENESS_MODE=onnx`로 **자동으로 켭니다**. `/health`의 `livenessConfigured`로 현재 상태를 확인하세요.
 
-이 상태로 운영한다면 **유인 게이트가 전제**입니다. 스태프가 보고 있는 레인에서 사진을 들이대는 행위는 그 자체로 눈에 띕니다. 무인 레인을 둘 계획이라면 상용 PAD 단말이 필요합니다.
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `FACE_LIVENESS_MODE` | 모델 있으면 `onnx` | `disabled`면 항상 통과하고 그 사실을 응답에 적습니다 |
+| `FACE_LIVENESS_MODEL` | `models/face_antispoof.onnx` | ONNX 가중치 경로 |
+| `FACE_LIVENESS_REAL_INDEX` | `0` | 출력에서 **진짜 얼굴**을 뜻하는 열. 열린 모델마다 다릅니다(MiniFASNet 계열은 0, 다른 헤드는 1) |
+| `FACE_LIVENESS_CROP_SCALE` | `1.5` | 모델이 학습한 **얼굴 크롭 배율**. 프레임 전체를 넣으면 성능이 떨어집니다 |
 
-`onnx` 모드에서는 패시브 모델 점수에 더해, 프레임 간 움직임이 사실상 0이면 점수를 낮춥니다 — 가장 게으른 공격인 "정지 사진 들이대기"에 대한 최소한의 방어입니다.
+판정은 세 가지를 합칩니다.
+
+1. **모델 점수** — YuNet으로 찾은 얼굴을 1.5배로 잘라 모델 입력 크기에 레터박스로 맞춰 채점합니다.
+2. **정지 프레임 차단** — 프레임 간 움직임이 사실상 0이면 점수를 0.2로 낮춥니다. 사진을 들이대는 가장 게으른 공격이 여기서 걸립니다(`basis: "static-frames"`).
+3. **임계값** — 입장권 서비스가 `plink.ticket.face.liveness-threshold`(기본 0.7) 미만을 거부합니다.
+
+**한계는 그대로입니다.** 인증(iBeta 등)을 받은 오픈 모델은 없습니다. 지금 쓰는 가중치는 CelebA-Spoof로 학습된 MiniFASNet 계열 이진 분류기이고, **저장소에 라이선스 표기가 없습니다** — 평가용으로만 쓰고, 상용 배포 전에 라이선스가 분명한 가중치(예: Apache-2.0인 minivision Silent-Face-Anti-Spoofing을 직접 ONNX로 변환)로 교체하세요. 교체는 `FACE_LIVENESS_MODEL`과 `FACE_LIVENESS_REAL_INDEX` 설정만 바꾸면 됩니다.
+
+정교한 공격(고화질 디스플레이, 3D 마스크)까지 막으려면 여전히 상용 PAD 단말이 필요하고, 그때까지는 **유인 레인**이 안전합니다.
 
 ## 운영 시 지킬 것
 
