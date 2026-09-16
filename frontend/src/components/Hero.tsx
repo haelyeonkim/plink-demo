@@ -1,13 +1,29 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { accessLink } from '../api';
 
 export default function Hero() {
   const [code, setCode] = useState('');
   const navigate = useNavigate();
 
-  const handleAccess = (e: React.FormEvent) => {
+  const [codeError, setCodeError] = useState('');
+  const [checking, setChecking] = useState(false);
+
+  // Checked before navigating: a mistyped code otherwise lands on a "link not found"
+  // page that reads like the link was revoked rather than like a typo.
+  const handleAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (code.trim()) navigate(`/s/${code.trim()}`);
+    const value = code.trim();
+    if (!value) { setCodeError('공유받은 코드를 입력해 주세요.'); return; }
+    setChecking(true); setCodeError('');
+    try {
+      const info = await accessLink(value);
+      navigate(info.path ?? `/s/${encodeURIComponent(value)}`);
+    } catch {
+      setCodeError('이 코드로는 링크를 찾을 수 없어요. 전달받은 주소를 다시 확인해 주세요.');
+    } finally {
+      setChecking(false);
+    }
   };
 
   return (
@@ -116,14 +132,14 @@ export default function Hero() {
 
       {/* Mini sections */}
       <section className="mini-sections">
-        <article id="manage-intro">
+        <Link className="mini-section-link" to="/links" id="manage-intro">
           <b>링크 관리</b>
-          <p>공유한 링크의 상태와 대상을 한눈에 관리하세요.</p>
-        </article>
-        <article id="stats">
-          <b>링크 통계</b>
-          <p>열람 여부와 시간을 확인해 중요한 순간을 놓치지 마세요.</p>
-        </article>
+          <p>문서마다 수신자를 발급하고, 누가 열었는지 확인하세요.</p>
+        </Link>
+        <Link className="mini-section-link" to="/tickets/admin" id="stats">
+          <b>입장권 관리</b>
+          <p>행사를 만들고 입장권을 발급해 게이트에서 확인하세요.</p>
+        </Link>
       </section>
 
       {/* Access code form */}
@@ -136,8 +152,9 @@ export default function Hero() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
-          <button type="submit">열기</button>
+          <button type="submit" disabled={checking}>{checking ? '확인 중…' : '열기'}</button>
         </form>
+        {codeError && <p className="error-text" role="alert">{codeError}</p>}
       </section>
     </>
   );

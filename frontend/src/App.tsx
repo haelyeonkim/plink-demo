@@ -6,6 +6,7 @@ import Header from './components/Header';
 import Hero from './components/Hero';
 import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
+import ContentCreate from './components/ContentCreate';
 import AdminConsole from './components/AdminConsole';
 import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/" element={<Hero />} />
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
           <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
+          <Route path="/content/create" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
           {/* Administration sits on its own path, away from the product consoles. */}
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           <Route path="/accounts" element={<Navigate to="/admin" replace />} />

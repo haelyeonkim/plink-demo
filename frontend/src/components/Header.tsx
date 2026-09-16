@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 const LINKS: Array<[string, string]> = [
   ['/links', '링크 관리'],
+  ['/content/create', '컨텐츠 생성'],
   ['/tickets/admin', '입장권 관리'],
   ['/guide', '사용자 가이드'],
 ];

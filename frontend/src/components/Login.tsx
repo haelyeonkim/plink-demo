@@ -78,6 +78,26 @@ export default function Login() {
           </>
         )}
       </div>
+
+      {/* What signing in actually hands over, next to the form that does it. */}
+      <aside className="login-privacy" aria-labelledby="login-privacy-title">
+        <h2 id="login-privacy-title">로그인 정보 이용 안내</h2>
+        <p>
+          이메일과 비밀번호로 로그인하면 서버는 이메일과 비밀번호 <b>해시</b>만 보관합니다. 비밀번호
+          원본은 저장하지 않습니다.
+        </p>
+        {session?.googleEnabled && (
+          <p>
+            Google로 로그인하면 이름·이메일·계정 식별자를 받아 로그인 확인과 소유자 표시에만
+            사용합니다. Google 비밀번호는 받지 않습니다.
+          </p>
+        )}
+        <p>
+          로그인 상태는 서버 세션과 브라우저 쿠키로 유지되며, 로그아웃하거나 세션이 만료되면
+          종료됩니다. 만든 링크·행사는 로그아웃만으로 지워지지 않습니다.
+        </p>
+        <p><Link to="/privacy">개인정보처리방침 보기</Link></p>
+      </aside>
     </section>
   );
 }
