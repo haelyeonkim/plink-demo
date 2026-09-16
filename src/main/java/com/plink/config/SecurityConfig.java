@@ -12,6 +12,7 @@ import org.springframework.security.config.annotation.web.configurers.RequestCac
 import org.springframework.security.config.oauth2.client.CommonOAuth2Provider;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.core.Authentication;
@@ -90,8 +91,17 @@ public class SecurityConfig {
             ClientRegistration google = CommonOAuth2Provider.GOOGLE.getBuilder("google")
                 .clientId(clientId).clientSecret(clientSecret)
                 .redirectUri(baseUrl + "/login/oauth2/code/google").build();
+            InMemoryClientRegistrationRepository registrations =
+                new InMemoryClientRegistrationRepository(google);
+            // Ask which account: a shared machine otherwise signs in as whoever Google
+            // remembers, and the operator only finds out from the name in the header.
+            DefaultOAuth2AuthorizationRequestResolver resolver =
+                new DefaultOAuth2AuthorizationRequestResolver(registrations, "/oauth2/authorization");
+            resolver.setAuthorizationRequestCustomizer(request -> request
+                .additionalParameters(parameters -> parameters.put("prompt", "select_account")));
             http.oauth2Login(oauth -> oauth
-                .clientRegistrationRepository(new InMemoryClientRegistrationRepository(google))
+                .clientRegistrationRepository(registrations)
+                .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(resolver))
                 .loginPage(baseUrl + "/login")
                 .defaultSuccessUrl(baseUrl + "/", true)
                 .failureUrl(baseUrl + "/login?error=google"));

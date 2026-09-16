@@ -155,6 +155,11 @@ public class LinkService {
     }
 
     /** Whether a relay is configured at all, for the settings screen. */
+    /** Records that this recipient opened their address, once. */
+    public void recordOpen(long linkId, long recipientId) {
+        linkViewRepository.saveInitialOpen(linkId, recipientId);
+    }
+
     public boolean mailConfigured() { return mail.configured(); }
 
     public String mailFrom() { return mail.from(); }

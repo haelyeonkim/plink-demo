@@ -54,6 +54,7 @@ public class LinkController {
             Map<String, Object> vm = new LinkedHashMap<String, Object>();
             vm.put("viewerName", v.getViewerName());
             vm.put("viewedAt", v.getViewedAt());
+            vm.put("eventType", v.getEventType());
             views.add(vm);
         }
         body.put("views", views);
@@ -73,6 +74,9 @@ public class LinkController {
             return ResponseEntity.badRequest().build();
         }
         String title = (String) req.get("title");
+        if (title != null && title.length() > 50) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "링크 제목은 50자 이내로 입력해 주세요.");
+        }
         String password = (String) req.get("password");
         String recipientNames = (String) req.get("recipientNames");
 
@@ -222,8 +226,16 @@ public class LinkController {
         if (!addresses.matches(link, slug)) {
             return ResponseEntity.notFound().build();
         }
+        // Opening the address is itself worth recording: it tells the sender the message
+        // arrived, which the passkey event alone cannot.
+        linkService.recordOpen(link.getId(), recipient.id);
         Map<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("shortCode", recipient.shortCode);
+        // What the visitor must type to claim it, and how much of it we are willing to show.
+        body.put("contactRequired", !recipient.claimed());
+        body.put("expiresAt", link.getExpiresAt());
+        body.put("maxViews", link.getMaxViews());
+        body.put("viewCount", link.getViewCount());
         // The canonical address, so a bare /s/{code} can move the visitor onto it.
         body.put("issuer", addresses.slugFor(link).orElse(null));
         body.put("path", addresses.path(link, recipient));

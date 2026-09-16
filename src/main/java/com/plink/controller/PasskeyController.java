@@ -13,7 +13,7 @@ public class PasskeyController {
     public PasskeyController(PasskeyService service) { this.service=service; }
     @PostMapping("/options")
     public Map<String,Object> options(@PathVariable String code, @RequestBody Map<String,String> body, HttpSession session) {
-        return service.start(code, body.get("password"), session);
+        return service.start(code, body.get("password"), body.get("contact"), session);
     }
     @PostMapping("/finish")
     public Map<String,String> finish(@PathVariable String code, @RequestBody JsonNode credential, HttpSession session) {

@@ -12,6 +12,7 @@ export default function Footer() {
         <img src="/logo.svg" alt="패스링크" height="22" />
       </Link>
       <p>Private by design. Priority by choice.</p>
+      <Link className="footer-link" to="/privacy">개인정보처리방침</Link>
       <small>&copy; 2026 Passlink. All rights reserved.</small>
     </footer>
   );

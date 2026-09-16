@@ -857,6 +857,7 @@ body:has(.page-wide) .footer { max-width: min(1600px, 96vw); }
   border-bottom: 1px solid var(--line);
 }
 .view-list li:last-child { border-bottom: none; }
+.viewer-avatar.viewer-open { background: var(--bg-section); color: #9198aa; }
 .viewer-avatar {
   width: 32px;
   height: 32px;
@@ -1293,6 +1294,31 @@ body:has(.gate-screen) { overflow: hidden; }
 .zone-now { margin-left: auto; font-size: 18px; font-variant-numeric: tabular-nums; }
 .zone-bar { height: 8px; border-radius: 999px; background: var(--bg-section); overflow: hidden; margin: 6px 0 4px; }
 .zone-bar span { display: block; height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s; }
+
+/* Guide and privacy: prose pages, read rather than operated. */
+.guide-role-title { font-size: 15px; margin: 28px 0 12px; }
+.guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; }
+.guide-card { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+.guide-card b { font-size: 11px; letter-spacing: 1px; color: var(--blue); }
+.guide-card h3 { font-size: 15px; margin: 8px 0 8px; }
+.guide-card p { font-size: 13px; color: #5b647a; line-height: 1.7; }
+.guide-card a { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.guide-note { margin-top: 28px; background: var(--bg-section); border-radius: 16px; padding: 18px 20px; }
+.guide-note strong { display: block; font-size: 13px; margin-bottom: 6px; }
+.guide-note p { font-size: 13px; color: #5b647a; line-height: 1.7; }
+.guide-note a { color: var(--blue); font-weight: 600; }
+
+.privacy-page { max-width: 760px; }
+.privacy-page h1 { font-size: 28px; letter-spacing: -1px; margin: 4px 0 6px; }
+.privacy-page h2 { font-size: 16px; margin: 26px 0 10px; }
+.privacy-page p, .privacy-page li { font-size: 14px; color: #4a5570; line-height: 1.8; }
+.privacy-page ul { padding-left: 18px; }
+.privacy-page li { margin-bottom: 6px; }
+.privacy-meta { color: #9198aa; font-size: 12px; margin-bottom: 18px; }
+.privacy-back { margin-top: 28px; }
+.privacy-back a { color: var(--blue); font-weight: 700; }
+.footer-link { font-size: 11px; color: #9198aa; }
+.footer-link:hover { color: var(--blue); }
 
 /* Bulk import from a spreadsheet */
 .bulk-import { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 18px; }

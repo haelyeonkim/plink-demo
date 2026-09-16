@@ -184,6 +184,21 @@ class LinkRecipientTest {
         assertTrue(mailbox.sent.isEmpty(), "보내지 않기로 했으면 한 통도 나가면 안 됩니다");
     }
 
+    @Test void openingAnAddressIsRecordedOnceAndSeparatelyFromProvingIt() throws Exception {
+        long linkId = createLink();
+        JsonNode recipient = issue(linkId, "kim@example.com", "김지수");
+        String code = recipient.get("shortCode").asText();
+
+        mvc.perform(get("/api/links/s/" + code)).andExpect(status().isOk());
+        mvc.perform(get("/api/links/s/" + code)).andExpect(status().isOk());
+
+        // Two visits, one arrival: refreshing the page is the same person finding it again.
+        mvc.perform(get("/api/links/" + linkId).session(session))
+            .andExpect(jsonPath("$.views.length()").value(1))
+            .andExpect(jsonPath("$.views[0].eventType").value("INITIAL_OPEN"))
+            .andExpect(jsonPath("$.views[0].viewerName").doesNotExist());
+    }
+
     @Test void aDeletedAddressStopsResolving() throws Exception {
         long linkId = createLink();
         JsonNode recipient = issue(linkId, "오발송");

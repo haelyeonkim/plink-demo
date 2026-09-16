@@ -8,7 +8,8 @@ import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
 import AdminConsole from './components/AdminConsole';
 import AccessLink from './components/AccessLink';
-import Placeholder from './components/Placeholder';
+import Guide from './components/Guide';
+import Privacy from './components/Privacy';
 import TicketPage from './components/TicketPage';
 import GateScanner from './components/GateScanner';
 import GateSetup from './components/GateSetup';
@@ -47,7 +48,8 @@ export default function App() {
           <Route path="/tickets/sessions/new" element={<RequireAdmin scope="canTickets"><SessionCreate /></RequireAdmin>} />
           <Route path="/tickets/:sessionId/:token" element={<TicketPage />} />
           <Route path="/stats" element={<Navigate to="/links" replace />} />
-          <Route path="/guide" element={<Placeholder title="사용자 가이드" desc="패스링크의 모든 기능을 쉽고 빠르게 알아보세요." />} />
+          <Route path="/guide" element={<Guide />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/login" element={<Login />} />
         </Routes>
       </main>

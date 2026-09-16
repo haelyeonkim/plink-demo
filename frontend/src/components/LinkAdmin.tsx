@@ -349,15 +349,25 @@ export default function LinkAdmin() {
             <p className="empty">아직 열람 기록이 없어요.</p>
           ) : (
             <ul className="view-list view-list-wide">
-              {detail.views.map((view, index) => (
-                <li key={index}>
-                  <span className="viewer-avatar">{view.viewerName.charAt(0)}</span>
-                  <div>
-                    <b>{view.viewerName}</b>
-                    <small>{timeAgo(view.viewedAt)} · {formatDate(view.viewedAt)}</small>
-                  </div>
-                </li>
-              ))}
+              {detail.views.map((view, index) => {
+                // An open says the message arrived; a passkey says the document was read.
+                const opened = view.eventType === 'INITIAL_OPEN';
+                const who = view.viewerName || (opened ? '링크 열림' : '수신자');
+                return (
+                  <li key={index}>
+                    <span className={`viewer-avatar${opened ? ' viewer-open' : ''}`}>
+                      {opened ? '◔' : who.charAt(0)}
+                    </span>
+                    <div>
+                      <b>{who}</b>
+                      <small>
+                        {opened ? '링크를 열어봤어요' : '패스키 인증 완료'}
+                        {' · '}{timeAgo(view.viewedAt)} · {formatDate(view.viewedAt)}
+                      </small>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

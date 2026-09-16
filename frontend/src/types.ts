@@ -39,8 +39,10 @@ export interface LinkDetail extends ProtectedLink {
 }
 
 export interface LinkViewRecord {
-  viewerName: string;
+  viewerName: string | null;
   viewedAt: string;
+  /** INITIAL_OPEN: the address was opened. PASSKEY_AUTHENTICATED: it was proven. */
+  eventType?: string;
 }
 
 export interface AccessInfo {
@@ -55,6 +57,11 @@ export interface AccessInfo {
   /** The account that issued it, and the canonical path it lives at. */
   issuer: string | null;
   path: string;
+  /** Whether the visitor still has to prove which address this was sent to. */
+  contactRequired?: boolean;
+  expiresAt?: string | null;
+  maxViews?: number;
+  viewCount?: number;
 }
 
 export interface CreateLinkRequest {

@@ -9,6 +9,7 @@ export default function AccessLink() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<AccessInfo | null>(null);
   const [password, setPassword] = useState('');
+  const [contact, setContact] = useState('');
   const [error, setError] = useState('');
   const [redirectUrl, setRedirectUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -17,7 +18,7 @@ export default function AccessLink() {
   currentCode.current = shortCode;
   useEffect(() => {
     let active = true;
-    setInfo(null); setRedirectUrl(''); setError(''); setLoading(true); setPassword('');
+    setInfo(null); setRedirectUrl(''); setError(''); setLoading(true); setPassword(''); setContact('');
     accessLink(shortCode, slug).then(data => {
       if (!active) return;
       setInfo(data);
@@ -35,7 +36,7 @@ export default function AccessLink() {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      const url = await openWithPasskey(shortCode, password, slug);
+      const url = await openWithPasskey(shortCode, password, slug, contact);
       if (currentCode.current === shortCode) setRedirectUrl(url);
     } catch (err) {
       if (currentCode.current === shortCode) {
@@ -72,6 +73,15 @@ export default function AccessLink() {
           </div>
           {!supportsPasskeys() ? <p className="error-text" role="alert">패스키를 지원하는 브라우저에서 열어 주세요. Safari 또는 Chrome의 최신 버전을 사용할 수 있어요.</p> : (
             <form onSubmit={handleOpen} aria-describedby="passkey-notice" aria-busy={busy}>
+              {info.contactRequired && (
+                <div className="field">
+                  <label htmlFor="link-contact">받으신 이메일</label>
+                  <input id="link-contact" type="email" required value={contact} disabled={busy}
+                    placeholder={info.issuedTo ?? 'name@example.com'}
+                    onChange={e => setContact(e.target.value)} />
+                  <p className="hint-text">이 링크를 받은 주소를 그대로 입력해 주세요.</p>
+                </div>
+              )}
               {info.hasPassword && <div className="field"><label htmlFor="link-password">전달받은 비밀번호</label><input id="link-password" type="password" required value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></div>}
               {error && <p className="error-text" role="alert">{error}</p>}
               <button className="btn-primary" type="submit" disabled={busy}>{busy ? '기기에서 패스키 확인을 완료해 주세요…' : info.claimed ? '내 패스키로 링크 열기' : '패스키로 수신 확정하기'}</button>

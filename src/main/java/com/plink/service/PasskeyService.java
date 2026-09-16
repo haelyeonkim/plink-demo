@@ -95,7 +95,16 @@ public class PasskeyService {
         return recipient.email;
     }
 
-    public Map<String, Object> start(String code, String password, HttpSession session) {
+    /**
+     * Matches what the visitor typed against the address the recipient was issued to.
+     * Case and surrounding space are noise; everything else has to agree.
+     */
+    private static boolean sameContact(String issued, String given) {
+        if (issued == null || given == null) return false;
+        return issued.trim().equalsIgnoreCase(given.trim());
+    }
+
+    public Map<String, Object> start(String code, String password, String contact, HttpSession session) {
         // Only one outstanding ceremony per browser session. Starting again replaces the old challenge.
         synchronized (session) { session.removeAttribute(PENDING); }
         LinkRecipient recipient = recipient(code);
@@ -105,6 +114,13 @@ public class PasskeyService {
         if (!linkService.passwordMatches(link, password)) throw fail(HttpStatus.FORBIDDEN, "비밀번호를 확인해 주세요.");
 
         String email = identity(recipient);
+        // Before a passkey is bound, the visitor has to know the address this was sent
+        // to. It is not proof of identity - a forwarded mail carries the address too -
+        // but it stops a link opened by the wrong person from quietly becoming theirs.
+        if (!recipient.claimed() && !sameContact(recipient.email, contact)) {
+            throw fail(HttpStatus.FORBIDDEN,
+                "링크를 전달받은 이메일과 일치하지 않아요. 받으신 주소를 다시 확인해 주세요.");
+        }
         HolderRepository.Holder holder = holders.findByEmail(email).orElse(null);
         boolean known = holder != null && !holders.findByHolder(holder.id).isEmpty();
         try {

@@ -17,6 +17,7 @@ public class LinkViewRepository {
         view.setLinkId(rs.getLong("link_id"));
         view.setViewerName(rs.getString("viewer_name"));
         view.setViewedAt(rs.getTimestamp("viewed_at"));
+        view.setEventType(rs.getString("event_type"));
         return view;
     };
 
@@ -31,7 +32,23 @@ public class LinkViewRepository {
     }
 
     public void save(Long linkId, Long recipientId, String viewerName) {
-        jdbc.update("INSERT INTO link_view (link_id, recipient_id, viewer_name) VALUES (?, ?, ?)",
-                linkId, recipientId, viewerName);
+        save(linkId, recipientId, viewerName, "PASSKEY_AUTHENTICATED");
+    }
+
+    public void save(Long linkId, Long recipientId, String viewerName, String eventType) {
+        jdbc.update("INSERT INTO link_view (link_id, recipient_id, viewer_name, event_type) "
+                + "VALUES (?, ?, ?, ?)", linkId, recipientId, viewerName, eventType);
+    }
+
+    /**
+     * Records that an address was opened, once. Every later visit before registration is
+     * the same person finding the message again, and a row per refresh would bury the
+     * one fact the sender wants: it arrived.
+     */
+    public void saveInitialOpen(Long linkId, Long recipientId) {
+        Integer seen = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM link_view WHERE recipient_id = ? AND event_type = 'INITIAL_OPEN'",
+            Integer.class, recipientId);
+        if (seen == null || seen == 0) save(linkId, recipientId, null, "INITIAL_OPEN");
     }
 }
