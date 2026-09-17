@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchCrowding, type Crowding as CrowdingData } from '../ticket/api';
+import { openLive } from '../ticket/live';
 
 const LABELS: Record<string, string> = {
   BUSY: '혼잡', STEADY: '보통', QUIET: '여유', EMPTY: '비어 있음',
@@ -21,8 +22,16 @@ export default function Crowding({ sessionId, token }: { sessionId: string; toke
   }, [sessionId, token]);
 
   useEffect(() => {
+    // Pushed on every scan; the interval below is the fallback, not the source.
+    const live = openLive(`/ws/tickets/${sessionId}/${token}`, message => {
+      if (message.type === 'CROWDING') setData(message as unknown as CrowdingData);
+    });
+    return () => live.close();
+  }, [sessionId, token]);
+
+  useEffect(() => {
     void load();
-    const timer = window.setInterval(() => { void load(); }, 30000);
+    const timer = window.setInterval(() => { void load(); }, 60000);
     // Coming back to the screen should show now, not thirty seconds ago.
     const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
     document.addEventListener('visibilitychange', onVisible);
@@ -53,7 +62,7 @@ export default function Crowding({ sessionId, token }: { sessionId: string; toke
         ))}
       </ul>
       <p className="hint-text center">
-        게이트 통과 기록으로 집계하며 30초마다 갱신됩니다. 막대는 가장 붐비는 곳 기준입니다.
+        게이트를 지날 때마다 실시간으로 갱신됩니다. 막대는 가장 붐비는 곳 기준입니다.
       </p>
     </div>
   );

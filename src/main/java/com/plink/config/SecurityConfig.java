@@ -59,6 +59,9 @@ public class SecurityConfig {
             @Value("${plink.auth.google-client-secret}") String clientSecret,
             @Value("${plink.auth.base-url}") String baseUrl) throws Exception {
         http.authorizeHttpRequests(auth -> auth
+                // Live channels authorise themselves at the handshake: the holder's by
+                // the token in the path, the console's by the signed-in session.
+                .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/api/links/s/**").permitAll()
                 // Holder routes are guarded by the personal token plus the bound passkey.
                 .requestMatchers("/api/tickets/**").permitAll()
@@ -86,7 +89,7 @@ public class SecurityConfig {
         // The H2 console is denied above, so it needs no CSRF or frame-options exemption.
         // Gate terminals carry no session cookie: their authority is the X-Gate-Token
         // header, which a cross-site page cannot set, so CSRF adds nothing there.
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/gates/**"));
+        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/gates/**", "/ws/**"));
         if (!clientId.trim().isEmpty() && !clientSecret.trim().isEmpty()) {
             ClientRegistration google = CommonOAuth2Provider.GOOGLE.getBuilder("google")
                 .clientId(clientId).clientSecret(clientSecret)

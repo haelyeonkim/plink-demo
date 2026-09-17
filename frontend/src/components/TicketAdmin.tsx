@@ -5,6 +5,7 @@ import IssuedLink from './IssuedLink';
 import ConfirmDialog from './ConfirmDialog';
 import CatalogEditor from './CatalogEditor';
 import BulkImport from './BulkImport';
+import { openLive } from '../ticket/live';
 
 interface SessionRow {
   id: number; name: string; venue: string | null; startsAt: string; gateOpensAt: string | null;
@@ -118,9 +119,14 @@ export default function TicketAdmin() {
   useEffect(() => { if (selected !== null) void loadSession(selected); }, [selected, loadSession]);
   useEffect(() => {
     if (selected === null) return;
-    // Live occupancy is what operations watch during doors.
-    const timer = window.setInterval(() => { void loadSession(selected); }, 5000);
-    return () => window.clearInterval(timer);
+    // Scans arrive as they happen; what follows is the fallback for a network that will
+    // not carry the socket, which is why it can afford to be slow.
+    const live = openLive(`/ws/admin/sessions/${selected}`, message => {
+      if (message.type === 'OCCUPANCY') setOccupancy(message as unknown as Occupancy);
+      if (message.type === 'MOVEMENT') void loadSession(selected);
+    });
+    const timer = window.setInterval(() => { void loadSession(selected); }, 30000);
+    return () => { live.close(); window.clearInterval(timer); };
   }, [selected, loadSession]);
 
   async function act(action: () => Promise<void>) {

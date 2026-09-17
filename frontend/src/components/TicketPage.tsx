@@ -9,6 +9,7 @@ import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import FaceEnrolment from './FaceEnrolment';
 import Crowding from './Crowding';
+import { openLive } from '../ticket/live';
 
 type Direction = 'IN' | 'OUT';
 
@@ -53,6 +54,16 @@ export default function TicketPage() {
   }, [sessionId, token]);
 
   useEffect(() => { void reload(); }, [reload]);
+
+  // The gate pushes its verdict down this channel, so the phone learns the moment it is
+  // scanned rather than on the next poll. The polling below stays as the fallback for a
+  // network that will not carry a socket.
+  useEffect(() => {
+    const live = openLive(`/ws/tickets/${sessionId}/${token}`, message => {
+      if (message.type === 'PRESENCE' || message.type === 'MOVEMENT') void reload();
+    });
+    return () => live.close();
+  }, [sessionId, token, reload]);
 
   // The gate changes this ticket's state, not the phone. Coming back to the screen -
   // after a scan, after the screen locked - has to show where the holder actually is.

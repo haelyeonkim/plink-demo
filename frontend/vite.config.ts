@@ -16,6 +16,13 @@ export default defineConfig({
         target: backend,
         changeOrigin: true,
       },
+      // ws: the live channel is an upgrade, and the dev server has to carry it through
+      // rather than answering with index.html.
+      '/ws': {
+        target: backend,
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   appType: 'spa',

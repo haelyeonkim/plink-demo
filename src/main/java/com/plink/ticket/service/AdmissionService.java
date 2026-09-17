@@ -46,7 +46,10 @@ public class AdmissionService {
 
     public AdmissionService(TicketRepository tickets, EventSessionRepository sessions,
             AdmissionRepository admissions, PresentationRepository grants, GateRepository gates,
-            PresentationService presentations, TicketService ticketService) {
+            PresentationService presentations, TicketService ticketService,
+            com.plink.ticket.live.LiveEvents live, com.plink.ticket.live.LiveSnapshots snapshots) {
+        this.live = live;
+        this.snapshots = snapshots;
         this.tickets = tickets;
         this.sessions = sessions;
         this.admissions = admissions;
@@ -54,6 +57,31 @@ public class AdmissionService {
         this.gates = gates;
         this.presentations = presentations;
         this.ticketService = ticketService;
+    }
+
+    private final com.plink.ticket.live.LiveEvents live;
+    private final com.plink.ticket.live.LiveSnapshots snapshots;
+
+    /**
+     * Tells whoever is watching. Published after the ledger row exists, so a listener
+     * that reacts by asking the server anything reads the same world the event describes.
+     */
+    private void announce(Ticket ticket, EventSession session, String outcome, String direction,
+            Gate gate) {
+        java.util.Map<String, Object> movement = new java.util.LinkedHashMap<>();
+        movement.put("ticketId", ticket.id);
+        movement.put("ticketRef", ticket.ticketRef);
+        movement.put("seat", ticket.seat);
+        movement.put("outcome", outcome);
+        movement.put("direction", direction);
+        movement.put("gateId", gate == null ? null : gate.id);
+        movement.put("gateLabel", gate == null ? null : gate.label);
+        movement.put("zone", gate == null ? null : gate.zone);
+        movement.put("at", java.time.Instant.now().toString());
+        live.publish(session.id, "MOVEMENT", movement);
+        live.publish(session.id, "PRESENCE", snapshots.presence(ticket.id));
+        live.publish(session.id, "CROWDING", snapshots.crowding(session.id));
+        live.publish(session.id, "OCCUPANCY", snapshots.occupancy(session.id));
     }
 
     @Transactional
@@ -101,6 +129,7 @@ public class AdmissionService {
             onAccepted.run();
             admissions.append(ticket.id, session.id, direction, gate.id, method, "DUPLICATE",
                 "쿨다운 내 재스캔", grantId);
+            announce(ticket, session, "DUPLICATE", direction, gate);
             return result("DUPLICATE", direction, ticket, session, presence, "방금 처리된 입장권이에요.");
         }
 
@@ -114,6 +143,7 @@ public class AdmissionService {
             "IN".equals(direction) ? "ADMITTED" : "EXITED", note, grantId);
 
         Presence updated = admissions.find(ticket.id).orElse(presence);
+        announce(ticket, session, "IN".equals(direction) ? "ADMITTED" : "EXITED", direction, gate);
         return result("IN".equals(direction) ? "ADMITTED" : "EXITED", direction, ticket, session, updated, null);
     }
 
