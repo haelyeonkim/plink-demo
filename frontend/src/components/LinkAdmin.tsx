@@ -205,12 +205,15 @@ export default function LinkAdmin() {
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
 
-      <div className="tabs" role="tablist">
-        {TABS.map(([key, name]) => (
-          <button key={key} role="tab" aria-selected={tab === key}
-            className={tab === key ? 'active' : ''} onClick={() => show({ tab: key })}>{name}</button>
-        ))}
-      </div>
+      {/* Nothing to show on any of them until a link is chosen. */}
+      {detail && (
+        <div className="tabs" role="tablist">
+          {TABS.map(([key, name]) => (
+            <button key={key} role="tab" aria-selected={tab === key}
+              className={tab === key ? 'active' : ''} onClick={() => show({ tab: key })}>{name}</button>
+          ))}
+        </div>
+      )}
 
       {!detail && (
         <div className="tab-panel">

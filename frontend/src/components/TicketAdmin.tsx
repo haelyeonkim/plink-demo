@@ -349,12 +349,16 @@ export default function TicketAdmin() {
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
 
-      <div className="tabs" role="tablist">
-        {tabs.map(([key, label]) => (
-          <button key={key} role="tab" aria-selected={tab === key}
-            className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label}</button>
-        ))}
-      </div>
+      {/* Every tab is about one event, so there is nothing for them to show until one
+          is picked. */}
+      {session && (
+        <div className="tabs" role="tablist">
+          {tabs.map(([key, label]) => (
+            <button key={key} role="tab" aria-selected={tab === key}
+              className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label}</button>
+          ))}
+        </div>
+      )}
 
       {!session && (
         <div className="tab-panel">
