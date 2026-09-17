@@ -32,8 +32,8 @@ a { color: inherit; text-decoration: none; }
 /* A console is wider than a reading page, and a header that stops short of the panel
    below it reads as a misalignment. :has() lets the bar follow whichever page is
    mounted instead of picking one width for both. */
-body:has(.page-wide) .header,
-body:has(.page-wide) .footer { max-width: min(1600px, 96vw); }
+body:has(.page-section) .header,
+body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 
 .logo {
   display: flex;
@@ -497,15 +497,20 @@ body:has(.page-wide) .footer { max-width: min(1600px, 96vw); }
 
 /* ---- Page Section ---- */
 .page-section {
-  max-width: 1080px;
+  /* One width for every application page. A console, the form that feeds it and the
+     pages beside them used to sit at three different left edges, so the content jumped
+     as you moved between them. Readable content is capped per page instead. */
+  max-width: min(1600px, 96vw);
   margin: 0 auto;
   padding: 28px 24px 48px;
 }
 /* The console title, which stands on its own rather than in a .section-header. */
 .page-section > h2 { font-size: 26px; letter-spacing: -1px; margin: 0 0 2px; }
 
-/* Consoles are scanned, not read: they get the width the screen actually has. */
+/* Kept as the marker the header follows; the width now comes from .page-section. */
 .page-wide { max-width: min(1600px, 96vw); }
+/* A form is read left to right: it stays narrow inside the wide page. */
+.page-section > .create-form { max-width: 640px; }
 .tab-split { min-width: 0; }
 .tab-split > * { min-width: 0; }
 
@@ -947,11 +952,11 @@ body:has(.page-wide) .footer { max-width: min(1600px, 96vw); }
   /* Every side gutter costs a phone about 12% of its width, and the panel's own
      padding sits inside the page's. One of the two is enough. */
   .page-section { padding: 16px 16px 28px; }
-  /* 96vw leaves an 8px margin a phone cannot spare, and it pushed the panel out of
+  /* 96vw leaves an 8px margin a phone cannot spare, and it pushed the content out of
      line with the header. */
-  .page-wide { max-width: 100%; }
+  .page-section, .page-wide { max-width: 100%; }
   /* The bar shares the page's gutter so the logo lines up with the panel below it. */
-  .header, .footer, body:has(.page-wide) .header, body:has(.page-wide) .footer {
+  .header, .footer, body:has(.page-section) .header, body:has(.page-section) .footer {
     max-width: 100%; padding-left: 16px; padding-right: 16px;
   }
   .page-section > h2 { font-size: 22px; }
@@ -1340,7 +1345,9 @@ body:has(.gate-screen) { overflow: hidden; }
 .guide-note p { font-size: 13px; color: #5b647a; line-height: 1.7; }
 .guide-note a { color: var(--blue); font-weight: 600; }
 
-.privacy-page { max-width: 760px; }
+/* The page keeps the shared container so its left edge matches every other page;
+   the prose inside is what gets the readable width. */
+.privacy-page > * { max-width: 760px; }
 .privacy-page h1 { font-size: 28px; letter-spacing: -1px; margin: 4px 0 6px; }
 .privacy-page h2 { font-size: 16px; margin: 26px 0 10px; }
 .privacy-page p, .privacy-page li { font-size: 14px; color: #4a5570; line-height: 1.8; }

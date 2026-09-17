@@ -16,6 +16,8 @@ const LINKS: Array<[string, string]> = [
  */
 function isStandalone(pathname: string): boolean {
   if (pathname === '/tickets/gate') return true;
+  // Operator screens live under /tickets too, and they keep the site's navigation.
+  if (pathname.startsWith('/tickets/admin') || pathname.startsWith('/tickets/sessions')) return false;
   // /tickets/{sessionId}/{token} - the holder's own page.
   return /^\/tickets\/[^/]+\/[^/]+/.test(pathname);
 }
