@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { fetchContent, fetchContents, saveContent, deleteContent } from '../api';
-import type { ContentSummary } from '../types';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { fetchContent, importContentPdf, importContentUrl, saveContent } from '../api';
 
 interface Artwork {
   image: string; artist: string; title: string; year: string; medium: string;
@@ -23,23 +22,24 @@ const empty = (): Artwork => ({
  */
 export default function ContentCreate() {
   const [params] = useSearchParams();
+  const { contentId } = useParams<{ contentId: string }>();
   const navigate = useNavigate();
-  const editing = Number(params.get('id')) || null;
+  const editing = Number(contentId) || null;
+  const requestedSource = params.get('source');
+  const source = requestedSource === 'manual' || requestedSource === 'url' || requestedSource === 'pdf'
+    ? requestedSource : null;
 
   const [exhibition, setExhibition] = useState('');
   const [intro, setIntro] = useState('');
   const [columns, setColumns] = useState<'1' | '2'>('2');
   const [artworks, setArtworks] = useState<Artwork[]>([empty()]);
-  const [saved, setSaved] = useState<ContentSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
-  const loadSaved = useCallback(async () => {
-    try { setSaved(await fetchContents()); }
-    catch { /* the studio still works without the list */ }
-  }, []);
-  useEffect(() => { void loadSaved(); }, [loadSaved]);
+  const [url, setUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [imported, setImported] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     if (!editing) return;
@@ -61,29 +61,99 @@ export default function ContentCreate() {
       const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
         { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) });
       setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
-      await loadSaved();
-      if (!editing) navigate(`/content/create?id=${document.id}`, { replace: true });
+      if (!editing) navigate(`/contents/${document.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장하지 못했어요.');
     } finally { setBusy(false); }
   }
 
-  async function remove(id: number) {
-    setError(''); setNotice('');
+  async function runImport() {
+    if (busy || !source || source === 'manual') return;
+    setBusy(true); setError(''); setNotice(''); setWarnings([]);
     try {
-      await deleteContent(id);
-      await loadSaved();
-      if (editing === id) navigate('/content/create', { replace: true });
-    } catch (err) { setError(err instanceof Error ? err.message : '삭제하지 못했어요.'); }
+      const result = source === 'url'
+        ? await importContentUrl(url.trim())
+        : await importContentPdf(file as File);
+      setExhibition(result.title);
+      setIntro(result.body.intro ?? '');
+      setColumns(result.body.columns ?? '2');
+      const rows = (result.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
+      setArtworks(rows.length ? rows : [empty()]);
+      setWarnings(result.warnings ?? []);
+      setImported(true);
+      setNotice(`${result.artworkCount}개 작품을 가져왔어요. 저장 전에 내용을 확인해 주세요.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '작품을 가져오지 못했어요.');
+    } finally { setBusy(false); }
   }
 
   const update = (index: number, key: keyof Artwork, value: string) =>
     setArtworks(items => items.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
 
+  if (!editing && !source) {
+    return (
+      <section className="page-section page-wide">
+        <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">새 컨텐츠 만들기</span></h2>
+        <div className="picked-bar">
+          <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 저장 전에 수정할 수 있습니다.</span>
+          <span className="picked-actions"><Link className="btn-secondary" to="/contents">목록으로</Link></span>
+        </div>
+        <div className="content-source-grid">
+          <Link to="/contents/new?source=manual" className="content-source-card">
+            <span className="source-icon">✎</span><h3>직접 작성</h3>
+            <p>전시와 작품 정보를 하나씩 입력하고 바로 미리봅니다.</p><b>작성 시작</b>
+          </Link>
+          <Link to="/contents/new?source=url" className="content-source-card">
+            <span className="source-icon">↗</span><h3>웹페이지에서 가져오기</h3>
+            <p>공개 뷰잉룸 URL을 분석해 작품 정보 초안을 만듭니다.</p><b>URL 입력</b>
+          </Link>
+          <Link to="/contents/new?source=pdf" className="content-source-card">
+            <span className="source-icon">PDF</span><h3>PDF에서 가져오기</h3>
+            <p>작품 목록 PDF의 텍스트를 분석해 편집 가능한 초안을 만듭니다.</p><b>파일 선택</b>
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  if (!editing && source !== 'manual' && !imported) {
+    return (
+      <section className="page-section page-wide">
+        <h2>링크 관리<span className="crumb-sep">/</span>
+          <span className="crumb">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
+        </h2>
+        <div className="picked-bar">
+          <span className="picked-meta">가져온 결과는 자동 저장되지 않습니다.</span>
+          <span className="picked-actions"><Link className="btn-secondary" to="/contents/new">다른 방식 선택</Link></span>
+        </div>
+        {error && <p className="error-text" role="alert">{error}</p>}
+        <div className="tab-panel import-panel">
+          {source === 'url' ? (
+            <div className="field">
+              <label htmlFor="import-url">공개 웹페이지 URL</label>
+              <input id="import-url" type="url" value={url} onChange={event => setUrl(event.target.value)}
+                placeholder="https://viewing.example.com/exhibition" disabled={busy} />
+              <p className="hint-text">로그인이 필요하거나 브라우저에서만 생성되는 페이지는 가져오지 못할 수 있어요.</p>
+            </div>
+          ) : (
+            <div className="field">
+              <label htmlFor="import-pdf">작품 목록 PDF</label>
+              <input id="import-pdf" type="file" accept="application/pdf,.pdf" disabled={busy}
+                onChange={event => setFile(event.target.files?.[0] ?? null)} />
+              <p className="hint-text">20MB 이하의 텍스트 PDF를 지원합니다. 스캔 문서는 OCR이 필요해요.</p>
+            </div>
+          )}
+          <button className="btn-primary" disabled={busy || (source === 'url' ? !url.trim() : !file)}
+            onClick={() => void runImport()}>{busy ? '작품을 분석하는 중…' : '작품 정보 가져오기'}</button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="page-section page-wide">
       <h2>
-        컨텐츠
+        링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
         {editing && <><span className="crumb-sep">/</span><span className="crumb">{exhibition || '제목 없음'}</span></>}
       </h2>
 
@@ -95,40 +165,16 @@ export default function ContentCreate() {
           <button className="btn-secondary" onClick={save} disabled={busy}>
             {busy ? '저장 중…' : editing ? '저장' : '컨텐츠 저장'}
           </button>
-          <Link className="btn-secondary" to="/links">링크 관리</Link>
+          <Link className="btn-secondary" to="/contents">목록으로</Link>
         </span>
       </div>
 
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
-
-      {saved.length > 0 && (
-        <div className="tab-panel">
-          <div className="panel-head">
-            <h3>저장된 컨텐츠 <span className="count">{saved.length}</span></h3>
-            {editing && <Link className="btn-tiny" to="/content/create">새로 작성</Link>}
-          </div>
-          <ul className="entity-list">
-            {saved.map(row => (
-              <li key={row.id} className={row.id === editing ? 'no-hover' : 'openable'}
-                onClick={() => row.id !== editing && navigate(`/content/create?id=${row.id}`)}>
-                <div className="entity-main">
-                  <span className="entity-title">{row.title}</span>
-                  <span className="entity-meta">
-                    <span>링크 {row.linkCount}개</span>
-                    {row.updatedAt && <span>{new Date(row.updatedAt).toLocaleString('ko-KR')}</span>}
-                  </span>
-                </div>
-                <span className="entity-actions">
-                  <button className="btn-tiny" onClick={event => { event.stopPropagation(); void remove(row.id); }}>
-                    삭제
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {warnings.length > 0 && <div className="import-warnings" role="status">
+        <b>가져오기 결과 확인</b>
+        <ul>{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+      </div>}
 
       <div className="tab-panel tab-split content-split">
         <div>

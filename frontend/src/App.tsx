@@ -1,12 +1,13 @@
 import RequireAdmin from './components/RequireAdmin';
 import { AuthProvider } from './auth';
 import Login from './components/Login';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
 import ContentCreate from './components/ContentCreate';
+import ContentList from './components/ContentList';
 import AdminConsole from './components/AdminConsole';
 import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
@@ -24,6 +25,13 @@ function LegacyLinkDetail() {
   return <Navigate to={`/links?tab=issue&link=${id}`} replace />;
 }
 
+/** Preserve bookmarks from the first combined list/editor screen. */
+function LegacyContentCreate() {
+  const [params] = useSearchParams();
+  const id = Number(params.get('id')) || null;
+  return <Navigate to={id ? `/contents/${id}/edit` : '/contents/new'} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -36,7 +44,10 @@ export default function App() {
           {/* One link, at its own address, so it can be linked to and come back to. */}
           <Route path="/links/:linkId" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
           <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
-          <Route path="/content/create" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
+          <Route path="/contents" element={<RequireAdmin scope="canLinks"><ContentList /></RequireAdmin>} />
+          <Route path="/contents/new" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
+          <Route path="/contents/:contentId/edit" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
+          <Route path="/content/create" element={<RequireAdmin scope="canLinks"><LegacyContentCreate /></RequireAdmin>} />
           {/* Administration sits on its own path, away from the product consoles. */}
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           <Route path="/accounts" element={<Navigate to="/admin" replace />} />

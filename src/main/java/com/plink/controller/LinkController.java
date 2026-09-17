@@ -5,6 +5,7 @@ import com.plink.model.LinkView;
 import com.plink.model.ProtectedLink;
 import com.plink.service.LinkAddresses;
 import com.plink.service.LinkService;
+import com.plink.service.ArtworkDeliveryService;
 import com.plink.account.CurrentUser;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,12 +22,14 @@ public class LinkController {
     private final LinkService linkService;
     private final LinkAddresses addresses;
     private final com.plink.repository.ContentRepository contents;
+    private final ArtworkDeliveryService artworkDeliveries;
 
     public LinkController(LinkService linkService, LinkAddresses addresses,
-            com.plink.repository.ContentRepository contents) {
+            com.plink.repository.ContentRepository contents, ArtworkDeliveryService artworkDeliveries) {
         this.linkService = linkService;
         this.addresses = addresses;
         this.contents = contents;
+        this.artworkDeliveries = artworkDeliveries;
     }
     private String owner(Authentication user) {
         return CurrentUser.of(user)
@@ -101,6 +104,40 @@ public class LinkController {
             recipientNames, maxViews, owner(user));
         return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(link));
     }
+
+    /** Creates one recipient-specific link from a selection in the artwork library. */
+    @PostMapping("/artworks")
+    public ResponseEntity<Map<String, Object>> createArtworkLink(@RequestBody Map<String, Object> req,
+            Authentication user) {
+        Object rawIds = req.get("artworkIds");
+        if (!(rawIds instanceof List<?> values)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "전달할 작품을 선택해 주세요.");
+        }
+        List<Long> ids = new ArrayList<>();
+        try {
+            for (Object value : values) ids.add(Long.valueOf(value.toString()));
+        } catch (RuntimeException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "선택한 작품을 다시 확인해 주세요.");
+        }
+        Timestamp expiresAt = null;
+        if (req.get("expiresAt") != null && !req.get("expiresAt").toString().isBlank()) {
+            try { expiresAt = Timestamp.valueOf(req.get("expiresAt").toString()); }
+            catch (IllegalArgumentException invalid) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "만료 일시를 확인해 주세요.");
+            }
+        }
+        int maxViews = req.get("maxViews") instanceof Number number ? number.intValue() : 0;
+        ArtworkDeliveryService.Delivery delivery = artworkDeliveries.create(owner(user), ids,
+            text(req.get("email")), text(req.get("label")), text(req.get("title")),
+            text(req.get("password")), expiresAt, maxViews, Boolean.TRUE.equals(req.get("notify")));
+        Map<String, Object> body = toSummary(delivery.link());
+        Map<String, Object> recipient = toRecipient(delivery.link(), delivery.recipient());
+        recipient.put("deliveredVia", delivery.delivered() ? "EMAIL" : "LINK");
+        body.put("recipient", recipient);
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    private static String text(Object value) { return value == null ? null : value.toString(); }
 
     /** Edits the document's own settings: title, deadline, view cap, password. */
     @PutMapping("/{id}")

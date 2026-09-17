@@ -53,6 +53,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+APP_BASE_URL_VALUE="${APP_BASE_URL:-}"
+if [ -z "$APP_BASE_URL_VALUE" ] && [ -f "$PROJECT_DIR/.env" ]; then
+  # .env is also a Java properties file and may contain dotted keys that Bash cannot
+  # source. Read only this setting instead of evaluating the whole file as shell code.
+  APP_BASE_URL_VALUE="$(sed -n 's/^APP_BASE_URL=//p' "$PROJECT_DIR/.env" | tail -n 1 | tr -d '\r')"
+fi
+APP_BASE_URL_VALUE="${APP_BASE_URL_VALUE:-http://localhost:$FRONTEND_PORT}"
+
 mkdir -p "$PID_DIR"
 mkdir -p "$LOG_DIR"
 
@@ -62,7 +70,7 @@ cd "$PROJECT_DIR"
 ./mvnw -q clean package -DskipTests -Dserver.port="$BACKEND_PORT"
 
 echo "==> Starting backend on :$BACKEND_PORT ..."
-nohup env APP_BASE_URL="${APP_BASE_URL:-http://localhost:$FRONTEND_PORT}" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 < /dev/null &
+nohup env APP_BASE_URL="$APP_BASE_URL_VALUE" java -jar target/*.jar --server.port="$BACKEND_PORT" >> "$LOG_DIR/backend.log" 2>&1 < /dev/null &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 
@@ -81,6 +89,7 @@ echo "  P-Link Dev Server"
 echo "  ──────────────────────────"
 echo "  Frontend  → http://localhost:$FRONTEND_PORT"
 echo "  Backend   → http://localhost:$BACKEND_PORT"
+echo "  Public URL → $APP_BASE_URL_VALUE"
 echo "  H2 Console → http://localhost:$BACKEND_PORT/h2-console"
 echo ""
 echo "  Stop with: bash scripts/run-dev.sh stop"

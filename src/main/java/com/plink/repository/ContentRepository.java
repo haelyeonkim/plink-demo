@@ -32,7 +32,8 @@ public class ContentRepository {
     };
 
     public List<LinkContent> findByOwner(String ownerSub) {
-        return jdbc.query("SELECT * FROM link_content WHERE owner_sub = ? ORDER BY updated_at DESC",
+        return jdbc.query("SELECT * FROM link_content WHERE owner_sub = ? AND kind <> 'SELECTION' "
+            + "ORDER BY updated_at DESC",
             MAPPER, ownerSub);
     }
 

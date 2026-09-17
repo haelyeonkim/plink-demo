@@ -283,4 +283,37 @@ class LinkRecipientTest {
                 .contentType("application/json").content("{\"title\":\"빈 링크\"}"))
             .andExpect(status().isBadRequest());
     }
+
+    @Test void selectedWorksCreateOneRecipientSpecificSnapshot() throws Exception {
+        mvc.perform(post("/api/contents").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"title\":\"작품 원본\",\"body\":{\"intro\":\"전체\",\"artworks\":["
+                    + "{\"title\":\"보낼 작품\",\"artist\":\"작가 A\",\"price\":\"USD 1,000\"},"
+                    + "{\"title\":\"제외할 작품\",\"artist\":\"작가 B\"}]}}"))
+            .andExpect(status().isCreated());
+
+        String library = mvc.perform(get("/api/contents/artworks").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
+            .andReturn().getResponse().getContentAsString();
+        JsonNode rows = json(library);
+        long selectedId = 0;
+        for (JsonNode row : rows) if ("보낼 작품".equals(row.get("title").asString())) selectedId = row.get("id").asLong();
+        assertTrue(selectedId > 0);
+
+        String delivery = mvc.perform(post("/api/links/artworks").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"artworkIds\":[" + selectedId + "],\"email\":\"collector@example.com\","
+                    + "\"title\":\"컬렉터 제안\",\"notify\":false}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.recipient.email").value("collector@example.com"))
+            .andExpect(jsonPath("$.recipient.url").isNotEmpty())
+            .andReturn().getResponse().getContentAsString();
+        long snapshotId = json(delivery).get("contentId").asLong();
+
+        mvc.perform(get("/api/contents/" + snapshotId).session(session))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.body.artworks.length()").value(1))
+            .andExpect(jsonPath("$.body.artworks[0].title").value("보낼 작품"))
+            .andExpect(jsonPath("$.body.artworks[0].price").value("USD 1,000"));
+    }
 }
