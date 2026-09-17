@@ -10,8 +10,9 @@ const LABELS: Record<string, string> = {
  * Live crowding by place, for the holder rather than the operator.
  *
  * <p>The numbers come from the gates: what walked into a zone minus what walked back
- * out. They describe a crowd, never a person. The bar is relative to the busiest place
- * right now, because "worse than the lobby?" is the question being asked.
+ * out. They describe a crowd, never a person. Where the organiser has said how many a
+ * place holds, the bar is how full it is; where they have not, it is only how that place
+ * compares with the busiest one, and the caption says which of the two you are reading.
  */
 export default function Crowding({ sessionId, token }: { sessionId: string; token: string }) {
   const [data, setData] = useState<CrowdingData | null>(null);
@@ -56,13 +57,19 @@ export default function Crowding({ sessionId, token }: { sessionId: string; toke
             </div>
             <div className="zone-bar" aria-hidden="true">
               <span className={`level-${zone.level.toLowerCase()}`}
-                style={{ width: `${Math.round(zone.share * 100)}%` }} />
+                style={{ width: `${Math.min(100, Math.max(0, zone.percent))}%` }} />
             </div>
+            {zone.capacity != null && (
+              <span className="hint-text">정원 {zone.capacity}명 중 {zone.percent}%</span>
+            )}
           </li>
         ))}
       </ul>
       <p className="hint-text center">
-        게이트를 지날 때마다 실시간으로 갱신됩니다. 막대는 가장 붐비는 곳 기준입니다.
+        게이트를 지날 때마다 실시간으로 갱신됩니다.
+        {data.zones.some(zone => zone.basis === 'CAPACITY')
+          ? ' 정원이 정해진 곳은 정원 대비, 그 밖은 가장 붐비는 곳 기준입니다.'
+          : ' 막대는 가장 붐비는 곳 기준입니다.'}
       </p>
     </div>
   );

@@ -101,7 +101,7 @@ export default function TicketPage() {
   });
 
   const claim = () => guard(async () => {
-    const result = await runCeremony(sessionId, token);
+    const result = await runCeremony(sessionId, token, { email: email.trim() });
     const viaTransfer = result.mode === 'register' ? result.viaTransfer
       : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
     setNotice(viaTransfer
@@ -257,13 +257,23 @@ export default function TicketPage() {
               {ticket.role === 'RECIPIENT'
                 ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
                 : skipOtp
-                  ? '이 휴대폰 하나에만 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
+                  ? '입장권을 받은 이메일 주소를 입력하면 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
                   : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
             </p>
             {skipOtp ? (
-              <button className="btn-primary" onClick={claim} disabled={busy || !supportsPasskeys()}>
-                이 휴대폰에 등록하기
-              </button>
+              /* No code to prove the inbox, so the address is typed instead: it catches a
+                 link that reached the wrong person by mistake. */
+              <form onSubmit={e => { e.preventDefault(); claim(); }}>
+                <div className="field">
+                  <label htmlFor="ticket-email">입장권을 받은 이메일</label>
+                  <input id="ticket-email" type="email" autoComplete="email" required
+                    value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+                </div>
+                <button className="btn-primary" type="submit"
+                  disabled={busy || !email.trim() || !supportsPasskeys()}>
+                  이 휴대폰에 등록하기
+                </button>
+              </form>
             ) : (<>
             {stage === 'email' && (
               <form onSubmit={e => { e.preventDefault(); sendCode(); }}>

@@ -48,6 +48,8 @@ public class EventSessionRepository {
         s.geoMode = rs.getString("geo_mode");
         s.seats = rs.getString("seats");
         s.tiers = rs.getString("tiers");
+        s.crowdBusyPercent = rs.getInt("crowd_busy_percent");
+        s.crowdSteadyPercent = rs.getInt("crowd_steady_percent");
         return s;
     };
 
@@ -93,6 +95,11 @@ public class EventSessionRepository {
 
     public void updateClaimPolicy(long id, boolean requiresOtp) {
         jdbc.update("UPDATE event_session SET claim_requires_otp = ? WHERE id = ?", requiresOtp, id);
+    }
+
+    public void updateCrowdLevels(long id, int busyPercent, int steadyPercent) {
+        jdbc.update("UPDATE event_session SET crowd_busy_percent = ?, crowd_steady_percent = ? WHERE id = ?",
+            busyPercent, steadyPercent, id);
     }
 
     public void updateCatalog(long id, String seats, String tiers) {

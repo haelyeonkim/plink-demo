@@ -102,11 +102,12 @@ public class TicketPasskeyService {
      */
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
             String rawToEmail, HttpSession session) {
-        return start(resolved, intent, rawDirection, rawToEmail, session, null, null, null);
+        return start(resolved, intent, rawDirection, rawToEmail, null, session, null, null, null);
     }
 
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
-            String rawToEmail, HttpSession session, Double lat, Double lon, Double accuracy) {
+            String rawToEmail, String rawClaimEmail, HttpSession session,
+            Double lat, Double lon, Double accuracy) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Ticket ticket = resolved.ticket;
         boolean claimed = !resolved.viaTransfer() && ticket.claimed();
@@ -119,12 +120,26 @@ public class TicketPasskeyService {
             EventSession claimSession = ticketService.requireSession(ticket.sessionId);
             // With the policy off, holding the link is the whole claim. That is the
             // trade the organiser chose; the address is still recorded either way.
-            String email = claimSession.claimRequiresOtp
-                ? verifiedEmail(session, ticket.id)
-                    .filter(value -> value.equalsIgnoreCase(expected))
-                    .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."))
-                : expected;
+            Optional<String> proven = verifiedEmail(session, ticket.id)
+                .filter(value -> value.equalsIgnoreCase(expected));
+            if (claimSession.claimRequiresOtp) {
+                proven.orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
+            } else if (proven.isEmpty()) {
+                // The address is typed rather than proved. That is weaker than a code and
+                // is meant to be: it does not stop someone determined, it stops a link
+                // that was forwarded by mistake being claimed by whoever opened it.
+                String typed = EmailOtpService.normalize(rawClaimEmail == null ? "" : rawClaimEmail);
+                if (typed.isEmpty()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "입장권을 받은 이메일 주소를 입력해 주세요.");
+                }
+                if (!typed.equalsIgnoreCase(expected)) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "입장권을 받은 이메일과 일치하지 않아요. 받으신 주소를 다시 확인해 주세요.");
+                }
+            }
+            String email = expected;
             if (!resolved.viaTransfer() && ticket.claimExpiresAt != null
                     && ticket.claimExpiresAt.toInstant().isBefore(java.time.Instant.now())) {
                 throw new ResponseStatusException(HttpStatus.GONE,

@@ -17,6 +17,8 @@ public class EventSession {
     public String geoMode;
     /** Newline-separated catalogue; empty means the console falls back to free text. */
     public String seats, tiers;
+    /** Where the crowding panel draws its two lines, as a percentage of a place's capacity. */
+    public int crowdBusyPercent, crowdSteadyPercent;
 
     public java.util.List<String> seatList() { return split(seats); }
     public java.util.List<String> tierList() { return split(tiers); }

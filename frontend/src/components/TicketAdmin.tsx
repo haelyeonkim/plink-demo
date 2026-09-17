@@ -13,6 +13,9 @@ interface SessionRow {
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
   claimRequiresOtp: boolean;
   seats: string[]; tiers: string[];
+  crowdBusyPercent: number; crowdSteadyPercent: number;
+  /** Place to capacity, for the places the organiser has measured. */
+  zoneCapacity: Record<string, number>;
 }
 interface TicketRow {
   ticketId: number; ticketRef: string; seat: string | null; status: string;
@@ -99,6 +102,9 @@ export default function TicketAdmin() {
   const [gates, setGates] = useState<GateRow[]>([]);
   const [tab, setTab] = useState<Tab>('issue');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Minting a link puts the old one out of use, so the row's button asks first rather
+  // than doing it under a name that sounds like reading.
+  const [confirmReissue, setConfirmReissue] = useState<{ row: TicketRow; notify: boolean } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -232,6 +238,34 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
+  /**
+   * The crowding numbers: where the two lines sit, and how many each place holds.
+   *
+   * Sent as one action because that is how the operator thinks of it, though the lines
+   * belong to the event and the capacities to its places.
+   */
+  const saveCrowding = (form: HTMLFormElement) => act(async () => {
+    const data = new FormData(form);
+    const zones: Record<string, number> = {};
+    for (const [key, value] of data.entries()) {
+      if (!key.startsWith('zone:')) continue;
+      zones[key.slice(5)] = Number(value || 0);
+    }
+    await read(await mutate(`/api/admin/sessions/${selected}/policy`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        crowdBusyPercent: Number(data.get('crowdBusyPercent')),
+        crowdSteadyPercent: Number(data.get('crowdSteadyPercent')),
+      }),
+    }));
+    await read(await mutate(`/api/admin/sessions/${selected}/zones`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zones }),
+    }));
+    setNotice('혼잡도 기준을 저장했어요.');
+    await loadSessions();
+  });
+
   const saveDetails = (form: HTMLFormElement) => act(async () => {
     const data = new FormData(form);
     const startsAt = String(data.get('startsAt') || '');
@@ -272,6 +306,12 @@ export default function TicketAdmin() {
   // A seat is spoken for as soon as a ticket carries it; the database enforces the same.
   const takenSeats = new Set(tickets.map(row => row.seat).filter((seat): seat is string => !!seat));
   const usedTiers = new Set(tickets.map(row => row.tier).filter((tier): tier is string => !!tier));
+  // Places come from the gates. A capacity left over from a gate that has since been
+  // renamed still shows, so the operator can see it and clear it.
+  const zoneNames = [...new Set([
+    ...gates.map(gate => gate.zone).filter((zone): zone is string => !!zone),
+    ...Object.keys(session?.zoneCapacity ?? {}),
+  ])].sort((a, b) => a.localeCompare(b, 'ko'));
   const tabs: Array<[Tab, string]> = [
     ['issue', '발급'],
     ['tickets', '발급 현황'],
@@ -435,8 +475,12 @@ export default function TicketAdmin() {
                     <td data-label="보유자">{row.holderEmail ?? row.issuedToEmail}</td>
                     <td data-label="전달">{row.deliveredVia ?? '-'}</td>
                     <td className="cell-buttons">
-                      <button className="btn-tiny" onClick={() => reissueLink(row.ticketId, false)}>링크 보기</button>
-                      <button className="btn-tiny" onClick={() => reissueLink(row.ticketId, true)}>재발송</button>
+                      <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: false })}>
+                        링크 재발급
+                      </button>
+                      <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: true })}>
+                        재발송
+                      </button>
                       {row.status === 'REVOKED' ? (
                         <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, false)}>다시 사용</button>
                       ) : (
@@ -460,6 +504,10 @@ export default function TicketAdmin() {
               </tbody>
             </table>
           </div>
+          <p className="hint-text">
+            링크는 서버에 해시로만 남아 다시 꺼내 볼 수 없어요. 보유자가 링크를 잃어버렸다면
+            <b> 링크 재발급</b>으로 새로 만들어 주세요. 그 순간 이전 링크는 닫힙니다.
+          </p>
           <p className="hint-text">
             비활성화하면 링크가 열리지 않고 게이트도 거부합니다. 이미 장내에 있는 사람을 내보내지는
             않아요 — 입장한 기록은 사실이니까요.
@@ -644,6 +692,44 @@ export default function TicketAdmin() {
               정책이든 거부되어 QR 공유가 통하지 않습니다.
             </p>
 
+            <form key={`crowd-${session.id}`} className="crowd-form"
+              onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
+              <h3>혼잡도</h3>
+              <p className="hint-text">
+                장소별 정원을 적으면 그 장소는 정원 대비로 읽습니다. 비워 두면 가장 붐비는 곳과
+                비교한 상대적인 표시로 남아요. 아래 두 기준은 정원 대비 백분율입니다.
+              </p>
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="crowd-busy">'혼잡' 기준 (%)</label>
+                  <input id="crowd-busy" name="crowdBusyPercent" type="number" min={1} max={100}
+                    required defaultValue={session.crowdBusyPercent} />
+                </div>
+                <div className="field">
+                  <label htmlFor="crowd-steady">'보통' 기준 (%)</label>
+                  <input id="crowd-steady" name="crowdSteadyPercent" type="number" min={1} max={100}
+                    required defaultValue={session.crowdSteadyPercent} />
+                </div>
+              </div>
+              {zoneNames.length === 0 ? (
+                <p className="hint-text">
+                  게이트에 장소를 지정하면 여기에서 장소별 정원을 정할 수 있어요.
+                </p>
+              ) : (
+                <div className="zone-capacity">
+                  {zoneNames.map(zone => (
+                    <div className="field" key={zone}>
+                      <label htmlFor={`zone-${zone}`}>{zone} 정원</label>
+                      <input id={`zone-${zone}`} name={`zone:${zone}`} type="number" min={0}
+                        placeholder="비워 두면 상대 표시"
+                        defaultValue={session.zoneCapacity?.[zone] ?? ''} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="btn-primary" type="submit">혼잡도 기준 저장</button>
+            </form>
+
             <CatalogEditor label="좌석" placeholder="A-1" items={session.seats} inUse={takenSeats}
               busy={false} onChange={next => saveCatalog({ seats: next })} />
             <CatalogEditor label="등급" placeholder="VIP" items={session.tiers} inUse={usedTiers}
@@ -663,6 +749,27 @@ export default function TicketAdmin() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmReissue != null}
+        title={confirmReissue?.notify ? '링크를 다시 보낼까요?' : '새 링크를 발급할까요?'}
+        message={'이미 보낸 링크는 이 순간부터 열리지 않고, 등록된 기기도 함께 풀립니다. '
+          + '보유자는 새 링크로 다시 등록해야 해요.'
+          + (confirmReissue?.notify ? '' : ' 발급된 링크는 서버에 남기지 않아 지난 링크를 다시 볼 수는 없습니다.')}
+        details={confirmReissue ? [
+          ['입장권', confirmReissue.row.ticketRef],
+          ['받는 사람', confirmReissue.row.holderEmail ?? confirmReissue.row.issuedToEmail ?? '-'],
+          ['상태', ticketState(confirmReissue.row).label],
+        ] : undefined}
+        confirmLabel={confirmReissue?.notify ? '재발송' : '재발급'}
+        onConfirm={() => {
+          if (!confirmReissue) return;
+          const { row, notify } = confirmReissue;
+          setConfirmReissue(null);
+          reissueLink(row.ticketId, notify);
+        }}
+        onCancel={() => setConfirmReissue(null)}
+      />
 
       <ConfirmDialog
         open={confirmDelete && session != null}

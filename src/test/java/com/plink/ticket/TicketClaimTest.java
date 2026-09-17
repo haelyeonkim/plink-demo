@@ -176,11 +176,13 @@ class TicketClaimTest {
 
     @Test void turningTheClaimPolicyOffLetsTheLinkStandAlone() throws Exception {
         sessions.updateClaimPolicy(sessionId, false);
-        // No code has been verified in this session, yet the ceremony is issued. Whether
-        // it registers or authenticates depends on whether this person already has a
-        // passkey, which is not what this test is about.
+        // No code has been verified in this session, yet the ceremony is issued once the
+        // address the ticket went to is typed back. Whether it registers or authenticates
+        // depends on whether this person already has a passkey, which is not what this
+        // test is about.
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+                .header("User-Agent", PHONE).contentType("application/json")
+                .content("{\"email\":\"holder@example.com\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.options").exists());
 
@@ -188,6 +190,30 @@ class TicketClaimTest {
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{}"))
             .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Without a code the typed address is all that stands between a forwarded link and a
+     * stranger's phone, so it is checked rather than recorded.
+     */
+    @Test void claimingWithoutACodeStillNeedsTheAddressTheTicketWentTo() throws Exception {
+        sessions.updateClaimPolicy(sessionId, false);
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("이메일 주소를 입력")));
+
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json")
+                .content("{\"email\":\"someone.else@example.com\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("일치하지 않아요")));
+
+        // Case and surrounding spaces are how people actually type an address.
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json")
+                .content("{\"email\":\"  Holder@Example.com \"}"))
+            .andExpect(status().isOk());
     }
 
     /**

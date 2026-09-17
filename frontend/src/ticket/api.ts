@@ -56,7 +56,16 @@ export async function fetchTicket(sessionId: string, token: string): Promise<Tic
 }
 
 export interface Crowding {
-  zones: Array<{ zone: string; inside: number; share: number; level: string }>;
+  zones: Array<{
+    zone: string; inside: number; share: number; level: string;
+    /** Set only where the organiser stated how many the place holds. */
+    capacity: number | null;
+    percent: number;
+    /** CAPACITY reads against that number; RELATIVE only ranks the places. */
+    basis: 'CAPACITY' | 'RELATIVE';
+  }>;
+  busyPercent: number;
+  steadyPercent: number;
   measuredAt: string;
 }
 

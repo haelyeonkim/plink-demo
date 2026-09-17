@@ -57,7 +57,11 @@ async function coarsePosition(): Promise<Record<string, string>> {
  */
 export async function runCeremony(
   sessionId: string, token: string,
-  options_: { direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string } = {},
+  options_: {
+    direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string;
+    /** The address the ticket was issued to, typed back when no code was required. */
+    email?: string;
+  } = {},
 ): Promise<
   | { mode: 'register'; claimed: true; viaTransfer: boolean }
   | { mode: 'authenticate'; intent: 'PRESENT'; grant: Grant }

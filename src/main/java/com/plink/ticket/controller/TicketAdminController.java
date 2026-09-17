@@ -7,6 +7,9 @@ import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.TicketRepository;
+import com.plink.ticket.repository.ZoneCapacityRepository;
+import com.plink.ticket.live.LiveEvents;
+import com.plink.ticket.live.LiveSnapshots;
 import com.plink.ticket.service.GateAuthService;
 import com.plink.ticket.service.GateSetupService;
 import com.plink.ticket.service.Secrets;
@@ -40,10 +43,14 @@ public class TicketAdminController {
     private final AdmissionService admissionService;
     private final TextCipher cipher;
     private final GateSetupService gateSetup;
+    private final ZoneCapacityRepository zoneCapacities;
+    private final LiveEvents live;
+    private final LiveSnapshots snapshots;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
-            AdmissionService admissionService, TextCipher cipher, GateSetupService gateSetup) {
+            AdmissionService admissionService, TextCipher cipher, GateSetupService gateSetup,
+            ZoneCapacityRepository zoneCapacities, LiveEvents live, LiveSnapshots snapshots) {
         this.sessions = sessions;
         this.tickets = tickets;
         this.gates = gates;
@@ -53,6 +60,9 @@ public class TicketAdminController {
         this.admissionService = admissionService;
         this.cipher = cipher;
         this.gateSetup = gateSetup;
+        this.zoneCapacities = zoneCapacities;
+        this.live = live;
+        this.snapshots = snapshots;
     }
 
     @GetMapping("/sessions")
@@ -123,6 +133,20 @@ public class TicketAdminController {
         if (body.containsKey("seats") || body.containsKey("tiers")) {
             sessions.updateCatalog(id, catalogue(body.get("seats"), current.seats),
                 catalogue(body.get("tiers"), current.tiers));
+        }
+        if (body.containsKey("crowdBusyPercent") || body.containsKey("crowdSteadyPercent")) {
+            int busy = number(body.get("crowdBusyPercent"), current.crowdBusyPercent);
+            int steady = number(body.get("crowdSteadyPercent"), current.crowdSteadyPercent);
+            if (busy < 1 || busy > 100 || steady < 1 || steady > 100) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "혼잡도 기준은 1에서 100 사이의 백분율이어야 해요.");
+            }
+            if (steady >= busy) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "'보통' 기준은 '혼잡' 기준보다 낮아야 해요.");
+            }
+            sessions.updateCrowdLevels(id, busy, steady);
+            publishCrowding(id);
         }
         if (body.containsKey("claimRequiresOtp")) {
             sessions.updateClaimPolicy(id, Boolean.parseBoolean(body.get("claimRequiresOtp").toString()));
@@ -249,6 +273,41 @@ public class TicketAdminController {
             @RequestBody(required = false) Map<String, Object> body) {
         boolean notify = body != null && Boolean.TRUE.equals(body.get("notify"));
         return ticketService.reissueForConsole(ticketId, notify);
+    }
+
+    /**
+     * How many people each place holds.
+     *
+     * <p>The body is a map of place to capacity; a null or zero drops the number and
+     * returns that place to the relative reading. Places themselves come from the gates,
+     * so this only fills in a figure for somewhere that already exists.
+     */
+    @PutMapping("/sessions/{id}/zones")
+    public Map<String, Object> updateZoneCapacity(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        Object zones = body.get("zones");
+        if (!(zones instanceof Map<?, ?> entries)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "장소별 수용 인원을 보내 주세요.");
+        }
+        for (Map.Entry<?, ?> entry : entries.entrySet()) {
+            String zone = String.valueOf(entry.getKey()).trim();
+            if (zone.isEmpty()) continue;
+            int capacity = number(entry.getValue(), 0);
+            if (capacity <= 0) { zoneCapacities.delete(id, zone); continue; }
+            if (capacity > 1_000_000) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "수용 인원이 너무 큽니다.");
+            }
+            zoneCapacities.save(id, zone, capacity);
+        }
+        publishCrowding(id);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("zoneCapacity", zoneCapacities.findBySession(id));
+        return result;
+    }
+
+    /** A changed number moves the bars on every phone already watching. */
+    private void publishCrowding(long sessionId) {
+        live.publish(sessionId, "CROWDING", snapshots.crowding(sessionId));
     }
 
     /**
@@ -490,6 +549,9 @@ public class TicketAdminController {
         row.put("geoRadiusMeters", session.geoRadiusMeters);
         row.put("seats", session.seatList());
         row.put("tiers", session.tierList());
+        row.put("crowdBusyPercent", session.crowdBusyPercent);
+        row.put("crowdSteadyPercent", session.crowdSteadyPercent);
+        row.put("zoneCapacity", zoneCapacities.findBySession(session.id));
         return row;
     }
 

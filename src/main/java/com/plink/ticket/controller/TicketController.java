@@ -13,10 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,11 +33,14 @@ public class TicketController {
     private final FaceService faces;
     private final EmailOtpService otp;
     private final com.plink.ticket.repository.AdmissionRepository admissions;
+    private final com.plink.ticket.live.LiveSnapshots snapshots;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
             TransferService transfers, FaceService faces,
-            EmailOtpService otp, com.plink.ticket.repository.AdmissionRepository admissions) {
+            EmailOtpService otp, com.plink.ticket.repository.AdmissionRepository admissions,
+            com.plink.ticket.live.LiveSnapshots snapshots) {
         this.admissions = admissions;
+        this.snapshots = snapshots;
         this.tickets = tickets;
         this.passkeyService = passkeyService;
         this.transfers = transfers;
@@ -94,8 +94,8 @@ public class TicketController {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         Map<String, String> input = body == null ? Map.of() : body;
         return passkeyService.start(resolved, input.get("intent"), input.get("direction"),
-            input.get("toEmail"), session, decimal(input.get("lat")), decimal(input.get("lon")),
-            decimal(input.get("accuracy")));
+            input.get("toEmail"), input.get("email"), session,
+            decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
     }
 
     /** Binds the passkey, issues a presentation grant, or records the transfer request. */
@@ -144,37 +144,17 @@ public class TicketController {
      * How busy each place is, for the holder standing in the queue.
      *
      * <p>Counts come from the gates - what walked in through a zone's terminals minus
-     * what walked back out - so they describe crowds, never individuals. The level is
-     * relative to the busiest place right now, which is the comparison somebody
-     * deciding where to go actually makes.
+     * what walked back out - so they describe crowds, never individuals. A place the
+     * organiser has given a capacity reads against it; one without a capacity is read
+     * against the busiest place, which ranks the doors without claiming a fullness.
+     *
+     * <p>The same snapshot the live socket pushes, so a holder polling and a holder
+     * connected see one number rather than two that drift.
      */
     @GetMapping("/crowding")
     public Map<String, Object> crowding(@PathVariable long sessionId, @PathVariable String token) {
         Ticket ticket = tickets.resolve(sessionId, token).ticket;
-        List<Map<String, Object>> zones = new ArrayList<>();
-        int busiest = 0;
-        for (Map<String, Object> row : admissions.byZone(ticket.sessionId)) {
-            int inside = Math.max(0, number(row.get("admitted")) - number(row.get("exited")));
-            busiest = Math.max(busiest, inside);
-        }
-        for (Map<String, Object> row : admissions.byZone(ticket.sessionId)) {
-            int inside = Math.max(0, number(row.get("admitted")) - number(row.get("exited")));
-            double share = busiest == 0 ? 0 : (double) inside / busiest;
-            Map<String, Object> zone = new LinkedHashMap<>();
-            zone.put("zone", row.get("zone"));
-            zone.put("inside", inside);
-            zone.put("share", Math.round(share * 100) / 100.0);
-            zone.put("level", inside == 0 ? "EMPTY" : share >= 0.75 ? "BUSY" : share >= 0.4 ? "STEADY" : "QUIET");
-            zones.add(zone);
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("zones", zones);
-        result.put("measuredAt", java.time.Instant.now().toString());
-        return result;
-    }
-
-    private static int number(Object value) {
-        return value instanceof Number n ? n.intValue() : 0;
+        return snapshots.crowding(ticket.sessionId);
     }
 
     @GetMapping("/face")

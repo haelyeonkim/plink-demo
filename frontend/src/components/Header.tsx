@@ -26,6 +26,9 @@ export default function Header() {
   const { session, loading, logout } = useAuth();
   const { pathname } = useLocation();
   const standalone = isStandalone(pathname);
+  // An administrator signs in to administer. The product menu would only be noise on
+  // that screen, so the header carries the one button that account came for.
+  const menu = session?.user?.canAccounts ? [] : LINKS;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
@@ -72,27 +75,31 @@ export default function Header() {
 
   return (
     <>
-      <header className="header">
+      <header className={menu.length > 0 ? 'header' : 'header header-bare'}>
         <Link className="logo" to="/">
           <img src="/logo.svg" alt="패스링크" height="28" />
         </Link>
-        <nav>
-          {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
-        </nav>
+        {menu.length > 0 && (
+          <nav>
+            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+          </nav>
+        )}
         <div className="header-account">
           {account}
           {error && <span className="account-error" role="alert">{error}</span>}
         </div>
-        <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
-          aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
-          {open ? '✕' : '☰'}
-        </button>
+        {menu.length > 0 && (
+          <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
+            aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
+            {open ? '✕' : '☰'}
+          </button>
+        )}
       </header>
 
-      {open && (
+      {open && menu.length > 0 && (
         <div className="mobile-menu" id="mobile-menu">
           <nav>
-            {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
           </nav>
           <div className="mobile-account">{account}</div>
         </div>

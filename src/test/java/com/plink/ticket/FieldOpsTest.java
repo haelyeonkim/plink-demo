@@ -9,6 +9,8 @@ import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.PresentationRepository;
 import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
+import com.plink.ticket.repository.ZoneCapacityRepository;
+import com.plink.ticket.live.LiveSnapshots;
 import com.plink.ticket.service.AdmissionService;
 import com.plink.ticket.service.GateAuthService;
 import com.plink.ticket.service.GeoCheck;
@@ -51,6 +53,8 @@ class FieldOpsTest {
     @Autowired AdmissionService admissions;
     @Autowired AdmissionRepository ledger;
     @Autowired OfflineSyncService offline;
+    @Autowired ZoneCapacityRepository capacities;
+    @Autowired LiveSnapshots snapshots;
 
     private long newSession() {
         return sessions.insert("현장 테스트 " + Secrets.randomAlnum(6), "테스트홀",
@@ -238,5 +242,53 @@ class FieldOpsTest {
         }
         assertEquals(2, inside.get("메인홀"), "들어온 수에서 나간 수를 뺀 값이 그 장소의 인원입니다");
         assertEquals(0, inside.get("로비"), "들어왔다 나간 사람은 그 장소에 남지 않습니다");
+    }
+
+    /**
+     * A stated capacity changes what "busy" means: two people in a room that holds four
+     * is half full, whatever the rest of the building is doing.
+     */
+    @Test void aStatedCapacityDecidesTheCrowdingLevel() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId);
+        String hall = "g" + Secrets.randomAlnum(8);
+        String lobby = "g" + Secrets.randomAlnum(8);
+        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+        ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
+        ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
+        ledger.append(ticket.id, sessionId, "IN", lobby, "QR", "ADMITTED", null, null);
+
+        // Without a number the busiest place reads as full, which ranks the doors but
+        // says nothing about the building.
+        assertEquals("BUSY", level(snapshots.crowding(sessionId), "메인홀"));
+
+        capacities.save(sessionId, "메인홀", 20);
+        Map<String, Object> measured = zone(snapshots.crowding(sessionId), "메인홀");
+        assertEquals("QUIET", measured.get("level"), "20명 자리에 2명은 한산합니다");
+        assertEquals(10, measured.get("percent"));
+        assertEquals("CAPACITY", measured.get("basis"));
+        assertEquals("RELATIVE", zone(snapshots.crowding(sessionId), "로비").get("basis"),
+            "수용 인원을 적지 않은 장소는 상대적인 읽기로 남습니다");
+
+        // The organiser's own lines decide where the same count tips over.
+        sessions.updateCrowdLevels(sessionId, 10, 5);
+        assertEquals("BUSY", level(snapshots.crowding(sessionId), "메인홀"));
+
+        capacities.delete(sessionId, "메인홀");
+        assertEquals("RELATIVE", zone(snapshots.crowding(sessionId), "메인홀").get("basis"),
+            "수용 인원을 지우면 상대적인 읽기로 돌아갑니다");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> zone(Map<String, Object> crowding, String name) {
+        for (Map<String, Object> row : (List<Map<String, Object>>) crowding.get("zones")) {
+            if (name.equals(row.get("zone"))) return row;
+        }
+        throw new AssertionError("장소를 찾지 못했습니다: " + name);
+    }
+
+    private static String level(Map<String, Object> crowding, String name) {
+        return String.valueOf(zone(crowding, name).get("level"));
     }
 }
