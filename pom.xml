@@ -85,6 +85,18 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
         <dependency>
+            <!-- Parse public viewing-room pages into an editable content draft. -->
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.3</version>
+        </dependency>
+        <dependency>
+            <!-- Extract text from uploaded catalogues; imports are always reviewed. -->
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.4</version>
+        </dependency>
+        <dependency>
             <!-- Boot 4 ships Flyway auto-configuration in its own module. -->
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-flyway</artifactId>

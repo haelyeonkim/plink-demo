@@ -3,10 +3,14 @@ package com.plink.controller;
 import com.plink.account.CurrentUser;
 import com.plink.model.LinkContent;
 import com.plink.repository.ContentRepository;
+import com.plink.repository.ArtworkRepository;
+import com.plink.service.ContentImportService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -25,10 +29,15 @@ import java.util.Map;
 public class ContentController {
     private static final int MAX_BODY = 512_000;
     private final ContentRepository contents;
+    private final ArtworkRepository artworks;
+    private final ContentImportService importer;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public ContentController(ContentRepository contents) {
+    public ContentController(ContentRepository contents, ArtworkRepository artworks,
+            ContentImportService importer) {
         this.contents = contents;
+        this.artworks = artworks;
+        this.importer = importer;
     }
 
     private String owner(Authentication user) {
@@ -63,18 +72,68 @@ public class ContentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
     public Map<String, Object> create(@RequestBody Map<String, Object> request, Authentication user) {
         String title = title(request.get("title"));
-        String body = body(request.get("body"));
-        long id = contents.insert(owner(user), title, "EXHIBITION", body);
+        Object requestedBody = request.get("body");
+        String body = body(requestedBody);
+        String sourceType = sourceType(request.get("sourceType"));
+        String sourceRef = sourceRef(sourceType, request.get("sourceRef"));
+        long id = contents.insert(owner(user), title, "EXHIBITION", body, sourceType, sourceRef);
+        artworks.replace(id, owner(user), artworkRows(requestedBody));
         return read(id, user);
     }
 
+    @GetMapping("/artworks")
+    @Transactional
+    public List<Map<String, Object>> artworks(Authentication user) {
+        String ownerSub = owner(user);
+        // V23 documents may predate the normalized artwork table. Index them lazily the
+        // first time their owner opens the library, without changing the source JSON.
+        for (LinkContent content : contents.findByOwner(ownerSub)) {
+            if (artworks.countByContent(content.id) > 0) continue;
+            try {
+                Object parsed = mapper.readValue(content.body, Object.class);
+                List<Map<String, String>> rows = artworkRows(parsed);
+                if (!rows.isEmpty()) artworks.replace(content.id, ownerSub, rows);
+            } catch (RuntimeException ignored) { /* The original editor can repair malformed legacy content. */ }
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ArtworkRepository.Artwork artwork : artworks.findByOwner(ownerSub)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", artwork.id());
+            row.put("sourceContentId", artwork.sourceContentId());
+            row.putAll(artwork.body());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /** Imports are drafts: the browser opens them in the same editor before saving. */
+    @PostMapping("/import/url")
+    public Map<String, Object> importUrl(@RequestBody Map<String, Object> request, Authentication user) {
+        owner(user);
+        return importer.fromUrl(request.get("url") == null ? "" : request.get("url").toString());
+    }
+
+    @PostMapping(value = "/import/pdf", consumes = "multipart/form-data")
+    public Map<String, Object> importPdf(@RequestPart("file") MultipartFile file, Authentication user) {
+        owner(user);
+        return importer.fromPdf(file);
+    }
+
     @PutMapping("/{id}")
+    @Transactional
     public Map<String, Object> update(@PathVariable long id, @RequestBody Map<String, Object> request,
             Authentication user) {
         LinkContent content = owned(id, user);
-        contents.update(content.id, title(request.get("title")), body(request.get("body")));
+        Object requestedBody = request.get("body");
+        String sourceType = request.containsKey("sourceType")
+            ? sourceType(request.get("sourceType")) : content.sourceType;
+        String sourceRef = request.containsKey("sourceRef")
+            ? sourceRef(sourceType, request.get("sourceRef")) : content.sourceRef;
+        contents.update(content.id, title(request.get("title")), body(requestedBody), sourceType, sourceRef);
+        artworks.replace(content.id, content.ownerSub, artworkRows(requestedBody));
         return read(id, user);
     }
 
@@ -119,8 +178,54 @@ public class ContentController {
         row.put("id", content.id);
         row.put("title", content.title);
         row.put("kind", content.kind);
+        row.put("sourceType", content.sourceType);
+        row.put("sourceRef", content.sourceRef);
+        row.put("sourceImportedAt", content.sourceImportedAt == null
+            ? null : content.sourceImportedAt.toInstant().toString());
         row.put("linkCount", contents.linksUsing(content.id));
         row.put("updatedAt", content.updatedAt == null ? null : content.updatedAt.toInstant().toString());
         return row;
+    }
+
+    private static String sourceType(Object value) {
+        String type = value == null ? "MANUAL" : value.toString().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("MANUAL", "URL", "PDF").contains(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처를 확인해 주세요.");
+        }
+        return type;
+    }
+
+    private static String sourceRef(String type, Object value) {
+        if ("MANUAL".equals(type)) return null;
+        String ref = value == null ? "" : value.toString().trim();
+        if (ref.isBlank() || ref.length() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처 정보를 확인해 주세요.");
+        }
+        if ("URL".equals(type) && !ref.matches("[0-9a-f]{64}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "URL 출처 식별자를 확인해 주세요.");
+        }
+        return ref;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, String>> artworkRows(Object body) {
+        if (!(body instanceof Map<?, ?> map) || !(map.get("artworks") instanceof List<?> values)) {
+            return List.of();
+        }
+        if (values.size() > 200) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "작품은 컨텐츠당 200개까지 저장할 수 있어요.");
+        }
+        List<Map<String, String>> result = new ArrayList<>();
+        for (Object value : values) {
+            if (!(value instanceof Map<?, ?> fields)) continue;
+            Map<String, String> row = new LinkedHashMap<>();
+            for (String key : List.of("image", "artist", "title", "year", "medium", "width",
+                    "height", "depth", "unit", "description", "price")) {
+                Object field = fields.get(key);
+                row.put(key, field == null ? "" : field.toString());
+            }
+            result.add(row);
+        }
+        return result;
     }
 }

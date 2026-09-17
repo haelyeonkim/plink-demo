@@ -1,7 +1,8 @@
 import { mutate } from './auth';
 import type {
   ProtectedLink, LinkDetail, AccessInfo, CreateLinkRequest, LinkRecipient,
-  ContentSummary, ContentDocument, ExhibitionBody,
+  ContentSummary, ContentDocument, ExhibitionBody, ContentImportResult, ArtworkRecord,
+  ArtworkDeliveryRequest, ArtworkDelivery,
 } from './types';
 
 const BASE = '/api/links';
@@ -85,11 +86,12 @@ export async function fetchContent(id: number): Promise<ContentDocument> {
 
 export async function saveContent(
   id: number | null, title: string, body: ExhibitionBody,
+  sourceType: 'MANUAL' | 'URL' | 'PDF' = 'MANUAL', sourceRef: string | null = null,
 ): Promise<ContentDocument> {
   const res = await mutate(id ? `/api/contents/${id}` : '/api/contents', {
     method: id ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, body }),
+    body: JSON.stringify({ title, body, sourceType, sourceRef }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || '컨텐츠를 저장하지 못했어요.');
@@ -102,4 +104,37 @@ export async function deleteContent(id: number): Promise<void> {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || '컨텐츠를 삭제하지 못했어요.');
   }
+}
+
+export async function importContentUrl(url: string): Promise<ContentImportResult> {
+  const res = await mutate('/api/contents/import/url', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '웹페이지에서 작품을 가져오지 못했어요.');
+  return data;
+}
+
+export async function importContentPdf(file: File): Promise<ContentImportResult> {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await mutate('/api/contents/import/pdf', { method: 'POST', body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'PDF에서 작품을 가져오지 못했어요.');
+  return data;
+}
+
+export async function fetchArtworks(): Promise<ArtworkRecord[]> {
+  const res = await fetch('/api/contents/artworks');
+  if (!res.ok) throw new Error('작품 목록을 불러오지 못했어요.');
+  return res.json();
+}
+
+export async function createArtworkDelivery(request: ArtworkDeliveryRequest): Promise<ArtworkDelivery> {
+  const res = await mutate('/api/links/artworks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '작품 링크를 만들지 못했어요.');
+  return data;
 }

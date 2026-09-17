@@ -84,6 +84,9 @@ export interface ContentSummary {
   kind: string;
   linkCount: number;
   updatedAt: string | null;
+  sourceType: 'MANUAL' | 'URL' | 'PDF' | 'SELECTION';
+  sourceRef: string | null;
+  sourceImportedAt: string | null;
 }
 
 export interface ContentDocument extends ContentSummary {
@@ -95,4 +98,47 @@ export interface ExhibitionBody {
   columns?: '1' | '2';
   /** One row per work; the studio decides the keys, the reader renders what it finds. */
   artworks?: Array<Record<string, string>>;
+}
+
+/** A parsed draft is deliberately not persisted until the operator reviews it. */
+export interface ContentImportResult {
+  title: string;
+  body: ExhibitionBody;
+  artworkCount: number;
+  warnings: string[];
+  sourceType: 'URL' | 'PDF';
+  /** SHA-256 for URL imports; original base filename for PDF imports. */
+  sourceRef: string;
+}
+
+/** One reusable work saved from an authored or imported content document. */
+export interface ArtworkRecord extends Record<string, string | number> {
+  id: number;
+  sourceContentId: number;
+  image: string;
+  artist: string;
+  title: string;
+  year: string;
+  medium: string;
+  width: string;
+  height: string;
+  depth: string;
+  unit: string;
+  description: string;
+  price: string;
+}
+
+export interface ArtworkDeliveryRequest {
+  artworkIds: number[];
+  email: string;
+  label?: string;
+  title?: string;
+  password?: string;
+  expiresAt?: string;
+  maxViews?: number;
+  notify: boolean;
+}
+
+export interface ArtworkDelivery extends ProtectedLink {
+  recipient: LinkRecipient;
 }
