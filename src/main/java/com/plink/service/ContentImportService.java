@@ -19,6 +19,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,7 +51,10 @@ public class ContentImportService {
     public Map<String, Object> fromUrl(String rawUrl) {
         URI uri = publicUri(rawUrl);
         byte[] bytes = fetch(uri, 0);
-        return fromHtml(new String(bytes, StandardCharsets.UTF_8), uri.toString());
+        Map<String, Object> result = fromHtml(new String(bytes, StandardCharsets.UTF_8), uri.toString());
+        result.put("sourceType", "URL");
+        result.put("sourceRef", sha256(uri.toString()));
+        return result;
     }
 
     Map<String, Object> fromHtml(String html, String baseUrl) {
@@ -94,9 +99,12 @@ public class ContentImportService {
                     "PDF에서 작품 단위를 구분하지 못했어요.");
             }
             String title = name.replaceFirst("(?i)\\.pdf$", "").replace('_', ' ').trim();
-            return result(title, "", works, List.of(
+            Map<String, Object> result = result(title, "", works, List.of(
                 "PDF에서는 텍스트만 가져옵니다. 이미지와 누락된 정보를 검토해 주세요.",
                 "스캔 PDF는 먼저 OCR 처리가 필요합니다."));
+            result.put("sourceType", "PDF");
+            result.put("sourceRef", safeFilename(name));
+            return result;
         } catch (ResponseStatusException known) {
             throw known;
         } catch (IOException unreadable) {
@@ -189,8 +197,12 @@ public class ContentImportService {
             if (start < 0 || end <= start) continue;
             try {
                 Map<String, Object> root = mapper.readValue(data.substring(start, end + 1), Map.class);
-                Object privateData = root.get("private_view_data");
-                if (!(privateData instanceof Map<?, ?> pv) || !(pv.get("rows") instanceof List<?> rows)) continue;
+                Object rowsValue = root.get("rows");
+                if (!(rowsValue instanceof List<?>)) {
+                    Object privateData = root.get("private_view_data");
+                    rowsValue = privateData instanceof Map<?, ?> pv ? pv.get("rows") : null;
+                }
+                if (!(rowsValue instanceof List<?> rows)) continue;
                 for (Object value : rows) {
                     if (!(value instanceof Map<?, ?> row)) continue;
                     Map<String, String> work = emptyWork();
@@ -359,4 +371,20 @@ public class ContentImportService {
     private static String textOf(Element element) { return element == null ? "" : element.text(); }
     private static String text(Object value) { return value == null ? "" : clean(value.toString()); }
     private static String clean(String value) { return value == null ? "" : value.replaceAll("\\s+", " ").trim(); }
+
+    private static String safeFilename(String value) {
+        String name = value == null ? "" : value.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1).trim();
+        return name.length() > 255 ? name.substring(name.length() - 255) : name;
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
 }

@@ -77,7 +77,9 @@ public class ContentController {
         String title = title(request.get("title"));
         Object requestedBody = request.get("body");
         String body = body(requestedBody);
-        long id = contents.insert(owner(user), title, "EXHIBITION", body);
+        String sourceType = sourceType(request.get("sourceType"));
+        String sourceRef = sourceRef(sourceType, request.get("sourceRef"));
+        long id = contents.insert(owner(user), title, "EXHIBITION", body, sourceType, sourceRef);
         artworks.replace(id, owner(user), artworkRows(requestedBody));
         return read(id, user);
     }
@@ -126,7 +128,11 @@ public class ContentController {
             Authentication user) {
         LinkContent content = owned(id, user);
         Object requestedBody = request.get("body");
-        contents.update(content.id, title(request.get("title")), body(requestedBody));
+        String sourceType = request.containsKey("sourceType")
+            ? sourceType(request.get("sourceType")) : content.sourceType;
+        String sourceRef = request.containsKey("sourceRef")
+            ? sourceRef(sourceType, request.get("sourceRef")) : content.sourceRef;
+        contents.update(content.id, title(request.get("title")), body(requestedBody), sourceType, sourceRef);
         artworks.replace(content.id, content.ownerSub, artworkRows(requestedBody));
         return read(id, user);
     }
@@ -172,9 +178,33 @@ public class ContentController {
         row.put("id", content.id);
         row.put("title", content.title);
         row.put("kind", content.kind);
+        row.put("sourceType", content.sourceType);
+        row.put("sourceRef", content.sourceRef);
+        row.put("sourceImportedAt", content.sourceImportedAt == null
+            ? null : content.sourceImportedAt.toInstant().toString());
         row.put("linkCount", contents.linksUsing(content.id));
         row.put("updatedAt", content.updatedAt == null ? null : content.updatedAt.toInstant().toString());
         return row;
+    }
+
+    private static String sourceType(Object value) {
+        String type = value == null ? "MANUAL" : value.toString().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("MANUAL", "URL", "PDF").contains(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처를 확인해 주세요.");
+        }
+        return type;
+    }
+
+    private static String sourceRef(String type, Object value) {
+        if ("MANUAL".equals(type)) return null;
+        String ref = value == null ? "" : value.toString().trim();
+        if (ref.isBlank() || ref.length() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처 정보를 확인해 주세요.");
+        }
+        if ("URL".equals(type) && !ref.matches("[0-9a-f]{64}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "URL 출처 식별자를 확인해 주세요.");
+        }
+        return ref;
     }
 
     @SuppressWarnings("unchecked")

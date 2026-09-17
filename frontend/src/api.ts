@@ -86,11 +86,12 @@ export async function fetchContent(id: number): Promise<ContentDocument> {
 
 export async function saveContent(
   id: number | null, title: string, body: ExhibitionBody,
+  sourceType: 'MANUAL' | 'URL' | 'PDF' = 'MANUAL', sourceRef: string | null = null,
 ): Promise<ContentDocument> {
   const res = await mutate(id ? `/api/contents/${id}` : '/api/contents', {
     method: id ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, body }),
+    body: JSON.stringify({ title, body, sourceType, sourceRef }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || '컨텐츠를 저장하지 못했어요.');

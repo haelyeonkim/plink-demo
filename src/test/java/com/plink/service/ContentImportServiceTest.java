@@ -69,6 +69,29 @@ class ContentImportServiceTest {
         });
     }
 
+    @Test
+    void parsesArtlogicCatalogueWhenRowsAreAtRoot() {
+        String html = """
+            <html><head><title>KIAF 2026</title></head><body><script>
+              window.pv_data = {"private_view_data":{"contentAbove":"Fair preview"},"rows":[{
+                "artist":"Etsu Egami","title":"The little Mermaid","year":"2024",
+                "width":"62.5","height":"79.5","img_url_medium":"https://cdn.example/mermaid.jpg",
+                "display_price":"USD 15,515","_details_multiline":"<div class='medium'>Oil on canvas</div>"
+              }]};
+            </script></body></html>
+            """;
+
+        Map<String, Object> result = importer.fromHtml(html, "https://privateviews.artlogic.net/example");
+        List<Map<String, String>> works = castWorks(castMap(result.get("body")).get("artworks"));
+
+        assertThat(works).singleElement().satisfies(work -> {
+            assertThat(work.get("artist")).isEqualTo("Etsu Egami");
+            assertThat(work.get("title")).isEqualTo("The little Mermaid");
+            assertThat(work.get("year")).isEqualTo("2024");
+            assertThat(work.get("medium")).isEqualTo("Oil on canvas");
+        });
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> castMap(Object value) {
         return (Map<String, Object>) value;

@@ -40,6 +40,8 @@ export default function ContentCreate() {
   const [file, setFile] = useState<File | null>(null);
   const [imported, setImported] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [sourceType, setSourceType] = useState<'MANUAL' | 'URL' | 'PDF'>('MANUAL');
+  const [sourceRef, setSourceRef] = useState<string | null>(null);
 
   useEffect(() => {
     if (!editing) return;
@@ -49,6 +51,9 @@ export default function ContentCreate() {
       setExhibition(document.title);
       setIntro(document.body.intro ?? '');
       setColumns(document.body.columns ?? '2');
+      setSourceType(document.sourceType === 'URL' || document.sourceType === 'PDF'
+        ? document.sourceType : 'MANUAL');
+      setSourceRef(document.sourceRef);
       const rows = (document.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
       setArtworks(rows.length > 0 ? rows : [empty()]);
     }).catch(() => { if (live) setError('컨텐츠를 불러오지 못했어요.'); });
@@ -59,7 +64,7 @@ export default function ContentCreate() {
     setError(''); setNotice(''); setBusy(true);
     try {
       const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
-        { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) });
+        { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) }, sourceType, sourceRef);
       setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
       if (!editing) navigate(`/contents/${document.id}/edit`, { replace: true });
     } catch (err) {
@@ -80,6 +85,8 @@ export default function ContentCreate() {
       const rows = (result.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
       setArtworks(rows.length ? rows : [empty()]);
       setWarnings(result.warnings ?? []);
+      setSourceType(result.sourceType);
+      setSourceRef(result.sourceRef);
       setImported(true);
       setNotice(`${result.artworkCount}개 작품을 가져왔어요. 저장 전에 내용을 확인해 주세요.`);
     } catch (err) {

@@ -84,6 +84,9 @@ export interface ContentSummary {
   kind: string;
   linkCount: number;
   updatedAt: string | null;
+  sourceType: 'MANUAL' | 'URL' | 'PDF' | 'SELECTION';
+  sourceRef: string | null;
+  sourceImportedAt: string | null;
 }
 
 export interface ContentDocument extends ContentSummary {
@@ -103,6 +106,9 @@ export interface ContentImportResult {
   body: ExhibitionBody;
   artworkCount: number;
   warnings: string[];
+  sourceType: 'URL' | 'PDF';
+  /** SHA-256 for URL imports; original base filename for PDF imports. */
+  sourceRef: string;
 }
 
 /** One reusable work saved from an authored or imported content document. */
