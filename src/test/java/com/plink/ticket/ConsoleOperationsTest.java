@@ -44,6 +44,7 @@ class ConsoleOperationsTest {
     @Autowired TextCipher cipher;
     @Autowired com.plink.ticket.service.TransferService transfers;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired com.plink.ticket.repository.TicketFieldRepository fields;
 
     private long newSession() {
         return sessions.insert("콘솔 테스트 " + Secrets.randomAlnum(6), null,
@@ -197,20 +198,54 @@ class ConsoleOperationsTest {
 
     @Test void aSeatOutsideTheCatalogueIsRefused() {
         long sessionId = newSession();
-        sessions.updateCatalog(sessionId, "A-1\nA-2", "VIP\nR석");
+        fields.insert(sessionId, "좌석", "SEAT", "A-1\nA-2");
+        fields.insert(sessionId, "등급", "TIER", "VIP\nR석");
 
         assertTrue(assertThrows(ResponseStatusException.class,
             () -> tickets.issue(sessionId, "holder@example.com", "Z-9", null, null))
-            .getReason().contains("없는 좌석"));
+            .getReason().contains("좌석 목록에 없는 값"));
         assertTrue(assertThrows(ResponseStatusException.class,
             () -> tickets.issue(sessionId, "holder@example.com", "A-1", "없는등급", null))
-            .getReason().contains("없는 등급"));
+            .getReason().contains("등급 목록에 없는 값"));
         assertNotNull(tickets.issue(sessionId, "holder@example.com", "A-1", "VIP", null).get("ticketId"));
+    }
+
+    /**
+     * A field the organiser invented behaves like the two that were built in: its values
+     * are offered, anything else is refused, and what was chosen rides on the ticket.
+     */
+    @Test void anOrganisersOwnFieldIsOfferedAndEnforced() {
+        long sessionId = newSession();
+        fields.insert(sessionId, "트랙", "CUSTOM", "디자인\n엔지니어링");
+        fields.insert(sessionId, "식사", "CUSTOM", null);   // no list: free text
+
+        assertTrue(assertThrows(ResponseStatusException.class,
+            () -> adminController.issueTicket(sessionId, Map.of(
+                "email", "holder@example.com", "values", Map.of("트랙", "마케팅"))))
+            .getReason().contains("트랙 목록에 없는 값"));
+
+        Map<String, Object> issued = adminController.issueTicket(sessionId, Map.of(
+            "email", "holder@example.com",
+            "values", Map.of("트랙", "디자인", "식사", "채식")));
+        long ticketId = ((Number) issued.get("ticketId")).longValue();
+
+        Map<String, Object> row = adminController.listTickets(sessionId).stream()
+            .filter(r -> ((Number) r.get("ticketId")).longValue() == ticketId).findFirst().orElseThrow();
+        assertEquals(Map.of("트랙", "디자인", "식사", "채식"), row.get("attributes"));
+
+        // Removing the field leaves the ticket that was issued with it untouched.
+        long trackId = fields.findBySession(sessionId).stream()
+            .filter(f -> "트랙".equals(f.label)).findFirst().orElseThrow().id;
+        adminController.deleteField(trackId);
+        assertEquals(Map.of("트랙", "디자인", "식사", "채식"),
+            adminController.listTickets(sessionId).stream()
+                .filter(r -> ((Number) r.get("ticketId")).longValue() == ticketId)
+                .findFirst().orElseThrow().get("attributes"));
     }
 
     @Test void oneSeatCannotBeIssuedTwice() {
         long sessionId = newSession();
-        sessions.updateCatalog(sessionId, "A-1", null);
+        fields.insert(sessionId, "좌석", "SEAT", "A-1");
         tickets.issue(sessionId, "first@example.com", "A-1", null, null);
 
         ResponseStatusException taken = assertThrows(ResponseStatusException.class,
@@ -275,7 +310,7 @@ class ConsoleOperationsTest {
 
     @Test void aBulkIssueReportsEachRowOnItsOwn() {
         long sessionId = newSession();
-        sessions.updateCatalog(sessionId, "A-1,A-2", null);
+        fields.insert(sessionId, "좌석", "SEAT", "A-1\nA-2");
         Map<String, Object> result = adminController.issueTickets(sessionId, Map.of(
             "notify", false,
             "rows", java.util.List.of(

@@ -3,9 +3,11 @@ package com.plink.ticket.controller;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
+import com.plink.ticket.model.TicketField;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.GateRepository;
+import com.plink.ticket.repository.TicketFieldRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.repository.ZoneCapacityRepository;
 import com.plink.ticket.live.LiveEvents;
@@ -44,13 +46,15 @@ public class TicketAdminController {
     private final TextCipher cipher;
     private final GateSetupService gateSetup;
     private final ZoneCapacityRepository zoneCapacities;
+    private final TicketFieldRepository fields;
     private final LiveEvents live;
     private final LiveSnapshots snapshots;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
             AdmissionService admissionService, TextCipher cipher, GateSetupService gateSetup,
-            ZoneCapacityRepository zoneCapacities, LiveEvents live, LiveSnapshots snapshots) {
+            ZoneCapacityRepository zoneCapacities, TicketFieldRepository fields,
+            LiveEvents live, LiveSnapshots snapshots) {
         this.sessions = sessions;
         this.tickets = tickets;
         this.gates = gates;
@@ -61,6 +65,7 @@ public class TicketAdminController {
         this.cipher = cipher;
         this.gateSetup = gateSetup;
         this.zoneCapacities = zoneCapacities;
+        this.fields = fields;
         this.live = live;
         this.snapshots = snapshots;
     }
@@ -130,10 +135,8 @@ public class TicketAdminController {
                 body.get("transferAfterFirstEntry") == null ? current.transferAfterFirstEntry
                     : Boolean.parseBoolean(body.get("transferAfterFirstEntry").toString()));
         }
-        if (body.containsKey("seats") || body.containsKey("tiers")) {
-            sessions.updateCatalog(id, catalogue(body.get("seats"), current.seats),
-                catalogue(body.get("tiers"), current.tiers));
-        }
+        if (body.containsKey("seats")) writeThrough(id, "좌석", "SEAT", body.get("seats"));
+        if (body.containsKey("tiers")) writeThrough(id, "등급", "TIER", body.get("tiers"));
         if (body.containsKey("crowdBusyPercent") || body.containsKey("crowdSteadyPercent")) {
             int busy = number(body.get("crowdBusyPercent"), current.crowdBusyPercent);
             int steady = number(body.get("crowdSteadyPercent"), current.crowdSteadyPercent);
@@ -192,8 +195,27 @@ public class TicketAdminController {
      */
     @PostMapping("/sessions/{id}/tickets")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> issueTicket(@PathVariable long id, @RequestBody Map<String, String> body) {
-        return ticketService.issue(id, body.get("email"), body.get("seat"), body.get("tier"), body.get("phone"));
+    public Map<String, Object> issueTicket(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        return ticketService.issue(id, text(body.get("email"), null), blankToNull(body.get("seat")),
+            blankToNull(body.get("tier")), blankToNull(body.get("phone")), true, fieldValues(id, body));
+    }
+
+    /**
+     * What the organiser's own fields say for this ticket. A row may name them in a
+     * nested "values" object or flat alongside the address, because a spreadsheet column
+     * arrives flat and a form posts an object.
+     */
+    private Map<String, String> fieldValues(long sessionId, Map<String, Object> body) {
+        Map<String, String> nested = body.get("values") instanceof Map<?, ?> map ? castRow(map).entrySet()
+            .stream().collect(LinkedHashMap::new, (into, e) -> into.put(String.valueOf(e.getKey()),
+                text(e.getValue(), null)), LinkedHashMap::putAll) : new LinkedHashMap<>();
+        Map<String, String> values = new LinkedHashMap<>();
+        for (TicketField field : fields.findBySession(sessionId)) {
+            String value = nested.containsKey(field.label) ? nested.get(field.label)
+                : blankToNull(body.get(field.label));
+            if (value != null && !value.isBlank()) values.put(field.label, value.trim());
+        }
+        return values;
     }
 
     /**
@@ -226,7 +248,7 @@ public class TicketAdminController {
             try {
                 Map<String, Object> ticket = ticketService.issue(id, text(row.get("email"), null),
                     blankToNull(row.get("seat")), blankToNull(row.get("tier")),
-                    blankToNull(row.get("phone")), notify);
+                    blankToNull(row.get("phone")), notify, fieldValues(id, row));
                 outcome.put("ok", true);
                 outcome.put("ticketRef", ticket.get("ticketRef"));
                 outcome.put("deliveredVia", ticket.get("deliveredVia"));
@@ -301,6 +323,103 @@ public class TicketAdminController {
     }
 
     /**
+     * The fields a ticket carries in this event: seat, tier, or anything the organiser
+     * names. Adding one makes it appear on the issue form and in the ticket list.
+     */
+    @PostMapping("/sessions/{id}/fields")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> addField(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        String label = required(text(body.get("label"), null), "항목 이름을 입력해 주세요.");
+        if (label.length() > 40) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "항목 이름은 40자까지예요.");
+        }
+        String kind = text(body.get("kind"), "CUSTOM").toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("SEAT", "TIER", "CUSTOM").contains(kind)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "항목 유형을 확인해 주세요.");
+        }
+        List<TicketField> existing = fields.findBySession(id);
+        for (TicketField field : existing) {
+            if (field.label.equalsIgnoreCase(label)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "같은 이름의 항목이 이미 있어요.");
+            }
+            // One seat column, so one seat field. The same goes for the tier.
+            if (!"CUSTOM".equals(kind) && kind.equals(field.kind)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "'" + field.label + "' 항목이 이미 그 역할을 맡고 있어요.");
+            }
+        }
+        if (existing.size() >= 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "항목은 20개까지 만들 수 있어요.");
+        }
+        long fieldId = fields.insert(id, label, kind, catalogue(body.get("values"), null));
+        return describeField(fields.findById(fieldId).orElseThrow());
+    }
+
+    @PutMapping("/fields/{fieldId}")
+    public Map<String, Object> updateField(@PathVariable long fieldId, @RequestBody Map<String, Object> body) {
+        TicketField field = fields.findById(fieldId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "항목을 찾을 수 없어요."));
+        if (body.containsKey("label")) {
+            String label = required(text(body.get("label"), null), "항목 이름을 입력해 주세요.");
+            for (TicketField other : fields.findBySession(field.sessionId)) {
+                if (other.id != field.id && other.label.equalsIgnoreCase(label)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "같은 이름의 항목이 이미 있어요.");
+                }
+            }
+            fields.rename(field.id, label);
+        }
+        if (body.containsKey("values")) {
+            fields.updateValues(field.id, catalogue(body.get("values"), null));
+        }
+        return describeField(fields.findById(fieldId).orElseThrow());
+    }
+
+    /**
+     * Removes the field. Tickets keep whatever they were issued with - the record of
+     * what went out does not change because the form did.
+     */
+    @DeleteMapping("/fields/{fieldId}")
+    public Map<String, Object> deleteField(@PathVariable long fieldId) {
+        TicketField field = fields.findById(fieldId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "항목을 찾을 수 없어요."));
+        fields.delete(field.id);
+        return Map.of("deleted", true, "label", field.label);
+    }
+
+    /** Keeps the older seats/tiers keys working by writing them into their field. */
+    private void writeThrough(long sessionId, String label, String kind, Object values) {
+        String stored = catalogue(values, null);
+        TicketField existing = fields.findBySession(sessionId).stream()
+            .filter(field -> kind.equals(field.kind)).findFirst().orElse(null);
+        if (existing == null) {
+            if (stored != null) fields.insert(sessionId, label, kind, stored);
+        } else {
+            fields.updateValues(existing.id, stored);
+        }
+    }
+
+    /** A ticket's own fields, as stored. Unreadable JSON is shown as nothing. */
+    private static Map<String, Object> readAttributes(String stored) {
+        if (stored == null || stored.isBlank()) return Map.of();
+        try {
+            return new tools.jackson.databind.ObjectMapper()
+                .readValue(stored, new tools.jackson.core.type.TypeReference<Map<String, Object>>() { });
+        } catch (RuntimeException unreadable) {
+            return Map.of();
+        }
+    }
+
+    private Map<String, Object> describeField(TicketField field) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", field.id);
+        row.put("label", field.label);
+        row.put("kind", field.kind);
+        row.put("values", field.values());
+        return row;
+    }
+
+    /**
      * How many people each place holds.
      *
      * <p>The body is a map of place to capacity; a null or zero drops the number and
@@ -366,6 +485,7 @@ public class TicketAdminController {
             row.put("ticketRef", ticket.ticketRef);
             row.put("seat", ticket.seat);
             row.put("tier", ticket.tier);
+            row.put("attributes", readAttributes(ticket.attributes));
             row.put("status", ticket.status);
             row.put("issuedToEmail", TicketService.mask(ticket.issuedToEmail));
             row.put("holderEmail", TicketService.mask(ticket.holderEmail));
@@ -572,8 +692,12 @@ public class TicketAdminController {
         row.put("venueLat", session.venueLat);
         row.put("venueLon", session.venueLon);
         row.put("geoRadiusMeters", session.geoRadiusMeters);
-        row.put("seats", session.seatList());
-        row.put("tiers", session.tierList());
+        List<TicketField> configured = fields.findBySession(session.id);
+        row.put("fields", configured.stream().map(this::describeField).toList());
+        row.put("seats", configured.stream().filter(TicketField::seat)
+            .findFirst().map(TicketField::values).orElse(List.of()));
+        row.put("tiers", configured.stream().filter(TicketField::tier)
+            .findFirst().map(TicketField::values).orElse(List.of()));
         row.put("crowdBusyPercent", session.crowdBusyPercent);
         row.put("crowdSteadyPercent", session.crowdSteadyPercent);
         row.put("zoneCapacity", zoneCapacities.findBySession(session.id));

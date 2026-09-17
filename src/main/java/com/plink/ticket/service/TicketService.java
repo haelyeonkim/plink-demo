@@ -4,10 +4,12 @@ import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
+import com.plink.ticket.model.TicketField;
 import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.HolderRepository;
+import com.plink.ticket.repository.TicketFieldRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.repository.TransferRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -30,6 +33,7 @@ import java.util.Map;
 @Service
 public class TicketService {
     private final TicketRepository tickets;
+    private final TicketFieldRepository fields;
     private final EventSessionRepository sessions;
     private final HolderRepository holders;
     private final AdmissionRepository admissions;
@@ -41,12 +45,14 @@ public class TicketService {
     private final TextCipher cipher;
     private final String baseUrl;
 
-    public TicketService(TicketRepository tickets, EventSessionRepository sessions,
+    public TicketService(TicketRepository tickets, TicketFieldRepository fields,
+            EventSessionRepository sessions,
             HolderRepository holders, AdmissionRepository admissions,
             TransferRepository transfers, PresentationService presentations, EmailSender mail,
             MessageSender sms, TicketProperties properties, TextCipher cipher,
             @Value("${plink.auth.base-url}") String baseUrl) {
         this.tickets = tickets;
+        this.fields = fields;
         this.sessions = sessions;
         this.holders = holders;
         this.admissions = admissions;
@@ -89,18 +95,41 @@ public class TicketService {
         return issue(sessionId, email, seat, tier, rawPhone, true);
     }
 
+    public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
+            String rawPhone, boolean notify) {
+        return issue(sessionId, email, seat, tier, rawPhone, notify, java.util.Map.of());
+    }
+
     /**
      * @param notify false when the operator is uploading a list and will hand the links
      *     over themselves, so hundreds of messages do not go out by accident.
      */
+    /**
+     * @param values what the organiser's own fields say for this ticket, keyed by the
+     *     field's label. Seat and tier are passed separately because they have columns.
+     */
     @Transactional
     public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
-            String rawPhone, boolean notify) {
+            String rawPhone, boolean notify, Map<String, String> values) {
         EventSession session = requireSession(sessionId);
         String recipient = EmailOtpService.normalize(email);
         String phone = normalizePhone(rawPhone);
-        seat = fromCatalogue(session.seatList(), seat, "좌석");
-        tier = fromCatalogue(session.tierList(), tier, "등급");
+
+        // The organiser's fields decide what a ticket may say. Seat and tier are read
+        // from their own field when one is configured, so a catalogue is enforced the
+        // same way whatever the field is called.
+        Map<String, String> extra = new LinkedHashMap<>();
+        for (TicketField field : fields.findBySession(sessionId)) {
+            String raw = field.seat() ? firstOf(seat, values.get(field.label))
+                : field.tier() ? firstOf(tier, values.get(field.label))
+                : values.get(field.label);
+            String value = fromCatalogue(field.values(), raw, field.label);
+            if (value == null) continue;
+            if (field.seat()) seat = value;
+            else if (field.tier()) tier = value;
+            else extra.put(field.label, value);
+        }
+        String attributes = extra.isEmpty() ? null : new ObjectMapper().writeValueAsString(extra);
         String token = Secrets.randomToken(16);
         String ref = Secrets.randomAlnum(12);
         Timestamp claimExpiresAt = Timestamp.from(
@@ -108,7 +137,7 @@ public class TicketService {
         long id;
         try {
             id = tickets.insert(sessionId, ref, tokenHmac(token), cipher.seal(token), seat, tier,
-                recipient, phone, claimExpiresAt);
+                attributes, recipient, phone, claimExpiresAt);
         } catch (org.springframework.dao.DataIntegrityViolationException taken) {
             // (session_id, seat) is unique, so this is the seat already being spoken for.
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -191,17 +220,22 @@ public class TicketService {
         return "[" + session.name + "] 입장권이 발급되었어요. 휴대폰에서 열고 등록해 주세요.\n" + url;
     }
 
+    /** The value the operator sent, whichever of the two ways they sent it. */
+    private static String firstOf(String direct, String byLabel) {
+        return direct != null && !direct.isBlank() ? direct : byLabel;
+    }
+
     /**
-     * Keeps an issued value inside the session's catalogue when one is defined. Without a
-     * catalogue anything goes, so sessions created before seats were configurable keep
-     * working.
+     * Keeps an issued value inside the field's list when one is defined. A field with no
+     * values takes free text, which is what an organiser who has not listed every table
+     * number needs.
      */
     private static String fromCatalogue(java.util.List<String> catalogue, String value, String label) {
         String trimmed = value == null ? null : value.trim();
         if (trimmed == null || trimmed.isEmpty()) return null;
         if (!catalogue.isEmpty() && !catalogue.contains(trimmed)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "이 행사에 없는 " + label + "이에요: " + trimmed);
+                "이 행사의 " + label + " 목록에 없는 값이에요: " + trimmed);
         }
         return trimmed;
     }

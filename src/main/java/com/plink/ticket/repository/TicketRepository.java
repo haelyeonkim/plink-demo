@@ -38,16 +38,19 @@ public class TicketRepository {
         t.deliveredVia = rs.getString("delivered_via");
         t.deliveredAt = rs.getTimestamp("delivered_at");
         t.tokenCipher = rs.getString("token_cipher");
+        t.attributes = rs.getString("attributes");
         return t;
     };
 
     public long insert(long sessionId, String ticketRef, String tokenHmac, String tokenCipher,
-            String seat, String tier, String issuedToEmail, String phone, Timestamp claimExpiresAt) {
+            String seat, String tier, String attributes, String issuedToEmail, String phone,
+            Timestamp claimExpiresAt) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                 "INSERT INTO ticket (session_id, ticket_ref, token_hmac, token_cipher, seat, tier, "
-                + "issued_to_email, phone, claim_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                + "attributes, issued_to_email, phone, claim_expires_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 new String[] { "id" });
             ps.setLong(1, sessionId);
             ps.setString(2, ticketRef);
@@ -55,9 +58,10 @@ public class TicketRepository {
             ps.setString(4, tokenCipher);
             ps.setString(5, seat);
             ps.setString(6, tier);
-            ps.setString(7, issuedToEmail);
-            ps.setString(8, phone);
-            ps.setTimestamp(9, claimExpiresAt);
+            ps.setString(7, attributes);
+            ps.setString(8, issuedToEmail);
+            ps.setString(9, phone);
+            ps.setTimestamp(10, claimExpiresAt);
             return ps;
         }, keys);
         return keys.getKey().longValue();

@@ -33,6 +33,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Hero />} />
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
+          {/* One link, at its own address, so it can be linked to and come back to. */}
+          <Route path="/links/:linkId" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
           <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
           <Route path="/content/create" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
           {/* Administration sits on its own path, away from the product consoles. */}
@@ -47,6 +49,8 @@ export default function App() {
           <Route path="/tickets/gate" element={<GateScanner />} />
           <Route path="/tickets/gate/:setupToken" element={<GateSetup />} />
           <Route path="/tickets/admin" element={<RequireAdmin scope="canTickets"><TicketAdmin /></RequireAdmin>} />
+          <Route path="/tickets/admin/:sessionId"
+            element={<RequireAdmin scope="canTickets"><TicketAdmin /></RequireAdmin>} />
           <Route path="/tickets/sessions/new" element={<RequireAdmin scope="canTickets"><SessionCreate /></RequireAdmin>} />
           <Route path="/tickets/:sessionId/:token" element={<TicketPage />} />
           <Route path="/stats" element={<Navigate to="/links" replace />} />

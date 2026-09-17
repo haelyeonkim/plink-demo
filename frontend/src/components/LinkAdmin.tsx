@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '../auth';
 import BulkImport from './BulkImport';
 import ConfirmDialog from './ConfirmDialog';
+import EntityPicker from './EntityPicker';
 import {
   deleteLink, deleteRecipient, fetchLink, fetchLinks, issueRecipient, setRecipientRevoked,
 } from '../api';
@@ -51,6 +52,8 @@ function localInput(value: string | null): string {
  */
 export default function LinkAdmin() {
   const [params, setParams] = useSearchParams();
+  const { linkId } = useParams<{ linkId: string }>();
+  const navigate = useNavigate();
   const [links, setLinks] = useState<ProtectedLink[]>([]);
   const [detail, setDetail] = useState<LinkDetail | null>(null);
   const [email, setEmail] = useState('');
@@ -66,7 +69,9 @@ export default function LinkAdmin() {
 
   const requested = params.get('tab');
   const tab: Tab = TABS.some(([key]) => key === requested) ? (requested as Tab) : 'issue';
-  const selected = Number(params.get('link')) || null;
+  // The link is the address, not a query on it: a console someone opened can be sent to
+  // a colleague and lands on the same link.
+  const selected = Number(linkId) || null;
 
   const loadLinks = useCallback(async () => {
     try { setLinks(await fetchLinks()); }
@@ -87,8 +92,12 @@ export default function LinkAdmin() {
   function show(next: Partial<{ tab: Tab; link: number | null }>) {
     const tabValue = next.tab ?? tab;
     const linkValue = next.link === undefined ? selected : next.link;
-    setParams(linkValue ? { tab: tabValue, link: String(linkValue) } : { tab: tabValue });
     setIssued(null);
+    if (next.link !== undefined && next.link !== selected) {
+      navigate(linkValue ? `/links/${linkValue}?tab=${tabValue}` : '/links');
+      return;
+    }
+    setParams({ tab: tabValue });
   }
 
   async function act(action: () => Promise<void>) {
@@ -184,22 +193,28 @@ export default function LinkAdmin() {
 
   return (
     <section className="page-section page-wide">
-      <p className="eyebrow"><span></span> PRIVATE LINK</p>
-      <h2>링크 관리</h2>
+      <h2>
+        링크 관리
+        {detail ? (
+          <>
+            <span className="crumb-sep">/</span>
+            <span className="crumb">{detail.title || detail.originalUrl}</span>
+          </>
+        ) : <span className="count">{links.length}</span>}
+      </h2>
 
-      <div className="session-bar">
-        <div className="field">
-          <select id="link-picker" aria-label="링크 선택" value={selected ?? ''}
-            onChange={e => show({ link: e.target.value ? Number(e.target.value) : null })}>
-            <option value="">링크를 선택하세요</option>
-            {links.map(row => (
-              <option key={row.id} value={row.id}>
-                {row.title || row.originalUrl} · 발급 {row.recipientCount}개
-              </option>
-            ))}
-          </select>
-        </div>
-        <Link className="btn-secondary" to="/links/new">링크 추가</Link>
+      <div className="picked-bar">
+        {detail && (
+          <span className="picked-meta">발급 {detail.recipients.length}개 · 등록 {claimed}개</span>
+        )}
+        {!detail && (
+          <span className="picked-actions">
+            {/* Content is what a link points at, so it is made from here rather than
+                from a menu of its own. */}
+            <Link className="btn-secondary" to="/content/create">컨텐츠 생성</Link>
+            <Link className="btn-secondary" to="/links/new">링크 추가</Link>
+          </span>
+        )}
       </div>
 
       {notice && <p className="notice-text" role="status">{notice}</p>}
@@ -216,13 +231,17 @@ export default function LinkAdmin() {
       )}
 
       {!detail && (
-        <div className="tab-panel">
-          <p className="hint-text">
-            {links.length === 0
-              ? '아직 링크가 없어요. 링크 추가로 원본 주소를 하나 등록해 주세요.'
-              : '먼저 링크를 선택해 주세요.'}
-          </p>
-        </div>
+        <EntityPicker
+          items={links.map(row => ({
+            id: row.id,
+            title: row.title || row.originalUrl,
+            meta: <>
+              <code title={row.originalUrl}>{row.originalUrl}</code>
+              <span>발급 {row.recipientCount}개</span>
+            </>,
+          }))}
+          onOpen={id => show({ link: id, tab: 'issue' })}
+          empty="아직 링크가 없어요. 링크 추가로 원본 주소를 하나 등록해 주세요." />
       )}
 
       {detail && tab === 'issue' && (

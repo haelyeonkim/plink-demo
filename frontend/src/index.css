@@ -7,6 +7,9 @@
   --bg-section: #f7f8fc;
   --radius: 12px;
   --shadow: 0 12px 35px rgba(35, 49, 95, 0.14);
+  /* Every page - the landing page included - is this wide, so the logo and the first
+     column of content stay put as you move between them. */
+  --page-width: min(1600px, 96vw);
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -24,16 +27,13 @@ a { color: inherit; text-decoration: none; }
   height: 72px;
   display: flex;
   align-items: center;
-  max-width: 1100px;
+  max-width: var(--page-width);
   margin: auto;
   padding: 0 24px;
   gap: 48px;
 }
-/* A console is wider than a reading page, and a header that stops short of the panel
-   below it reads as a misalignment. :has() lets the bar follow whichever page is
-   mounted instead of picking one width for both. */
-body:has(.page-section) .header,
-body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
+/* The home page used to sit at 1100px while a console sat at 1600, so moving between
+   them shifted the logo and every left edge. One width now, everywhere. */
 
 .logo {
   display: flex;
@@ -78,7 +78,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
   min-height: 600px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  max-width: 1100px;
+  max-width: var(--page-width);
   margin: auto;
   padding: 60px 24px;
   align-items: center;
@@ -322,7 +322,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 }
 .section-lead { color: #788197; font-size: 15px; }
 .feature-grid {
-  max-width: 1010px;
+  max-width: var(--page-width);
   margin: 45px auto 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -360,7 +360,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 
 /* ---- How ---- */
 .how {
-  max-width: 1010px;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: 95px 28px;
   display: grid;
@@ -396,7 +396,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  max-width: 1010px;
+  max-width: var(--page-width);
   margin: -35px auto 80px;
   padding: 0 28px;
 }
@@ -500,15 +500,16 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
   /* One width for every application page. A console, the form that feeds it and the
      pages beside them used to sit at three different left edges, so the content jumped
      as you moved between them. Readable content is capped per page instead. */
-  max-width: min(1600px, 96vw);
+  max-width: var(--page-width);
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  /* The bar above already separates the title from the top of the window. */
+  padding: 14px 24px 48px;
 }
 /* The console title, which stands on its own rather than in a .section-header. */
 .page-section > h2 { font-size: 26px; letter-spacing: -1px; margin: 0 0 2px; }
 
 /* Kept as the marker the header follows; the width now comes from .page-section. */
-.page-wide { max-width: min(1600px, 96vw); }
+.page-wide { max-width: var(--page-width); }
 /* A form is read left to right: it stays narrow inside the wide page. */
 .page-section > .create-form { max-width: 640px; }
 .tab-split { min-width: 0; }
@@ -585,6 +586,25 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 .entity-list li.no-hover { cursor: default; }
 .issued-to { color: #8b93a7; font-weight: 600; }
 
+/* The list a console opens on, and the button that lengthens it. */
+.list-more { display: flex; justify-content: center; margin-top: 14px; }
+.list-more .btn-secondary { width: auto; margin: 0; }
+/* Which one is open reads in the title, as a path: "링크 관리 / 이번 주 제안서". */
+.crumb-sep { color: #c3c9d6; margin: 0 8px; font-weight: 400; }
+/* The count rides with the title rather than taking a line of its own. */
+.page-section > h2 .count { vertical-align: middle; margin-left: 10px; }
+.crumb { color: #5b647a; font-size: 17px; letter-spacing: -0.4px; }
+
+/* Under the title: what this list or this one thing amounts to. */
+.picked-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+/* With nothing on the left the row would collapse; the button still needs its line. */
+.picked-bar:empty { display: none; }
+.picked-bar .picked-meta { color: #8b93a7; font-size: 12px; }
+.picked-bar .btn-secondary, .picked-bar .btn-tiny { width: auto; margin: 0; }
+.picked-bar .picked-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
 /* The account's public path segment, edited in place. */
 .slug-chip { background: none; border: none; padding: 0; cursor: pointer; font: inherit; }
 .slug-chip code {
@@ -627,9 +647,11 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 .gate-row .gate-meta { font-size: 12px; color: #9198aa; }
 .gate-row .gate-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .section-header { margin-bottom: 24px; }
+/* The same size as a console's own title: the guide and the consoles are pages of one
+   application, and two heading sizes read as two applications. */
 .section-header h2 {
-  font-size: 32px;
-  letter-spacing: -1.5px;
+  font-size: 26px;
+  letter-spacing: -1px;
   margin-bottom: 6px;
 }
 .section-desc { color: #788197; font-size: 15px; }
@@ -935,7 +957,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 .footer {
   border-top: 1px solid var(--line);
   padding: 32px 24px;
-  max-width: 1100px;
+  max-width: var(--page-width);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -946,46 +968,41 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 .footer p { font-size: 11px; flex: 1; }
 .footer small { font-size: 10px; }
 
+/* The settings tab's own tabs: the same bar, quieter, so the two levels do not read as
+   one row of eight. */
+.tabs-inner { margin: 0 0 18px; }
+.tabs-inner button { font-size: 13px; padding: 8px 12px; }
+
+/* What is in force, as a table: two columns, the label narrow. */
+.settings-now { padding-bottom: 4px; }
+.summary-table { width: 100%; border-collapse: collapse; }
+.summary-table th, .summary-table td {
+  text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.summary-table tr:last-child th, .summary-table tr:last-child td { border-bottom: none; }
+.summary-table th { width: 160px; color: #8b93a7; font-weight: 600; white-space: nowrap; }
+.summary-table td { font-weight: 600; }
+
+/* The tab panel is already the card. A form inside it is a form, not a second box:
+   white on white with two rounded borders only made the page look busier than it is. */
+.settings-form { max-width: 760px; }
+.settings-form > .btn-primary { margin-top: 16px; }
+/* Fields are divided from each other by a rule, which is all the separation a list of
+   like things needs. */
+.field-card { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
+.field-card:first-of-type { border-top: none; padding-top: 0; }
+.field-card .panel-head { margin-bottom: 6px; }
+.field-card h3 { font-size: 15px; margin-bottom: 12px; }
+
 /* ---- The ticket console's settings tab ----
    What is in force reads first, the forms that change it sit below in cards of equal
    weight, and the one irreversible action stands apart at the bottom. */
 .settings-now { margin-bottom: 22px; }
 .settings-now h3 { font-size: 15px; margin-bottom: 12px; }
-.settings-now dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
-  gap: 12px;
-  margin: 0;
-}
-.settings-now dl > div {
-  background: var(--bg-section);
-  border-radius: 12px;
-  padding: 10px 12px;
-  min-width: 0;
-}
-.settings-now dt { font-size: 11px; color: #9ba2b4; font-weight: 600; margin-bottom: 4px; }
-.settings-now dd { font-size: 13px; font-weight: 600; margin: 0; word-break: keep-all; }
 
-.settings-grid {
-  display: grid;
-  /* Two columns on a desktop: three made the cards narrow enough that the date inputs
-     wrapped, and left one card alone on a row of its own. */
-  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
-  gap: 18px;
-  align-items: start;
-}
-.settings-card {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 18px 18px 20px;
-  min-width: 0;
-}
-.settings-card > h3 { font-size: 15px; margin-bottom: 14px; }
-.settings-card .btn-primary { margin-top: 16px; }
-/* The card's own heading already divides; the first catalogue needs no rule above it. */
-.settings-card .catalog:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
-.settings-panel > .danger-zone { margin-top: 26px; }
+/* The catalogue inside a field card is the card's body, not a section of its own. */
+.field-card .catalog { border-top: none; padding-top: 0; margin-top: 0; }
+.settings-form .danger-zone { margin-top: 26px; }
 
 /* One column per place, as many as the width allows. */
 .zone-capacity { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
@@ -995,7 +1012,7 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
   .header { height: 70px; gap: 0; justify-content: space-between; }
   /* Every side gutter costs a phone about 12% of its width, and the panel's own
      padding sits inside the page's. One of the two is enough. */
-  .page-section { padding: 16px 16px 28px; }
+  .page-section { padding: 10px 16px 28px; }
   /* 96vw leaves an 8px margin a phone cannot spare, and it pushed the content out of
      line with the header. */
   .page-section, .page-wide { max-width: 100%; }

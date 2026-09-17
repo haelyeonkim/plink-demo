@@ -8,6 +8,8 @@ public class Ticket {
     public String ticketRef, seat, tier, status, issuedToEmail, holderEmail, phone, deliveredVia;
     /** The URL token as issued, sealed. Null for tickets issued before it was kept. */
     public String tokenCipher;
+    /** The organiser's own fields, as JSON. Seat and tier keep their own columns. */
+    public String attributes;
     public Timestamp boundAt, claimExpiresAt, createdAt, deliveredAt;
     public int transferCount, reissueCount;
 
