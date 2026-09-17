@@ -276,6 +276,31 @@ public class TicketAdminController {
     }
 
     /**
+     * The link as issued, for the operator who is asked "what was my link again?".
+     *
+     * <p>Reading it changes nothing: the ticket keeps working, the holder's registration
+     * stands, and no new link is minted. Tickets issued before the link was kept have
+     * only the hash, and say so rather than quietly rotating.
+     */
+    @GetMapping("/tickets/{ticketId}/link")
+    public Map<String, Object> ticketLink(@PathVariable long ticketId) {
+        Ticket ticket = tickets.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        String token = cipher.open(ticket.tokenCipher);
+        if (token == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "이 입장권은 링크를 보관하기 전에 발급되어 다시 볼 수 없어요. "
+                + "재발급하면 그때부터는 언제든 볼 수 있습니다.");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ticketId", ticket.id);
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("url", ticketService.urlFor(ticket.sessionId, token));
+        result.put("deliveredVia", ticket.deliveredVia);
+        return result;
+    }
+
+    /**
      * How many people each place holds.
      *
      * <p>The body is a map of place to capacity; a null or zero drops the number and

@@ -177,6 +177,12 @@ export default function TicketAdmin() {
     await loadSession(selected!);
   });
 
+  /** Shows the link that was issued. Nothing is minted and nothing is invalidated. */
+  const showLink = (ticketId: number) => act(async () => {
+    const result = await read(await fetch(`/api/admin/tickets/${ticketId}/link`));
+    setIssued({ ...(result as IssuedTicket), from: 'row' });
+  });
+
   const reissueLink = (ticketId: number, notify: boolean) => act(async () => {
     const result = await read(await mutate(`/api/admin/tickets/${ticketId}/link`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -475,8 +481,9 @@ export default function TicketAdmin() {
                     <td data-label="보유자">{row.holderEmail ?? row.issuedToEmail}</td>
                     <td data-label="전달">{row.deliveredVia ?? '-'}</td>
                     <td className="cell-buttons">
+                      <button className="btn-tiny" onClick={() => showLink(row.ticketId)}>링크 보기</button>
                       <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: false })}>
-                        링크 재발급
+                        재발급
                       </button>
                       <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: true })}>
                         재발송
@@ -492,7 +499,7 @@ export default function TicketAdmin() {
                     <tr>
                       <td colSpan={8}>
                         <IssuedLink url={issued.url}
-                          note="새로 발급된 링크입니다. 지금만 보여지며, 이전 링크는 더 이상 열리지 않습니다." />
+                          note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
                       </td>
                     </tr>
                   )}
@@ -505,8 +512,8 @@ export default function TicketAdmin() {
             </table>
           </div>
           <p className="hint-text">
-            링크는 서버에 해시로만 남아 다시 꺼내 볼 수 없어요. 보유자가 링크를 잃어버렸다면
-            <b> 링크 재발급</b>으로 새로 만들어 주세요. 그 순간 이전 링크는 닫힙니다.
+            <b>링크 보기</b>는 발급된 링크를 그대로 보여 줍니다. 입장권도 등록 상태도 그대로예요.
+            <b> 재발급</b>은 새 링크를 만들고 그 순간 이전 링크를 닫습니다.
           </p>
           <p className="hint-text">
             비활성화하면 링크가 열리지 않고 게이트도 거부합니다. 이미 장내에 있는 사람을 내보내지는

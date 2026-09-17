@@ -6,6 +6,8 @@ public class Ticket {
     public long id, sessionId;
     public Long holderId;
     public String ticketRef, seat, tier, status, issuedToEmail, holderEmail, phone, deliveredVia;
+    /** The URL token as issued, sealed. Null for tickets issued before it was kept. */
+    public String tokenCipher;
     public Timestamp boundAt, claimExpiresAt, createdAt, deliveredAt;
     public int transferCount, reissueCount;
 

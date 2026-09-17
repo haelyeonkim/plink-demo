@@ -37,24 +37,27 @@ public class TicketRepository {
         t.phone = rs.getString("phone");
         t.deliveredVia = rs.getString("delivered_via");
         t.deliveredAt = rs.getTimestamp("delivered_at");
+        t.tokenCipher = rs.getString("token_cipher");
         return t;
     };
 
-    public long insert(long sessionId, String ticketRef, String tokenHmac, String seat, String tier,
-            String issuedToEmail, String phone, Timestamp claimExpiresAt) {
+    public long insert(long sessionId, String ticketRef, String tokenHmac, String tokenCipher,
+            String seat, String tier, String issuedToEmail, String phone, Timestamp claimExpiresAt) {
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO ticket (session_id, ticket_ref, token_hmac, seat, tier, issued_to_email, phone, "
-                + "claim_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                "INSERT INTO ticket (session_id, ticket_ref, token_hmac, token_cipher, seat, tier, "
+                + "issued_to_email, phone, claim_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                new String[] { "id" });
             ps.setLong(1, sessionId);
             ps.setString(2, ticketRef);
             ps.setString(3, tokenHmac);
-            ps.setString(4, seat);
-            ps.setString(5, tier);
-            ps.setString(6, issuedToEmail);
-            ps.setString(7, phone);
-            ps.setTimestamp(8, claimExpiresAt);
+            ps.setString(4, tokenCipher);
+            ps.setString(5, seat);
+            ps.setString(6, tier);
+            ps.setString(7, issuedToEmail);
+            ps.setString(8, phone);
+            ps.setTimestamp(9, claimExpiresAt);
             return ps;
         }, keys);
         return keys.getKey().longValue();
@@ -108,11 +111,12 @@ public class TicketRepository {
      * Hands the ticket to the recipient: their claim token becomes the ticket's own, so
      * the sender's URL stops resolving from this moment.
      */
-    public void completeTransfer(long id, String tokenHmac, long holderId, String holderEmail) {
-        jdbc.update("UPDATE ticket SET token_hmac = ?, holder_id = ?, holder_email = ?, "
+    public void completeTransfer(long id, String tokenHmac, String tokenCipher, long holderId,
+            String holderEmail) {
+        jdbc.update("UPDATE ticket SET token_hmac = ?, token_cipher = ?, holder_id = ?, holder_email = ?, "
             + "issued_to_email = ?, status = 'BOUND', bound_at = CURRENT_TIMESTAMP, "
             + "claim_expires_at = NULL, transfer_count = transfer_count + 1 WHERE id = ?",
-            tokenHmac, holderId, holderEmail, holderEmail, id);
+            tokenHmac, tokenCipher, holderId, holderEmail, holderEmail, id);
     }
 
     /**
@@ -120,11 +124,11 @@ public class TicketRepository {
      * Presence and re-entry counters are deliberately left alone: the holder's movements
      * so far still happened.
      */
-    public void rotateToken(long id, String tokenHmac, String issuedToEmail, Timestamp claimExpiresAt,
-            boolean countAsReissue) {
-        jdbc.update("UPDATE ticket SET token_hmac = ?, issued_to_email = ?, claim_expires_at = ?, "
-            + "status = 'ISSUED', holder_id = NULL, holder_email = NULL, bound_at = NULL, "
-            + "reissue_count = reissue_count + ? WHERE id = ?",
-            tokenHmac, issuedToEmail, claimExpiresAt, countAsReissue ? 1 : 0, id);
+    public void rotateToken(long id, String tokenHmac, String tokenCipher, String issuedToEmail,
+            Timestamp claimExpiresAt, boolean countAsReissue) {
+        jdbc.update("UPDATE ticket SET token_hmac = ?, token_cipher = ?, issued_to_email = ?, "
+            + "claim_expires_at = ?, status = 'ISSUED', holder_id = NULL, holder_email = NULL, "
+            + "bound_at = NULL, reissue_count = reissue_count + ? WHERE id = ?",
+            tokenHmac, tokenCipher, issuedToEmail, claimExpiresAt, countAsReissue ? 1 : 0, id);
     }
 }

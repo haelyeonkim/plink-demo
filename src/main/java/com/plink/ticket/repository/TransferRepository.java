@@ -21,6 +21,7 @@ public class TransferRepository {
         t.fromEmail = rs.getString("from_email");
         t.toEmail = rs.getString("to_email");
         t.toTokenHmac = rs.getString("to_token_hmac");
+        t.toTokenCipher = rs.getString("to_token_cipher");
         t.status = rs.getString("status");
         t.policySnapshot = rs.getString("policy_snapshot");
         t.expiresAt = rs.getTimestamp("expires_at");
@@ -31,10 +32,13 @@ public class TransferRepository {
     };
 
     public void insert(long ticketId, String fromEmail, String toEmail, String toTokenHmac,
-            String policySnapshot, String ip, String userAgent, Timestamp expiresAt) {
+            String toTokenCipher, String policySnapshot, String ip, String userAgent,
+            Timestamp expiresAt) {
         jdbc.update("INSERT INTO ticket_transfer (ticket_id, from_email, to_email, to_token_hmac, "
-            + "policy_snapshot, requested_ip, requested_ua, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ticketId, fromEmail, toEmail, toTokenHmac, policySnapshot, ip, userAgent, expiresAt);
+            + "to_token_cipher, policy_snapshot, requested_ip, requested_ua, expires_at) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ticketId, fromEmail, toEmail, toTokenHmac, toTokenCipher, policySnapshot, ip, userAgent,
+            expiresAt);
     }
 
     public Optional<Transfer> findPendingByTicket(long ticketId) {

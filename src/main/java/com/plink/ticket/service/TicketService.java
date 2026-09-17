@@ -38,12 +38,13 @@ public class TicketService {
     private final EmailSender mail;
     private final MessageSender sms;
     private final TicketProperties properties;
+    private final TextCipher cipher;
     private final String baseUrl;
 
     public TicketService(TicketRepository tickets, EventSessionRepository sessions,
             HolderRepository holders, AdmissionRepository admissions,
             TransferRepository transfers, PresentationService presentations, EmailSender mail,
-            MessageSender sms, TicketProperties properties,
+            MessageSender sms, TicketProperties properties, TextCipher cipher,
             @Value("${plink.auth.base-url}") String baseUrl) {
         this.tickets = tickets;
         this.sessions = sessions;
@@ -54,6 +55,7 @@ public class TicketService {
         this.mail = mail;
         this.sms = sms;
         this.properties = properties;
+        this.cipher = cipher;
         this.baseUrl = baseUrl;
     }
 
@@ -105,7 +107,8 @@ public class TicketService {
             Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
         long id;
         try {
-            id = tickets.insert(sessionId, ref, tokenHmac(token), seat, tier, recipient, phone, claimExpiresAt);
+            id = tickets.insert(sessionId, ref, tokenHmac(token), cipher.seal(token), seat, tier,
+                recipient, phone, claimExpiresAt);
         } catch (org.springframework.dao.DataIntegrityViolationException taken) {
             // (session_id, seat) is unique, so this is the seat already being spoken for.
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -159,7 +162,8 @@ public class TicketService {
         String token = Secrets.randomToken(16);
         Timestamp claimExpiresAt = Timestamp.from(
             Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
-        tickets.rotateToken(ticket.id, tokenHmac(token), recipient, claimExpiresAt, true);
+        tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
+            claimExpiresAt, true);
 
         String url = urlFor(ticket.sessionId, token);
         String delivered = "LINK";
@@ -234,7 +238,8 @@ public class TicketService {
         String token = Secrets.randomToken(16);
         Timestamp claimExpiresAt = Timestamp.from(
             Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
-        tickets.rotateToken(ticket.id, tokenHmac(token), recipient, claimExpiresAt, true);
+        tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
+            claimExpiresAt, true);
 
         String url = urlFor(ticket.sessionId, token);
         mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",

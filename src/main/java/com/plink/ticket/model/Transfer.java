@@ -4,7 +4,7 @@ import java.sql.Timestamp;
 
 public class Transfer {
     public long id, ticketId;
-    public String fromEmail, toEmail, toTokenHmac, status, policySnapshot;
+    public String fromEmail, toEmail, toTokenHmac, toTokenCipher, status, policySnapshot;
     public Timestamp expiresAt, acceptedAt, closedAt, createdAt;
 
     public boolean pending() { return "PENDING".equals(status); }

@@ -39,11 +39,12 @@ public class TransferService {
     private final TicketService ticketService;
     private final EmailSender mail;
     private final TicketProperties properties;
+    private final TextCipher cipher;
 
     public TransferService(TicketRepository tickets, TransferRepository transfers,
             AdmissionRepository admissions,
             PresentationService presentations, TicketService ticketService, EmailSender mail,
-            TicketProperties properties) {
+            TicketProperties properties, TextCipher cipher) {
         this.tickets = tickets;
         this.transfers = transfers;
         this.admissions = admissions;
@@ -51,6 +52,7 @@ public class TransferService {
         this.ticketService = ticketService;
         this.mail = mail;
         this.properties = properties;
+        this.cipher = cipher;
     }
 
     /** Called only after the holder's passkey assertion has been verified. */
@@ -96,7 +98,7 @@ public class TransferService {
         String claimToken = Secrets.randomToken(16);
         Timestamp expiresAt = Timestamp.from(Instant.now().plus(CLAIM_TTL_HOURS, ChronoUnit.HOURS));
         transfers.insert(locked.id, locked.holderEmail, recipient, ticketService.tokenHmac(claimToken),
-            snapshot(session), ip, userAgent, expiresAt);
+            cipher.seal(claimToken), snapshot(session), ip, userAgent, expiresAt);
 
         String url = ticketService.urlFor(locked.sessionId, claimToken);
         mail.send(recipient, "[" + session.name + "] 입장권을 받았어요",
@@ -134,7 +136,8 @@ public class TransferService {
         transfers.accept(transfer.id);
         // The sender keeps their passkey - it carries their other tickets. Only this
         // ticket changes hands.
-        tickets.completeTransfer(ticket.id, transfer.toTokenHmac, holderId, transfer.toEmail);
+        tickets.completeTransfer(ticket.id, transfer.toTokenHmac, transfer.toTokenCipher,
+            holderId, transfer.toEmail);
         // A new holder starts with a clean movement history for this session.
         admissions.resetPresence(ticket.id);
         admissions.append(ticket.id, ticket.sessionId, null, null, "STAFF", "TRANSFERRED",

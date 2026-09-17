@@ -43,6 +43,7 @@ class ConsoleOperationsTest {
     @Autowired com.plink.ticket.controller.TicketAdminController adminController;
     @Autowired TextCipher cipher;
     @Autowired com.plink.ticket.service.TransferService transfers;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private long newSession() {
         return sessions.insert("콘솔 테스트 " + Secrets.randomAlnum(6), null,
@@ -65,6 +66,42 @@ class ConsoleOperationsTest {
         assertTrue(url.contains("/tickets/" + sessionId + "/"), url);
         // The link works, which is the point of returning it.
         assertEquals(issued.get("ticketId"), tickets.resolve(sessionId, tokenOf(url)).ticket.id);
+    }
+
+    /**
+     * The console can be asked for the link again. Reading it must not be a disguised
+     * re-issue: the same URL comes back and it still resolves.
+     */
+    @Test void theIssuedLinkCanBeReadBackWithoutRotating() {
+        long sessionId = newSession();
+        Map<String, Object> issued = tickets.issue(sessionId, "holder@example.com", "A-1", null, null);
+        long ticketId = ((Number) issued.get("ticketId")).longValue();
+        String url = String.valueOf(issued.get("url"));
+
+        Map<String, Object> shown = adminController.ticketLink(ticketId);
+        assertEquals(url, shown.get("url"), "보여 준 링크는 발급된 그 링크여야 합니다");
+        assertEquals(url, String.valueOf(adminController.ticketLink(ticketId).get("url")),
+            "두 번 봐도 같은 링크입니다");
+        assertEquals(ticketId, tickets.resolve(sessionId, tokenOf(url)).ticket.id);
+        assertEquals(0, ticketRepository.findById(ticketId).orElseThrow().reissueCount);
+
+        // A re-issue moves it on, and the console then shows the new one.
+        String next = String.valueOf(tickets.reissueForConsole(ticketId, false).get("url"));
+        assertEquals(next, adminController.ticketLink(ticketId).get("url"));
+        assertNotEquals(url, next);
+    }
+
+    /** Tickets issued before the link was kept have only the hash, and say so. */
+    @Test void aTicketFromBeforeTheChangeSaysTheLinkIsGone() {
+        long sessionId = newSession();
+        long ticketId = ((Number) tickets.issue(sessionId, "holder@example.com", "B-2", null, null)
+            .get("ticketId")).longValue();
+        jdbc.update("UPDATE ticket SET token_cipher = NULL WHERE id = ?", ticketId);
+
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> adminController.ticketLink(ticketId));
+        assertEquals(HttpStatus.NOT_FOUND, refused.getStatusCode());
+        assertTrue(String.valueOf(refused.getReason()).contains("재발급"));
     }
 
     @Test void reIssuingRotatesSoTheOldLinkStopsWorking() {
