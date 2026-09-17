@@ -505,8 +505,13 @@ a { color: inherit; text-decoration: none; }
   /* The bar above already separates the title from the top of the window. */
   padding: 14px 24px 48px;
 }
-/* The console title, which stands on its own rather than in a .section-header. */
-.page-section > h2 { font-size: 26px; letter-spacing: -1px; margin: 0 0 2px; }
+/* The console title, which stands on its own rather than in a .section-header. The
+   name beside it is set smaller, so the row is centred rather than sat on a baseline
+   the two sizes do not share. */
+.page-section > h2 {
+  font-size: 26px; letter-spacing: -1px; margin: 0 0 2px;
+  display: flex; align-items: center; flex-wrap: wrap;
+}
 
 /* Kept as the marker the header follows; the width now comes from .page-section. */
 .page-wide { max-width: var(--page-width); }
@@ -592,8 +597,11 @@ a { color: inherit; text-decoration: none; }
 /* Which one is open reads in the title, as a path: "링크 관리 / 이번 주 제안서". */
 .crumb-sep { color: #c3c9d6; margin: 0 8px; font-weight: 400; }
 /* The count rides with the title rather than taking a line of its own. */
-.page-section > h2 .count { vertical-align: middle; margin-left: 10px; }
-.crumb { color: #5b647a; font-size: 17px; letter-spacing: -0.4px; }
+.page-section > h2 .count { margin-left: 10px; }
+.crumb {
+  color: #5b647a; font-size: 17px; letter-spacing: -0.4px; line-height: 1.2;
+  min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Under the title: what this list or this one thing amounts to. */
 .picked-bar {
