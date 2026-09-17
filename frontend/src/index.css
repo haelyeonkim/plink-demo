@@ -946,10 +946,6 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
 .footer p { font-size: 11px; flex: 1; }
 .footer small { font-size: 10px; }
 
-/* The way back into the consoles from the administration page. */
-.admin-jump { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.admin-jump a { text-decoration: none; }
-
 /* One column per place, as many as the width allows. */
 .zone-capacity { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
 .crowd-form { margin-top: 26px; }
@@ -980,14 +976,6 @@ body:has(.page-section) .footer { max-width: min(1600px, 96vw); }
   .header nav { display: none; }
   .header .header-account { display: none; }
   .header .menu-toggle { display: block; }
-  /* An administrator has no menu to fold away, so the one button rides in the bar and
-     the toggle would open an empty panel. */
-  .header.header-bare .header-account { display: flex; gap: 10px; }
-  .header.header-bare .menu-toggle { display: none; }
-  /* Two buttons and an address do not fit a phone bar; the address is the one the
-     account holder already knows. */
-  .header.header-bare .account-name { display: none; }
-  .header.header-bare .admin-link, .header.header-bare .login { white-space: nowrap; }
   /* Three columns squeezed into 390px left the tagline in a two-word ribbon. */
   .footer { flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; }
   .footer p { flex: none; }

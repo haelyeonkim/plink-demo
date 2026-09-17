@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { Link, useLocation } from 'react-router-dom';
 
+/** The administration button's label, and so the one name a header need not repeat. */
+const ADMIN = '관리자';
+
 const LINKS: Array<[string, string]> = [
   ['/links', '링크 관리'],
   ['/content/create', '컨텐츠 생성'],
@@ -26,9 +29,6 @@ export default function Header() {
   const { session, loading, logout } = useAuth();
   const { pathname } = useLocation();
   const standalone = isStandalone(pathname);
-  // An administrator signs in to administer. The product menu would only be noise on
-  // that screen, so the header carries the one button that account came for.
-  const menu = session?.user?.canAccounts ? [] : LINKS;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
@@ -58,13 +58,16 @@ export default function Header() {
     );
   }
 
+  const who = session?.user?.name || session?.user?.email || '';
   const account = session?.user ? (
     <>
       {/* Administration is not part of the product menu: only an owner is shown it. */}
-      {session.user.canAccounts && <Link className="admin-link" to="/admin">관리자</Link>}
-      <span className="account-name" title={session.user.email || ''}>
-        {session.user.name || session.user.email}
-      </span>
+      {session.user.canAccounts && <Link className="admin-link" to="/admin">{ADMIN}</Link>}
+      {/* An account literally named "관리자" would otherwise print the button's own
+          label back at it. */}
+      {who !== ADMIN && (
+        <span className="account-name" title={session.user.email || ''}>{who}</span>
+      )}
       <button className="login" disabled={busy} onClick={handleLogout}>
         {busy ? '로그아웃 중…' : '로그아웃'}
       </button>
@@ -75,31 +78,27 @@ export default function Header() {
 
   return (
     <>
-      <header className={menu.length > 0 ? 'header' : 'header header-bare'}>
+      <header className="header">
         <Link className="logo" to="/">
           <img src="/logo.svg" alt="패스링크" height="28" />
         </Link>
-        {menu.length > 0 && (
-          <nav>
-            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
-          </nav>
-        )}
+        <nav>
+          {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+        </nav>
         <div className="header-account">
           {account}
           {error && <span className="account-error" role="alert">{error}</span>}
         </div>
-        {menu.length > 0 && (
-          <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
-            aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
-            {open ? '✕' : '☰'}
-          </button>
-        )}
+        <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
+          aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
+          {open ? '✕' : '☰'}
+        </button>
       </header>
 
-      {open && menu.length > 0 && (
+      {open && (
         <div className="mobile-menu" id="mobile-menu">
           <nav>
-            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+            {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
           </nav>
           <div className="mobile-account">{account}</div>
         </div>

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { mutate, useAuth } from '../auth';
+import { mutate } from '../auth';
 import ConfirmDialog from './ConfirmDialog';
 
 interface AccountRow {
@@ -33,7 +32,6 @@ const TABS: Array<[Tab, string]> = [
  * lock everyone out: the last owner, and your own account.
  */
 export default function AdminConsole() {
-  const { session } = useAuth();
   const [tab, setTab] = useState<Tab>('accounts');
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [me, setMe] = useState<string>('');
@@ -121,14 +119,6 @@ export default function AdminConsole() {
     <section className="page-section page-wide">
       <p className="eyebrow"><span></span> ADMIN</p>
       <h2>관리자</h2>
-
-      {/* The product menu is off the bar for this account, so the way back into the
-          consoles is here, and only to the ones this account may open. */}
-      <div className="admin-jump">
-        {session?.user?.canLinks && <Link className="btn-secondary" to="/links">링크 관리</Link>}
-        {session?.user?.canTickets && <Link className="btn-secondary" to="/tickets/admin">입장권 관리</Link>}
-        <Link className="btn-secondary" to="/guide">사용자 가이드</Link>
-      </div>
 
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
