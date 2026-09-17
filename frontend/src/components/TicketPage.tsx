@@ -305,6 +305,14 @@ function RotatingCode({ grant, ticket, onDone, onRefresh }: {
   const [rotation, setRotation] = useState(0);
   const [failed, setFailed] = useState('');
   const wasInside = useRef(ticket.presence.inside);
+  // Held in refs, not read as dependencies: the poll below re-renders the parent every
+  // few seconds, and a callback that changes identity on every render would tear the
+  // timers down and mint a new code each time - the QR was rotating on the poll, not
+  // on the period.
+  const done = useRef(onDone);
+  const refresh = useRef(onRefresh);
+  done.current = onDone;
+  refresh.current = onRefresh;
 
   useEffect(() => {
     const minter = new CodeMinter(grant);
@@ -326,26 +334,30 @@ function RotatingCode({ grant, ticket, onDone, onRefresh }: {
     }
 
     void draw();
-    const rotate = window.setInterval(() => { void draw(); }, minter.periodMs);
+    // Redrawn when the rotation window actually turns over, so the QR changes exactly
+    // when the countdown says it does - not on a timer started at mount, and not on
+    // every poll.
+    let shown = minter.windowIndex();
     const tick = window.setInterval(() => {
+      const current = minter.windowIndex();
+      if (current !== shown) { shown = current; void draw(); }
       setLeft(minter.secondsLeft());
       setRotation(minter.secondsToRotation());
-      if (minter.secondsLeft() <= 0) { void onDone(); }
+      if (minter.secondsLeft() <= 0) { void done.current(); }
     }, 250);
     // The gate consumes the grant server-side, so the phone watches for the state flip.
-    const poll = window.setInterval(() => { void onRefresh(); }, 3000);
+    const poll = window.setInterval(() => { void refresh.current(); }, 3000);
 
     return () => {
       stopped = true;
-      window.clearInterval(rotate);
       window.clearInterval(tick);
       window.clearInterval(poll);
     };
-  }, [grant, onDone, onRefresh]);
+  }, [grant]);
 
   useEffect(() => {
-    if (ticket.presence.inside !== wasInside.current) { void onDone(); }
-  }, [ticket.presence.inside, onDone]);
+    if (ticket.presence.inside !== wasInside.current) { void done.current(); }
+  }, [ticket.presence.inside]);
 
   return (
     <div className="access-card">

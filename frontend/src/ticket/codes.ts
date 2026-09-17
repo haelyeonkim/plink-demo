@@ -29,6 +29,8 @@ export class CodeMinter {
   private key: Promise<CryptoKey>;
   /** Difference between the server clock and this device, measured when the grant was issued. */
   private readonly skewMs: number;
+  /** The code already minted for the current window, so a redraw shows the same QR. */
+  private minted: { window: number; code: string } | null = null;
 
   constructor(private readonly grant: Grant) {
     this.key = crypto.subtle.importKey(
@@ -47,6 +49,12 @@ export class CodeMinter {
     return Math.max(0, Math.ceil((this.expiresAtMs - this.serverNowMs()) / 1000));
   }
 
+  /** Which rotation this is: the number that changes when the code must change. */
+  windowIndex(): number {
+    const elapsed = this.serverNowMs() - new Date(this.grant.serverTime).getTime();
+    return Math.max(0, Math.floor(elapsed / this.periodMs));
+  }
+
   /** Seconds until the code on screen is replaced. */
   secondsToRotation(): number {
     const elapsed = this.serverNowMs() - new Date(this.grant.serverTime).getTime();
@@ -54,6 +62,10 @@ export class CodeMinter {
   }
 
   async next(): Promise<string> {
+    // Same window, same code: redrawing the canvas is not a rotation, and minting a
+    // fresh nonce for it would change the QR under the holder's hand.
+    const window = this.windowIndex();
+    if (this.minted && this.minted.window === window) return this.minted.code;
     const nowMs = this.serverNowMs();
     const seconds = Math.floor(nowMs / 1000);
     const elapsed = nowMs - new Date(this.grant.serverTime).getTime();
@@ -64,6 +76,8 @@ export class CodeMinter {
     const payload = `${this.grant.grantId}|${counter}|${time}|${random}`;
     const signature = await crypto.subtle.sign('HMAC', await this.key, new TextEncoder().encode(payload));
     const mac = hex(signature, 16);
-    return [this.grant.prefix, this.grant.grantId, String(counter), time, random, mac].join('.');
+    const code = [this.grant.prefix, this.grant.grantId, String(counter), time, random, mac].join('.');
+    this.minted = { window, code };
+    return code;
   }
 }
