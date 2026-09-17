@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createLink } from '../api';
+import { createLink, fetchContents } from '../api';
 import { mutate } from '../auth';
 import { parseTable } from '../ticket/csv';
+import type { ContentSummary } from '../types';
 
 /** "yyyy-MM-ddTHH:mm" in the operator's own zone, which is what the input speaks. */
 function localInput(date: Date): string {
@@ -25,6 +26,12 @@ export default function LinkCreate() {
     localInput(new Date(Date.now() + DEFAULT_HOURS * 3600000)));
   const [recipients, setRecipients] = useState('');
   const [notify, setNotify] = useState(false);
+  // A link opens one of two things: an address elsewhere, or something written here.
+  const [target, setTarget] = useState<'url' | 'content'>('url');
+  const [contentId, setContentId] = useState('');
+  const [contents, setContents] = useState<ContentSummary[]>([]);
+
+  useEffect(() => { fetchContents().then(setContents).catch(() => setContents([])); }, []);
 
   // One address per line, or pasted from a sheet. Empty means the link is created and
   // the addresses are issued later in the console.
@@ -39,8 +46,10 @@ export default function LinkCreate() {
     setError('');
     const data = new FormData(event.currentTarget);
     try {
+      if (target === 'content' && !contentId) throw new Error('연결할 컨텐츠를 선택해 주세요.');
       const link = await createLink({
-        originalUrl: String(data.get('originalUrl')),
+        originalUrl: target === 'url' ? String(data.get('originalUrl')) : undefined,
+        contentId: target === 'content' ? Number(contentId) : undefined,
         title: String(data.get('title') || '') || undefined,
         password: String(data.get('password') || '') || undefined,
         // Sent as the operator picked it: converting to UTC here moved every deadline.
@@ -73,10 +82,37 @@ export default function LinkCreate() {
 
       <form className="create-form" onSubmit={submit}>
         <div className="field">
-          <label htmlFor="originalUrl">원본 주소</label>
-          <input id="originalUrl" name="originalUrl" type="url" required
-            placeholder="https://example.com/my-document" />
+          <label htmlFor="link-target">무엇을 열까요</label>
+          <select id="link-target" value={target}
+            onChange={event => setTarget(event.target.value as 'url' | 'content')}>
+            <option value="url">외부 주소 · 이미 올려 둔 문서나 페이지</option>
+            <option value="content">여기서 만든 컨텐츠</option>
+          </select>
         </div>
+        {target === 'url' ? (
+          <div className="field">
+            <label htmlFor="originalUrl">원본 주소</label>
+            <input id="originalUrl" name="originalUrl" type="url" required
+              placeholder="https://example.com/my-document" />
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor="link-content">컨텐츠</label>
+            <select id="link-content" value={contentId} required
+              onChange={event => setContentId(event.target.value)}>
+              <option value="">컨텐츠를 선택하세요</option>
+              {contents.map(content => (
+                <option key={content.id} value={content.id}>{content.title}</option>
+              ))}
+            </select>
+            <p className="hint-text">
+              {contents.length === 0
+                ? '아직 만든 컨텐츠가 없어요. '
+                : '여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다. '}
+              <Link to="/content/create">컨텐츠 만들기 →</Link>
+            </p>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="title">제목</label>
           <input id="title" name="title" placeholder="예: Q3 브랜드 리뉴얼 제안서" />

@@ -9,6 +9,8 @@ public class ProtectedLink {
     public void setOwnerSub(String ownerSub) { this.ownerSub = ownerSub; }
     private String shortCode;
     private String originalUrl;
+    /** Set when the destination is a document held here rather than a URL. */
+    private Long contentId;
     private String title;
     private String passwordHash;
     private Timestamp expiresAt;
@@ -22,6 +24,9 @@ public class ProtectedLink {
 
     public String getShortCode() { return shortCode; }
     public void setShortCode(String shortCode) { this.shortCode = shortCode; }
+
+    public Long getContentId() { return contentId; }
+    public void setContentId(Long contentId) { this.contentId = contentId; }
 
     public String getOriginalUrl() { return originalUrl; }
     public void setOriginalUrl(String originalUrl) { this.originalUrl = originalUrl; }

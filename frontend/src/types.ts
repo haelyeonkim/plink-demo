@@ -1,7 +1,10 @@
 export interface ProtectedLink {
   id: number;
   shortCode: string;
-  originalUrl: string;
+  /** Null when the link opens a document written here instead of an address. */
+  originalUrl: string | null;
+  contentId: number | null;
+  contentTitle: string | null;
   title: string | null;
   hasPassword: boolean;
   expiresAt: string | null;
@@ -65,9 +68,31 @@ export interface AccessInfo {
 }
 
 export interface CreateLinkRequest {
-  originalUrl: string;
+  /** One of the two: an address elsewhere, or a document written here. */
+  originalUrl?: string;
+  contentId?: number;
   title?: string;
   password?: string;
   expiresAt?: string;
   maxViews?: number;
+}
+
+/** A document written in the studio, which a link can point at. */
+export interface ContentSummary {
+  id: number;
+  title: string;
+  kind: string;
+  linkCount: number;
+  updatedAt: string | null;
+}
+
+export interface ContentDocument extends ContentSummary {
+  body: ExhibitionBody;
+}
+
+export interface ExhibitionBody {
+  intro?: string;
+  columns?: '1' | '2';
+  /** One row per work; the studio decides the keys, the reader renders what it finds. */
+  artworks?: Array<Record<string, string>>;
 }

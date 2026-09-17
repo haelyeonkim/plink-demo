@@ -16,7 +16,8 @@ public class PasskeyController {
         return service.start(code, body.get("password"), body.get("contact"), session);
     }
     @PostMapping("/finish")
-    public Map<String,String> finish(@PathVariable String code, @RequestBody JsonNode credential, HttpSession session) {
-        return Collections.singletonMap("originalUrl", service.finish(code, credential, session));
+    public Map<String, Object> finish(@PathVariable String code, @RequestBody JsonNode credential,
+            HttpSession session) {
+        return service.finish(code, credential, session);
     }
 }

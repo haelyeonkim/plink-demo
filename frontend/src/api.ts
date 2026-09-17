@@ -1,5 +1,8 @@
 import { mutate } from './auth';
-import type { ProtectedLink, LinkDetail, AccessInfo, CreateLinkRequest, LinkRecipient } from './types';
+import type {
+  ProtectedLink, LinkDetail, AccessInfo, CreateLinkRequest, LinkRecipient,
+  ContentSummary, ContentDocument, ExhibitionBody,
+} from './types';
 
 const BASE = '/api/links';
 
@@ -65,4 +68,38 @@ export async function accessLink(shortCode: string, slug?: string): Promise<Acce
   const res = await fetch(slug ? `${BASE}/s/${slug}/${shortCode}` : `${BASE}/s/${shortCode}`);
   if (!res.ok) throw new Error('Link not found');
   return res.json();
+}
+
+/** Documents written here, which a protected link can point at. */
+export async function fetchContents(): Promise<ContentSummary[]> {
+  const res = await fetch('/api/contents');
+  if (!res.ok) throw new Error('컨텐츠를 불러오지 못했어요.');
+  return res.json();
+}
+
+export async function fetchContent(id: number): Promise<ContentDocument> {
+  const res = await fetch(`/api/contents/${id}`);
+  if (!res.ok) throw new Error('컨텐츠를 불러오지 못했어요.');
+  return res.json();
+}
+
+export async function saveContent(
+  id: number | null, title: string, body: ExhibitionBody,
+): Promise<ContentDocument> {
+  const res = await mutate(id ? `/api/contents/${id}` : '/api/contents', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '컨텐츠를 저장하지 못했어요.');
+  return data;
+}
+
+export async function deleteContent(id: number): Promise<void> {
+  const res = await mutate(`/api/contents/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || '컨텐츠를 삭제하지 못했어요.');
+  }
 }

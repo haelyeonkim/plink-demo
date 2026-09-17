@@ -236,4 +236,51 @@ class LinkRecipientTest {
                 .content("{\"email\":\"stranger@example.com\",\"label\":\"끼어들기\"}"))
             .andExpect(status().isNotFound());
     }
+
+    /**
+     * A link can point at a document written here instead of a URL somewhere else. The
+     * document is the destination, so it cannot be deleted while a link still needs it.
+     */
+    @Test void aLinkCanPointAtContentWrittenHere() throws Exception {
+        String created = mvc.perform(post("/api/contents").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"title\":\"2026 봄 전시\",\"body\":{\"intro\":\"소개\","
+                    + "\"artworks\":[{\"title\":\"밤의 정원\",\"artist\":\"김\"}]}}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        long contentId = json(created).get("id").asLong();
+        assertEquals("밤의 정원",
+            json(created).get("body").get("artworks").get(0).get("title").asString());
+
+        String link = mvc.perform(post("/api/links").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"title\":\"전시 초대\",\"contentId\":" + contentId + "}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        assertEquals(contentId, json(link).get("contentId").asLong());
+        assertEquals("2026 봄 전시", json(link).get("contentTitle").asString());
+        assertTrue(json(link).get("originalUrl").isNull(), "문서를 가리키는 링크는 외부 주소를 갖지 않습니다");
+
+        // In use, so deleting it would leave the recipients with nothing to open.
+        mvc.perform(delete("/api/contents/" + contentId).session(session).with(csrf()))
+            .andExpect(status().isConflict());
+
+        // Pointed back at a URL, the document is free again.
+        long linkId = json(link).get("id").asLong();
+        mvc.perform(put("/api/links/" + linkId).session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"originalUrl\":\"https://example.com/deck\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.contentId").doesNotExist())
+            .andExpect(jsonPath("$.originalUrl").value("https://example.com/deck"));
+        mvc.perform(delete("/api/contents/" + contentId).session(session).with(csrf()))
+            .andExpect(status().isOk());
+    }
+
+    /** A link must open something: neither destination is not a link. */
+    @Test void aLinkWithNoDestinationIsRefused() throws Exception {
+        mvc.perform(post("/api/links").session(session).with(csrf())
+                .contentType("application/json").content("{\"title\":\"빈 링크\"}"))
+            .andExpect(status().isBadRequest());
+    }
 }

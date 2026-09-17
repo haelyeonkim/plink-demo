@@ -33,6 +33,7 @@ public class PasskeyService {
     private final LinkViewRepository views;
     private final LinkRecipientRepository recipients;
     private final HolderRepository holders;
+    private final com.plink.repository.ContentRepository contents;
     private final LinkService linkService;
     private final TicketService ticketService;
     private final RelyingParty rp;
@@ -40,11 +41,13 @@ public class PasskeyService {
 
     public PasskeyService(LinkRepository links, LinkViewRepository views,
             LinkRecipientRepository recipients, HolderRepository holders, LinkService linkService,
-            TicketService ticketService, RelyingParty ticketRelyingParty, ObjectMapper mapper) {
+            TicketService ticketService, RelyingParty ticketRelyingParty, ObjectMapper mapper,
+            com.plink.repository.ContentRepository contents) {
         this.links = links;
         this.views = views;
         this.recipients = recipients;
         this.holders = holders;
+        this.contents = contents;
         this.linkService = linkService;
         this.ticketService = ticketService;
         this.rp = ticketRelyingParty;
@@ -168,7 +171,7 @@ public class PasskeyService {
     }
 
     @Transactional
-    public String finish(String code, JsonNode credential, HttpSession session) {
+    public java.util.Map<String, Object> finish(String code, JsonNode credential, HttpSession session) {
         Pending pending;
         synchronized (session) {
             pending = (Pending) session.getAttribute(PENDING);
@@ -195,7 +198,20 @@ public class PasskeyService {
         links.incrementViewCount(link.getId());
         recipients.incrementViewCount(recipient.id);
         views.save(link.getId(), recipient.id, TicketService.mask(pending.email));
-        return link.getOriginalUrl();
+
+        // Either the address the link was made for, or the document written here. The
+        // document is handed over inside this response: it is never served on an address
+        // of its own, so there is nothing to guess at or share.
+        java.util.Map<String, Object> opened = new java.util.LinkedHashMap<>();
+        opened.put("originalUrl", link.getOriginalUrl());
+        if (link.getContentId() != null) {
+            contents.findById(link.getContentId()).ifPresent(content -> {
+                opened.put("contentTitle", content.title);
+                try { opened.put("content", mapper.readTree(content.body)); }
+                catch (RuntimeException unreadable) { opened.put("content", java.util.Map.of()); }
+            });
+        }
+        return opened;
     }
 
     private void register(LinkRecipient recipient, Pending pending, JsonNode credential) {

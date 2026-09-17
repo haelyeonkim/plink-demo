@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { fetchContent, fetchContents, saveContent, deleteContent } from '../api';
+import type { ContentSummary } from '../types';
 
 interface Artwork {
   image: string; artist: string; title: string; year: string; medium: string;
@@ -12,29 +15,120 @@ const empty = (): Artwork => ({
 });
 
 /**
- * Composes an exhibition page to share behind a protected link.
+ * Composes a page to share behind a protected link, and keeps it.
  *
- * <p>Nothing is stored yet: the preview is the output, and the page says so rather
- * than implying a draft is waiting on the server. What it settles is the shape of the
- * content - what an artwork row carries - before that decision costs a migration.
+ * <p>What is written here is stored on the account and served to no one except through
+ * a link's own passkey ceremony: it has no address of its own, which is the whole point
+ * of writing it here rather than publishing it somewhere and protecting the copy.
  */
 export default function ContentCreate() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const editing = Number(params.get('id')) || null;
+
   const [exhibition, setExhibition] = useState('');
   const [intro, setIntro] = useState('');
   const [columns, setColumns] = useState<'1' | '2'>('2');
   const [artworks, setArtworks] = useState<Artwork[]>([empty()]);
+  const [saved, setSaved] = useState<ContentSummary[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const loadSaved = useCallback(async () => {
+    try { setSaved(await fetchContents()); }
+    catch { /* the studio still works without the list */ }
+  }, []);
+  useEffect(() => { void loadSaved(); }, [loadSaved]);
+
+  useEffect(() => {
+    if (!editing) return;
+    let live = true;
+    fetchContent(editing).then(document => {
+      if (!live) return;
+      setExhibition(document.title);
+      setIntro(document.body.intro ?? '');
+      setColumns(document.body.columns ?? '2');
+      const rows = (document.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
+      setArtworks(rows.length > 0 ? rows : [empty()]);
+    }).catch(() => { if (live) setError('컨텐츠를 불러오지 못했어요.'); });
+    return () => { live = false; };
+  }, [editing]);
+
+  async function save() {
+    setError(''); setNotice(''); setBusy(true);
+    try {
+      const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
+        { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) });
+      setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
+      await loadSaved();
+      if (!editing) navigate(`/content/create?id=${document.id}`, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '저장하지 못했어요.');
+    } finally { setBusy(false); }
+  }
+
+  async function remove(id: number) {
+    setError(''); setNotice('');
+    try {
+      await deleteContent(id);
+      await loadSaved();
+      if (editing === id) navigate('/content/create', { replace: true });
+    } catch (err) { setError(err instanceof Error ? err.message : '삭제하지 못했어요.'); }
+  }
 
   const update = (index: number, key: keyof Artwork, value: string) =>
     setArtworks(items => items.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
 
   return (
     <section className="page-section page-wide">
-      <p className="eyebrow"><span></span> CONTENT STUDIO</p>
-      <h2>컨텐츠 생성</h2>
+      <h2>
+        컨텐츠
+        {editing && <><span className="crumb-sep">/</span><span className="crumb">{exhibition || '제목 없음'}</span></>}
+      </h2>
 
-      <p className="notice-text" role="status">
-        미리보기 전용입니다. 아직 서버에 저장되지 않으며, 새로고침하면 사라집니다.
-      </p>
+      <div className="picked-bar">
+        <span className="picked-meta">
+          {editing ? '저장된 컨텐츠를 편집하고 있어요.' : '새 컨텐츠를 작성하고 있어요.'}
+        </span>
+        <span className="picked-actions">
+          <button className="btn-secondary" onClick={save} disabled={busy}>
+            {busy ? '저장 중…' : editing ? '저장' : '컨텐츠 저장'}
+          </button>
+          <Link className="btn-secondary" to="/links">링크 관리</Link>
+        </span>
+      </div>
+
+      {notice && <p className="notice-text" role="status">{notice}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
+
+      {saved.length > 0 && (
+        <div className="tab-panel">
+          <div className="panel-head">
+            <h3>저장된 컨텐츠 <span className="count">{saved.length}</span></h3>
+            {editing && <Link className="btn-tiny" to="/content/create">새로 작성</Link>}
+          </div>
+          <ul className="entity-list">
+            {saved.map(row => (
+              <li key={row.id} className={row.id === editing ? 'no-hover' : 'openable'}
+                onClick={() => row.id !== editing && navigate(`/content/create?id=${row.id}`)}>
+                <div className="entity-main">
+                  <span className="entity-title">{row.title}</span>
+                  <span className="entity-meta">
+                    <span>링크 {row.linkCount}개</span>
+                    {row.updatedAt && <span>{new Date(row.updatedAt).toLocaleString('ko-KR')}</span>}
+                  </span>
+                </div>
+                <span className="entity-actions">
+                  <button className="btn-tiny" onClick={event => { event.stopPropagation(); void remove(row.id); }}>
+                    삭제
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="tab-panel tab-split content-split">
         <div>

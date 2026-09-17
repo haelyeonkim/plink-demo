@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { accessLink } from '../api';
-import { openWithPasskey, passkeyError, supportsPasskeys } from '../passkey';
+import { openWithPasskey, passkeyError, supportsPasskeys, type Opened } from '../passkey';
+import ContentView from './ContentView';
 import type { AccessInfo } from '../types';
 
 export default function AccessLink() {
@@ -11,14 +12,14 @@ export default function AccessLink() {
   const [password, setPassword] = useState('');
   const [contact, setContact] = useState('');
   const [error, setError] = useState('');
-  const [redirectUrl, setRedirectUrl] = useState('');
+  const [opened, setOpened] = useState<Opened | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const currentCode = useRef(shortCode);
   currentCode.current = shortCode;
   useEffect(() => {
     let active = true;
-    setInfo(null); setRedirectUrl(''); setError(''); setLoading(true); setPassword(''); setContact('');
+    setInfo(null); setOpened(null); setError(''); setLoading(true); setPassword(''); setContact('');
     accessLink(shortCode, slug).then(data => {
       if (!active) return;
       setInfo(data);
@@ -36,8 +37,8 @@ export default function AccessLink() {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      const url = await openWithPasskey(shortCode, password, slug, contact);
-      if (currentCode.current === shortCode) setRedirectUrl(url);
+      const result = await openWithPasskey(shortCode, password, slug, contact);
+      if (currentCode.current === shortCode) setOpened(result);
     } catch (err) {
       if (currentCode.current === shortCode) {
         setError(passkeyError(err));
@@ -48,11 +49,22 @@ export default function AccessLink() {
 
   if (loading) return <section className="page-section"><p className="loading" role="status">링크를 확인하고 있어요.</p></section>;
   if (!info) return <section className="page-section"><div className="access-card"><h2>링크를 열 수 없어요</h2><p role="alert">{error}</p><Link to="/">홈으로</Link></div></section>;
-  if (redirectUrl) return (
+  // A document written by the sender is shown here rather than handed to another site:
+  // it exists only behind this ceremony, so there is nowhere else to send the reader.
+  if (opened?.content) return (
+    <section className="page-section">
+      <ContentView title={opened.contentTitle ?? info.title ?? '공유된 컨텐츠'} body={opened.content} />
+    </section>
+  );
+  if (opened) return (
     <section className="page-section"><div className="access-card">
       <div className="access-icon success-icon">✓</div><h2>패스키 확인이 완료됐어요</h2>
       <p>다음에도 같은 패스키로 이 공유 링크를 열어 주세요.</p>
-      <a className="btn-primary" href={redirectUrl} target="_blank" rel="noopener noreferrer">원본 링크 열기 →</a>
+      {opened.originalUrl && (
+        <a className="btn-primary" href={opened.originalUrl} target="_blank" rel="noopener noreferrer">
+          원본 링크 열기 →
+        </a>
+      )}
     </div></section>
   );
   const unavailable = info.expired || info.exhausted;

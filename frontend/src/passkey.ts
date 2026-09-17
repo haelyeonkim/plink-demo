@@ -39,8 +39,15 @@ export function supportsPasskeys() {
   return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
 }
 
+/** What the link opens: an address elsewhere, or a document written by the sender. */
+export interface Opened {
+  originalUrl: string | null;
+  contentTitle?: string;
+  content?: { intro?: string; columns?: '1' | '2'; artworks?: Array<Record<string, string>> };
+}
+
 export async function openWithPasskey(code: string, password: string, slug?: string,
-    contact?: string): Promise<string> {
+    contact?: string): Promise<Opened> {
   const base = slug
     ? `/api/links/s/${encodeURIComponent(slug)}/${encodeURIComponent(code)}/passkey`
     : `/api/links/s/${encodeURIComponent(code)}/passkey`;
@@ -79,7 +86,7 @@ export async function openWithPasskey(code: string, password: string, slug?: str
     body: JSON.stringify({ id: credential.id, rawId: encode(credential.rawId), type: credential.type,
       response, clientExtensionResults: credential.getClientExtensionResults() }),
   }));
-  return data.originalUrl;
+  return data as Opened;
 }
 
 export function passkeyError(error: unknown) {

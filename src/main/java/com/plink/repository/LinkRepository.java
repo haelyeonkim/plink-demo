@@ -29,6 +29,8 @@ public class LinkRepository {
         link.setMaxViews(rs.getInt("max_views"));
         link.setViewCount(rs.getInt("view_count"));
         link.setCreatedAt(rs.getTimestamp("created_at"));
+        long contentId = rs.getLong("content_id");
+        link.setContentId(rs.wasNull() ? null : contentId);
         return link;
     };
 
@@ -56,8 +58,8 @@ public class LinkRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                    "INSERT INTO protected_link (short_code, original_url, title, password_hash, expires_at, recipient_names, max_views, owner_sub) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO protected_link (short_code, original_url, title, password_hash, expires_at, recipient_names, max_views, owner_sub, content_id) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, link.getShortCode());
             ps.setString(2, link.getOriginalUrl());
@@ -67,10 +69,18 @@ public class LinkRepository {
             ps.setString(6, link.getRecipientNames());
             ps.setInt(7, link.getMaxViews());
             ps.setString(8, link.getOwnerSub());
+            if (link.getContentId() == null) ps.setNull(9, java.sql.Types.BIGINT);
+            else ps.setLong(9, link.getContentId());
             return ps;
         }, keyHolder);
         link.setId(keyHolder.getKey().longValue());
         return findById(link.getId()).get();
+    }
+
+    /** Points the link at a URL or at a document here - one excludes the other. */
+    public void updateDestination(Long id, String originalUrl, Long contentId) {
+        jdbc.update("UPDATE protected_link SET original_url = ?, content_id = ? WHERE id = ?",
+            originalUrl, contentId, id);
     }
 
     public Optional<ProtectedLink> lockById(Long id) {

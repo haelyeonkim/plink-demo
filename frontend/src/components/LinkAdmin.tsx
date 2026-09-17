@@ -5,9 +5,10 @@ import BulkImport from './BulkImport';
 import ConfirmDialog from './ConfirmDialog';
 import EntityPicker from './EntityPicker';
 import {
-  deleteLink, deleteRecipient, fetchLink, fetchLinks, issueRecipient, setRecipientRevoked,
+  deleteLink, deleteRecipient, fetchContents, fetchLink, fetchLinks, issueRecipient,
+  setRecipientRevoked,
 } from '../api';
-import type { LinkDetail, LinkRecipient, ProtectedLink } from '../types';
+import type { ContentSummary, LinkDetail, LinkRecipient, ProtectedLink } from '../types';
 
 type Tab = 'issue' | 'links' | 'views' | 'settings';
 
@@ -17,6 +18,11 @@ const TABS: Array<[Tab, string]> = [
   ['views', '열람 기록'],
   ['settings', '설정'],
 ];
+
+/** What this link opens, in one line: an address elsewhere, or a document written here. */
+function destinationText(link: { originalUrl: string | null; contentTitle: string | null }): string {
+  return link.contentTitle ? `컨텐츠 · ${link.contentTitle}` : link.originalUrl ?? '';
+}
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString('ko-KR', {
@@ -63,6 +69,8 @@ export default function LinkAdmin() {
   const [copied, setCopied] = useState<number | null>(null);
   const [pending, setPending] = useState<LinkRecipient | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [contents, setContents] = useState<ContentSummary[]>([]);
+  const [target, setTarget] = useState<'url' | 'content'>('url');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -84,6 +92,9 @@ export default function LinkAdmin() {
   }, []);
 
   useEffect(() => { void loadLinks(); }, [loadLinks]);
+  useEffect(() => { fetchContents().then(setContents).catch(() => setContents([])); }, []);
+  // The form opens on whichever destination the link already has.
+  useEffect(() => { setTarget(detail?.contentId ? 'content' : 'url'); }, [detail?.id, detail?.contentId]);
   useEffect(() => {
     if (selected === null) { setDetail(null); return; }
     void loadDetail(selected);
@@ -162,6 +173,10 @@ export default function LinkAdmin() {
     // Absent means "leave it"; empty means "remove it".
     if (clear) body.password = '';
     else if (password) body.password = password;
+    // The destination moves with the same save: a URL, or a document written here.
+    const target = String(data.get('target') || 'url');
+    if (target === 'content') body.contentId = Number(data.get('contentId') || 0) || null;
+    else body.originalUrl = String(data.get('originalUrl') || '').trim();
     const response = await mutate(`/api/links/${selected}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
@@ -234,9 +249,9 @@ export default function LinkAdmin() {
         <EntityPicker
           items={links.map(row => ({
             id: row.id,
-            title: row.title || row.originalUrl,
+            title: row.title || destinationText(row),
             meta: <>
-              <code title={row.originalUrl}>{row.originalUrl}</code>
+              <code title={destinationText(row)}>{destinationText(row)}</code>
               <span>발급 {row.recipientCount}개</span>
             </>,
           }))}
@@ -280,8 +295,16 @@ export default function LinkAdmin() {
           <div>
             <h3>링크 정보</h3>
             <dl className="detail-list">
-              <dt>원본 URL</dt>
-              <dd><a href={detail.originalUrl} target="_blank" rel="noopener">{detail.originalUrl}</a></dd>
+              <dt>대상</dt>
+              <dd>
+                {detail.contentId
+                  ? <>여기서 만든 컨텐츠 · <Link to={`/content/create?id=${detail.contentId}`}>
+                      {detail.contentTitle}
+                    </Link></>
+                  : <a href={detail.originalUrl ?? '#'} target="_blank" rel="noopener">
+                      {detail.originalUrl}
+                    </a>}
+              </dd>
               <dt>발급</dt>
               <dd>링크 {detail.recipients.length}개 · 등록 완료 {claimed}명</dd>
               <dt>만료</dt>
@@ -370,27 +393,31 @@ export default function LinkAdmin() {
           {detail.views.length === 0 ? (
             <p className="empty">아직 열람 기록이 없어요.</p>
           ) : (
-            <ul className="view-list view-list-wide">
-              {detail.views.map((view, index) => {
-                // An open says the message arrived; a passkey says the document was read.
-                const opened = view.eventType === 'INITIAL_OPEN';
-                const who = view.viewerName || (opened ? '링크 열림' : '수신자');
-                return (
-                  <li key={index}>
-                    <span className={`viewer-avatar${opened ? ' viewer-open' : ''}`}>
-                      {opened ? '◔' : who.charAt(0)}
-                    </span>
-                    <div>
-                      <b>{who}</b>
-                      <small>
-                        {opened ? '링크를 열어봤어요' : '패스키 인증 완료'}
-                        {' · '}{timeAgo(view.viewedAt)} · {formatDate(view.viewedAt)}
-                      </small>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="table-scroll">
+              <table className="ticket-table">
+                <thead>
+                  <tr><th>수신자</th><th>무슨 일</th><th>시각</th><th>경과</th></tr>
+                </thead>
+                <tbody>
+                  {detail.views.map((view, index) => {
+                    // An open says the message arrived; a passkey says it was read.
+                    const opened = view.eventType === 'INITIAL_OPEN';
+                    return (
+                      <tr key={index}>
+                        <td data-label="수신자">{view.viewerName || (opened ? '-' : '수신자')}</td>
+                        <td data-label="무슨 일">
+                          <span className={`pill pill-${opened ? 'wait' : 'ok'}`}>
+                            {opened ? '링크 열림' : '패스키 인증'}
+                          </span>
+                        </td>
+                        <td data-label="시각">{formatDate(view.viewedAt)}</td>
+                        <td data-label="경과">{timeAgo(view.viewedAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -403,6 +430,35 @@ export default function LinkAdmin() {
               <label htmlFor="settings-title">제목</label>
               <input id="settings-title" name="title" defaultValue={detail.title ?? ''} />
             </div>
+            <div className="field">
+              <label htmlFor="settings-target">무엇을 열까요</label>
+              <select id="settings-target" name="target" value={target}
+                onChange={event => setTarget(event.target.value as 'url' | 'content')}>
+                <option value="url">외부 주소</option>
+                <option value="content">여기서 만든 컨텐츠</option>
+              </select>
+            </div>
+            {target === 'url' ? (
+              <div className="field">
+                <label htmlFor="settings-url">원본 주소</label>
+                <input id="settings-url" name="originalUrl" type="url" required
+                  defaultValue={detail.originalUrl ?? ''} placeholder="https://example.com/doc" />
+              </div>
+            ) : (
+              <div className="field">
+                <label htmlFor="settings-content">컨텐츠</label>
+                <select id="settings-content" name="contentId" required
+                  defaultValue={detail.contentId ? String(detail.contentId) : ''}>
+                  <option value="">컨텐츠를 선택하세요</option>
+                  {contents.map(content => (
+                    <option key={content.id} value={content.id}>{content.title}</option>
+                  ))}
+                </select>
+                <p className="hint-text">
+                  <Link to="/content/create">컨텐츠 만들기·편집 →</Link>
+                </p>
+              </div>
+            )}
             <div className="form-row">
               <div className="field">
                 <label htmlFor="settings-expires">만료 일시</label>

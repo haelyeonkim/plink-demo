@@ -20,10 +20,13 @@ import java.util.*;
 public class LinkController {
     private final LinkService linkService;
     private final LinkAddresses addresses;
+    private final com.plink.repository.ContentRepository contents;
 
-    public LinkController(LinkService linkService, LinkAddresses addresses) {
+    public LinkController(LinkService linkService, LinkAddresses addresses,
+            com.plink.repository.ContentRepository contents) {
         this.linkService = linkService;
         this.addresses = addresses;
+        this.contents = contents;
     }
     private String owner(Authentication user) {
         return CurrentUser.of(user)
@@ -70,8 +73,12 @@ public class LinkController {
     @PostMapping
     public ResponseEntity<Map<String, Object>> createLink(@RequestBody Map<String, Object> req, Authentication user) {
         String originalUrl = (String) req.get("originalUrl");
-        if (originalUrl == null || originalUrl.isEmpty()) {
-            return ResponseEntity.badRequest().build();
+        // A link points at one destination: a URL somewhere else, or a document here.
+        Long contentId = contentOwned(req.get("contentId"), user);
+        if (contentId != null) originalUrl = null;
+        if (contentId == null && (originalUrl == null || originalUrl.isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
         }
         String title = (String) req.get("title");
         if (title != null && title.length() > 50) {
@@ -90,7 +97,8 @@ public class LinkController {
             maxViews = ((Number) req.get("maxViews")).intValue();
         }
 
-        ProtectedLink link = linkService.createLink(originalUrl, title, password, expiresAt, recipientNames, maxViews, owner(user));
+        ProtectedLink link = linkService.createLink(originalUrl, contentId, title, password, expiresAt,
+            recipientNames, maxViews, owner(user));
         return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(link));
     }
 
@@ -113,6 +121,18 @@ public class LinkController {
             ? (req.get("password") == null ? "" : req.get("password").toString()) : null;
         ProtectedLink updated = linkService.updateSettings(id,
             req.get("title") == null ? null : req.get("title").toString(), expiresAt, maxViews, password);
+        // The destination can move: a URL becomes a document written here, or the other
+        // way round. Recipients keep their own addresses either way.
+        if (req.containsKey("originalUrl") || req.containsKey("contentId")) {
+            Long contentId = contentOwned(req.get("contentId"), user);
+            String url = req.get("originalUrl") == null ? null : req.get("originalUrl").toString().trim();
+            if (contentId != null) url = null;
+            if (contentId == null && (url == null || url.isEmpty())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
+            }
+            updated = linkService.updateDestination(id, url, contentId);
+        }
         return toSummary(updated);
     }
 
@@ -257,11 +277,30 @@ public class LinkController {
         return ResponseEntity.noContent().build();
     }
 
+    /** The id only if this account wrote that document; anything else is refused. */
+    private Long contentOwned(Object raw, Authentication user) {
+        if (raw == null || raw.toString().isBlank()) return null;
+        long id;
+        try { id = Long.parseLong(raw.toString()); }
+        catch (NumberFormatException bad) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 확인해 주세요.");
+        }
+        com.plink.model.LinkContent content = contents.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 찾을 수 없어요."));
+        if (!owner(user).equals(content.ownerSub)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 찾을 수 없어요.");
+        }
+        return content.id;
+    }
+
     private Map<String, Object> toSummary(ProtectedLink link) {
         Map<String, Object> m = new LinkedHashMap<String, Object>();
         m.put("id", link.getId());
         m.put("shortCode", link.getShortCode());
         m.put("originalUrl", link.getOriginalUrl());
+        m.put("contentId", link.getContentId());
+        m.put("contentTitle", link.getContentId() == null ? null
+            : contents.findById(link.getContentId()).map(content -> content.title).orElse(null));
         m.put("title", link.getTitle());
         m.put("hasPassword", link.hasPassword());
         m.put("expiresAt", link.getExpiresAt());

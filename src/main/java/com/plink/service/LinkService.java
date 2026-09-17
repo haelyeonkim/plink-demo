@@ -48,10 +48,16 @@ public class LinkService {
 
     public ProtectedLink createLink(String originalUrl, String title, String password,
                                      Timestamp expiresAt, String recipientNames, int maxViews, String ownerSub) {
+        return createLink(originalUrl, null, title, password, expiresAt, recipientNames, maxViews, ownerSub);
+    }
+
+    public ProtectedLink createLink(String originalUrl, Long contentId, String title, String password,
+                                     Timestamp expiresAt, String recipientNames, int maxViews, String ownerSub) {
         ProtectedLink link = new ProtectedLink();
         link.setShortCode(generateShortCode());
         link.setOwnerSub(ownerSub);
         link.setOriginalUrl(originalUrl);
+        link.setContentId(contentId);
         link.setTitle(title);
         link.setPasswordHash(password != null && !password.isEmpty() ? hashPassword(password) : null);
         link.setExpiresAt(expiresAt);
@@ -78,6 +84,12 @@ public class LinkService {
             linkRepository.updatePassword(link.getId(),
                 password.isEmpty() ? null : hashPassword(password));
         }
+        return linkRepository.findById(id).orElseThrow();
+    }
+
+    /** Moves the link to a new destination: a URL, or a document held here. */
+    public ProtectedLink updateDestination(long id, String originalUrl, Long contentId) {
+        linkRepository.updateDestination(id, originalUrl, contentId);
         return linkRepository.findById(id).orElseThrow();
     }
 
