@@ -65,7 +65,6 @@ export default function CatalogEditor({ label, placeholder, items, inUse, busy, 
           ))}
         </ul>
       )}
-      <p className="hint-text">쉼표나 줄바꿈으로 여러 개를 한 번에 붙여넣을 수 있어요.</p>
 
       <ConfirmDialog
         open={pending != null}

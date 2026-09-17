@@ -602,157 +602,195 @@ export default function TicketAdmin() {
       )}
 
       {session && tab === 'settings' && (
-        <div className="tab-panel tab-split">
-          <div>
-            <form key={session.id} onSubmit={e => { e.preventDefault(); saveDetails(e.currentTarget); }}>
-              <h3>행사 정보</h3>
-              <div className="field">
-                <label htmlFor="event-name">이름</label>
-                <input id="event-name" name="name" required defaultValue={session.name} />
+        <div className="tab-panel settings-panel">
+          {/* What is actually in force, before any of the forms that change it. */}
+          <div className="settings-now">
+            <h3>지금 적용 중</h3>
+            <dl>
+              <div><dt>행사 시각</dt><dd>{shortTime(session.startsAt) || '-'}</dd></div>
+              <div><dt>입장 시각</dt><dd>{shortTime(session.gateOpensAt) || '제한 없음'}</dd></div>
+              <div>
+                <dt>재입장</dt>
+                <dd>{session.reentryMode === 'DISABLED' ? '불가'
+                  : session.reentryMode === 'LIMITED' ? `최대 ${session.reentryMax}회` : '무제한'}</dd>
               </div>
-              <div className="field">
-                <label htmlFor="event-venue">장소</label>
-                <input id="event-venue" name="venue" defaultValue={session.venue ?? ''} />
+              <div><dt>퇴장 후 유효</dt><dd>{session.reentryGraceMinutes}분</dd></div>
+              <div><dt>중복 스캔 무시</dt><dd>{session.reentryCooldownSeconds}초</dd></div>
+              <div>
+                <dt>퇴장</dt>
+                <dd>{session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · {session.unmatchedExit}</dd>
               </div>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="event-starts">행사 시각</label>
-                  <input id="event-starts" name="startsAt" type="datetime-local" required
-                    defaultValue={localInput(session.startsAt)} />
-                </div>
-                <div className="field">
-                  <label htmlFor="event-gate">입장 시각 (선택)</label>
-                  <input id="event-gate" name="gateOpensAt" type="datetime-local"
-                    defaultValue={localInput(session.gateOpensAt)} />
-                </div>
+              <div><dt>자동 보정</dt><dd>{session.autoExitAfterMinutes}분 경과 후</dd></div>
+              <div>
+                <dt>등록 인증</dt>
+                <dd>{session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'}</dd>
               </div>
-              <p className="hint-text">
-                입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
-                있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
-              </p>
-              <button className="btn-primary" type="submit">행사 정보 저장</button>
-            </form>
+              <div>
+                <dt>혼잡도 기준</dt>
+                <dd>혼잡 {session.crowdBusyPercent}% · 보통 {session.crowdSteadyPercent}%</dd>
+              </div>
+              <div>
+                <dt>정원 지정</dt>
+                <dd>{zoneNames.length === 0 ? '장소 없음'
+                  : `${Object.keys(session.zoneCapacity ?? {}).length} / ${zoneNames.length}곳`}</dd>
+              </div>
+              <div><dt>좌석</dt><dd>{session.seats.length}개</dd></div>
+              <div><dt>등급</dt><dd>{session.tiers.length}개</dd></div>
+            </dl>
           </div>
 
-          <form onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
-            <h3>재입장 · 퇴장</h3>
-            <div className="field">
-              <label htmlFor="policy-mode">재입장</label>
-              <select id="policy-mode" name="reentryMode" defaultValue={session.reentryMode}>
-                <option value="DISABLED">DISABLED · 재입장 불가</option>
-                <option value="LIMITED">LIMITED · 횟수 제한</option>
-                <option value="UNLIMITED">UNLIMITED · 무제한</option>
-              </select>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="policy-max">재입장 횟수</label>
-                <input id="policy-max" name="reentryMax" type="number" min={0} defaultValue={session.reentryMax} />
-              </div>
-              <div className="field">
-                <label htmlFor="policy-grace">퇴장 후 유효(분)</label>
-                <input id="policy-grace" name="reentryGraceMinutes" type="number" min={0}
-                  defaultValue={session.reentryGraceMinutes} />
-              </div>
-              <div className="field">
-                <label htmlFor="policy-cooldown">중복 스캔 무시(초)</label>
-                <input id="policy-cooldown" name="reentryCooldownSeconds" type="number" min={0}
-                  defaultValue={session.reentryCooldownSeconds} />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="policy-unmatched">퇴장 미스캔</label>
-              <select id="policy-unmatched" name="unmatchedExit" defaultValue={session.unmatchedExit}>
-                <option value="STRICT">STRICT · 안내 데스크만</option>
-                <option value="LENIENT">LENIENT · 장시간 후 자동 보정</option>
-                <option value="AUTO_EXIT">AUTO_EXIT · 자동 정리까지</option>
-              </select>
-            </div>
-            <label className="field-inline">
-              <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
-              퇴장 스캔 필수
-            </label>
-            <label className="field-inline">
-              <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
-              등록 시 이메일 인증 필요
-            </label>
-
-            <button className="btn-primary" type="submit">정책 저장</button>
-          </form>
-          <div>
-            <h3>지금 적용 중</h3>
-            <dl className="ticket-meta">
-              <dt>재입장</dt><dd>{session.reentryMode} · 최대 {session.reentryMax}회</dd>
-              <dt>퇴장 후 유효</dt><dd>{session.reentryGraceMinutes}분</dd>
-              <dt>중복 스캔 무시</dt><dd>{session.reentryCooldownSeconds}초</dd>
-              <dt>퇴장 미스캔</dt><dd>{session.unmatchedExit}</dd>
-              <dt>자동 보정</dt><dd>{session.autoExitAfterMinutes}분 경과 후</dd>
-              <dt>등록 인증</dt><dd>{session.claimRequiresOtp ? '이메일 인증 필요' : '링크만으로 등록'}</dd>
-            </dl>
-            <p className="hint-text">
-              이메일 인증을 끄면 <b>링크를 먼저 연 사람이 보유자</b>가 됩니다. 링크를 직접 건네는
-              사내 행사에는 편하지만, 메일로 뿌리는 행사에서는 켜 두세요. 기기 재발급과 양도 취소는
-              정책과 무관하게 항상 이메일 인증을 요구합니다.
-            </p>
-            <p className="hint-text">
-              장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는 어떤
-              정책이든 거부되어 QR 공유가 통하지 않습니다.
-            </p>
-
-            <form key={`crowd-${session.id}`} className="crowd-form"
-              onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
-              <h3>혼잡도</h3>
-              <p className="hint-text">
-                장소별 정원을 적으면 그 장소는 정원 대비로 읽습니다. 비워 두면 가장 붐비는 곳과
-                비교한 상대적인 표시로 남아요. 아래 두 기준은 정원 대비 백분율입니다.
-              </p>
-              <div className="form-row">
+          <div className="settings-grid">
+            <section className="settings-card">
+              <h3>행사 정보</h3>
+              <form key={`details-${session.id}`}
+                onSubmit={e => { e.preventDefault(); saveDetails(e.currentTarget); }}>
                 <div className="field">
-                  <label htmlFor="crowd-busy">'혼잡' 기준 (%)</label>
-                  <input id="crowd-busy" name="crowdBusyPercent" type="number" min={1} max={100}
-                    required defaultValue={session.crowdBusyPercent} />
+                  <label htmlFor="event-name">이름</label>
+                  <input id="event-name" name="name" required defaultValue={session.name} />
                 </div>
                 <div className="field">
-                  <label htmlFor="crowd-steady">'보통' 기준 (%)</label>
-                  <input id="crowd-steady" name="crowdSteadyPercent" type="number" min={1} max={100}
-                    required defaultValue={session.crowdSteadyPercent} />
+                  <label htmlFor="event-venue">장소</label>
+                  <input id="event-venue" name="venue" defaultValue={session.venue ?? ''} />
                 </div>
-              </div>
-              {zoneNames.length === 0 ? (
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="event-starts">행사 시각</label>
+                    <input id="event-starts" name="startsAt" type="datetime-local" required
+                      defaultValue={localInput(session.startsAt)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="event-gate">입장 시각 (선택)</label>
+                    <input id="event-gate" name="gateOpensAt" type="datetime-local"
+                      defaultValue={localInput(session.gateOpensAt)} />
+                  </div>
+                </div>
                 <p className="hint-text">
-                  게이트에 장소를 지정하면 여기에서 장소별 정원을 정할 수 있어요.
+                  입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
+                  있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
                 </p>
-              ) : (
-                <div className="zone-capacity">
-                  {zoneNames.map(zone => (
-                    <div className="field" key={zone}>
-                      <label htmlFor={`zone-${zone}`}>{zone} 정원</label>
-                      <input id={`zone-${zone}`} name={`zone:${zone}`} type="number" min={0}
-                        placeholder="비워 두면 상대 표시"
-                        defaultValue={session.zoneCapacity?.[zone] ?? ''} />
-                    </div>
-                  ))}
+                <button className="btn-primary" type="submit">행사 정보 저장</button>
+              </form>
+            </section>
+
+            <section className="settings-card">
+              <h3>재입장 · 퇴장</h3>
+              <form key={`policy-${session.id}`}
+                onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="policy-mode">재입장</label>
+                    <select id="policy-mode" name="reentryMode" defaultValue={session.reentryMode}>
+                      <option value="DISABLED">불가</option>
+                      <option value="LIMITED">횟수 제한</option>
+                      <option value="UNLIMITED">무제한</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="policy-max">재입장 횟수</label>
+                    <input id="policy-max" name="reentryMax" type="number" min={0}
+                      defaultValue={session.reentryMax} />
+                  </div>
                 </div>
-              )}
-              <button className="btn-primary" type="submit">혼잡도 기준 저장</button>
-            </form>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="policy-grace">퇴장 후 유효(분)</label>
+                    <input id="policy-grace" name="reentryGraceMinutes" type="number" min={0}
+                      defaultValue={session.reentryGraceMinutes} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="policy-cooldown">중복 스캔 무시(초)</label>
+                    <input id="policy-cooldown" name="reentryCooldownSeconds" type="number" min={0}
+                      defaultValue={session.reentryCooldownSeconds} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="policy-unmatched">퇴장 미스캔</label>
+                  <select id="policy-unmatched" name="unmatchedExit" defaultValue={session.unmatchedExit}>
+                    <option value="STRICT">STRICT · 안내 데스크만</option>
+                    <option value="LENIENT">LENIENT · 장시간 후 자동 보정</option>
+                    <option value="AUTO_EXIT">AUTO_EXIT · 자동 정리까지</option>
+                  </select>
+                </div>
+                <label className="field-inline">
+                  <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
+                  퇴장 스캔 필수
+                </label>
+                <label className="field-inline">
+                  <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
+                  등록 시 이메일 인증 필요
+                </label>
+                <p className="hint-text">
+                  이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
+                  뿌리는 행사라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
+                  인증을 요구합니다.
+                </p>
+                <p className="hint-text">
+                  장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
+                  어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
+                </p>
+                <button className="btn-primary" type="submit">정책 저장</button>
+              </form>
+            </section>
 
-            <CatalogEditor label="좌석" placeholder="A-1" items={session.seats} inUse={takenSeats}
-              busy={false} onChange={next => saveCatalog({ seats: next })} />
-            <CatalogEditor label="등급" placeholder="VIP" items={session.tiers} inUse={usedTiers}
-              busy={false} onChange={next => saveCatalog({ tiers: next })} />
-            <p className="hint-text">
-              좌석·등급은 기본값이 없습니다. 여기서 추가한 항목만 발급 화면에 나오고, 목록에 없는
-              값은 발급되지 않습니다. 추가·삭제는 즉시 저장됩니다.
-            </p>
+            <section className="settings-card">
+              <h3>혼잡도</h3>
+              <form key={`crowd-${session.id}`}
+                onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="crowd-busy">'혼잡' 기준 (%)</label>
+                    <input id="crowd-busy" name="crowdBusyPercent" type="number" min={1} max={100}
+                      required defaultValue={session.crowdBusyPercent} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="crowd-steady">'보통' 기준 (%)</label>
+                    <input id="crowd-steady" name="crowdSteadyPercent" type="number" min={1} max={100}
+                      required defaultValue={session.crowdSteadyPercent} />
+                  </div>
+                </div>
+                {zoneNames.length === 0 ? (
+                  <p className="hint-text">
+                    게이트에 장소를 지정하면 여기에서 장소별 정원을 정할 수 있어요.
+                  </p>
+                ) : (
+                  <div className="zone-capacity">
+                    {zoneNames.map(zone => (
+                      <div className="field" key={zone}>
+                        <label htmlFor={`zone-${zone}`}>{zone} 정원</label>
+                        <input id={`zone-${zone}`} name={`zone:${zone}`} type="number" min={0}
+                          placeholder="비워 두면 상대 표시"
+                          defaultValue={session.zoneCapacity?.[zone] ?? ''} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="hint-text">
+                  정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.
+                </p>
+                <button className="btn-primary" type="submit">혼잡도 기준 저장</button>
+              </form>
+            </section>
 
-            <div className="danger-zone">
-              <h3>행사 삭제</h3>
+            <section className="settings-card">
+              <h3>좌석 · 등급</h3>
+              <CatalogEditor label="좌석" placeholder="A-1" items={session.seats} inUse={takenSeats}
+                busy={false} onChange={next => saveCatalog({ seats: next })} />
+              <CatalogEditor label="등급" placeholder="VIP" items={session.tiers} inUse={usedTiers}
+                busy={false} onChange={next => saveCatalog({ tiers: next })} />
               <p className="hint-text">
-                발급된 입장권, 입·퇴장 기록, 등록된 단말이 함께 사라집니다. 되돌릴 수 없어요.
+                기본값은 없습니다. 여기서 추가한 항목만 발급 화면에 나오고, 추가·삭제는 즉시 저장됩니다.
+                쉼표나 줄바꿈으로 여러 개를 한 번에 붙여넣을 수 있고, 이미 발급된 값을 지워도 그
+                입장권은 그대로 유지돼요.
               </p>
-              <button className="btn-danger" onClick={() => setConfirmDelete(true)}>이 행사 삭제</button>
-            </div>
+            </section>
+          </div>
+
+          <div className="danger-zone">
+            <h3>행사 삭제</h3>
+            <p className="hint-text">
+              발급된 입장권, 입·퇴장 기록, 등록된 단말이 함께 사라집니다. 되돌릴 수 없어요.
+            </p>
+            <button className="btn-danger" onClick={() => setConfirmDelete(true)}>이 행사 삭제</button>
           </div>
         </div>
       )}
