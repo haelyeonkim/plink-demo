@@ -55,6 +55,16 @@ export async function fetchTicket(sessionId: string, token: string): Promise<Tic
   return read(response) as Promise<TicketView>;
 }
 
+export interface Crowding {
+  zones: Array<{ zone: string; inside: number; share: number; level: string }>;
+  measuredAt: string;
+}
+
+/** How busy each place is right now, as the gates have counted it. */
+export async function fetchCrowding(sessionId: string, token: string): Promise<Crowding> {
+  return read(await fetch(`${ticketBase(sessionId, token)}/crowding`)) as Promise<Crowding>;
+}
+
 export async function requestOtp(sessionId: string, token: string, email: string) {
   return read(await mutate(`${ticketBase(sessionId, token)}/otp`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),

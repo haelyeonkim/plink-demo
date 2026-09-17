@@ -8,6 +8,7 @@ import {
 import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import FaceEnrolment from './FaceEnrolment';
+import Crowding from './Crowding';
 
 type Direction = 'IN' | 'OUT';
 
@@ -285,6 +286,9 @@ export default function TicketPage() {
           </>
         )}
       </div>
+
+      {/* Under the ticket, where somebody standing in the queue is already looking. */}
+      {ticket.claimed && <Crowding sessionId={sessionId} token={token} />}
     </section>
   );
 }

@@ -217,4 +217,26 @@ class FieldOpsTest {
         assertTrue(recent.stream().anyMatch(row -> "STAFF".equals(row.get("method"))));
         assertTrue(ledger.find(ticket.id).orElseThrow().inside());
     }
+
+    @Test void crowdingIsCountedPerPlaceFromTheGates() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId);
+        String hall = "g" + Secrets.randomAlnum(8);
+        String lobby = "g" + Secrets.randomAlnum(8);
+        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+
+        ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
+        ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
+        ledger.append(ticket.id, sessionId, "IN", lobby, "QR", "ADMITTED", null, null);
+        ledger.append(ticket.id, sessionId, "OUT", lobby, "QR", "EXITED", null, null);
+
+        Map<String, Integer> inside = new java.util.HashMap<>();
+        for (Map<String, Object> row : ledger.byZone(sessionId)) {
+            inside.put(String.valueOf(row.get("zone")),
+                ((Number) row.get("admitted")).intValue() - ((Number) row.get("exited")).intValue());
+        }
+        assertEquals(2, inside.get("메인홀"), "들어온 수에서 나간 수를 뺀 값이 그 장소의 인원입니다");
+        assertEquals(0, inside.get("로비"), "들어왔다 나간 사람은 그 장소에 남지 않습니다");
+    }
 }

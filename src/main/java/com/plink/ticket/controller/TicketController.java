@@ -1,6 +1,7 @@
 package com.plink.ticket.controller;
 
 import com.plink.ticket.face.FaceService;
+import com.plink.ticket.model.Ticket;
 import com.plink.ticket.service.EmailOtpService;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
@@ -12,7 +13,10 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,10 +35,12 @@ public class TicketController {
     private final TransferService transfers;
     private final FaceService faces;
     private final EmailOtpService otp;
+    private final com.plink.ticket.repository.AdmissionRepository admissions;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
             TransferService transfers, FaceService faces,
-            EmailOtpService otp) {
+            EmailOtpService otp, com.plink.ticket.repository.AdmissionRepository admissions) {
+        this.admissions = admissions;
         this.tickets = tickets;
         this.passkeyService = passkeyService;
         this.transfers = transfers;
@@ -132,6 +138,43 @@ public class TicketController {
         String email = passkeyService.verifiedEmail(session, resolved.ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
         return tickets.reissue(resolved.ticket, email);
+    }
+
+    /**
+     * How busy each place is, for the holder standing in the queue.
+     *
+     * <p>Counts come from the gates - what walked in through a zone's terminals minus
+     * what walked back out - so they describe crowds, never individuals. The level is
+     * relative to the busiest place right now, which is the comparison somebody
+     * deciding where to go actually makes.
+     */
+    @GetMapping("/crowding")
+    public Map<String, Object> crowding(@PathVariable long sessionId, @PathVariable String token) {
+        Ticket ticket = tickets.resolve(sessionId, token).ticket;
+        List<Map<String, Object>> zones = new ArrayList<>();
+        int busiest = 0;
+        for (Map<String, Object> row : admissions.byZone(ticket.sessionId)) {
+            int inside = Math.max(0, number(row.get("admitted")) - number(row.get("exited")));
+            busiest = Math.max(busiest, inside);
+        }
+        for (Map<String, Object> row : admissions.byZone(ticket.sessionId)) {
+            int inside = Math.max(0, number(row.get("admitted")) - number(row.get("exited")));
+            double share = busiest == 0 ? 0 : (double) inside / busiest;
+            Map<String, Object> zone = new LinkedHashMap<>();
+            zone.put("zone", row.get("zone"));
+            zone.put("inside", inside);
+            zone.put("share", Math.round(share * 100) / 100.0);
+            zone.put("level", inside == 0 ? "EMPTY" : share >= 0.75 ? "BUSY" : share >= 0.4 ? "STEADY" : "QUIET");
+            zones.add(zone);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("zones", zones);
+        result.put("measuredAt", java.time.Instant.now().toString());
+        return result;
+    }
+
+    private static int number(Object value) {
+        return value instanceof Number n ? n.intValue() : 0;
     }
 
     @GetMapping("/face")

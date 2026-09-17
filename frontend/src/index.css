@@ -1291,6 +1291,19 @@ body:has(.gate-screen) { overflow: hidden; }
 }
 .mobile-account .login { margin-left: auto; flex: none; }
 
+/* The holder's view of the same counts: a card under the ticket. */
+.crowding-card { margin-top: 16px; }
+.crowding-list { list-style: none; padding: 0; margin: 12px 0 10px; display: flex; flex-direction: column; gap: 12px; }
+.crowding-head { display: flex; align-items: center; gap: 8px; }
+.crowding-head b { font-size: 14px; }
+.crowding-head strong { margin-left: auto; font-size: 15px; font-variant-numeric: tabular-nums; }
+.crowding-card .zone-bar { margin: 6px 0 0; }
+.zone-bar span.level-busy { background: #e74c3c; }
+.zone-bar span.level-steady { background: #f0a132; }
+.zone-bar span.level-quiet { background: #2cb68c; }
+.zone-bar span.level-empty { background: var(--line); }
+.hint-text.center { text-align: center; }
+
 /* Crowding by place: the bar is relative to the busiest zone, which is the comparison
    staff actually make - "is the main hall worse than the lobby right now?". */
 .zone-list { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 14px; }
