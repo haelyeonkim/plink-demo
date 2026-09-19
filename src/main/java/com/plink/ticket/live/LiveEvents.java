@@ -73,4 +73,22 @@ public class LiveEvents {
         if (sockets == null || sockets.isEmpty()) return;
         for (WebSocketSession socket : sockets) send(socket, type, payload);
     }
+
+    /**
+     * Tells the operators, and the one holder the row is about.
+     *
+     * <p>A scan says where a named person is. The console is watching the whole event and
+     * needs it; the phone in the next queue is watching its own ticket and does not, so
+     * it never learns that seat B-12 just walked in. It also means a holder's screen can
+     * treat anything arriving on its socket as its own movement.
+     */
+    public void publishForTicket(long sessionId, long ticketId, String type, Map<String, Object> payload) {
+        Set<WebSocketSession> sockets = listeners.get(sessionId);
+        if (sockets == null || sockets.isEmpty()) return;
+        for (WebSocketSession socket : sockets) {
+            Object watching = socket.getAttributes().get(TicketSocketHandler.TICKET_KEY);
+            // No ticket on the socket means the console, which watches all of them.
+            if (watching == null || watching.equals(ticketId)) send(socket, type, payload);
+        }
+    }
 }

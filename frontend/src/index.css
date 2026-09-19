@@ -927,6 +927,8 @@ a { color: inherit; text-decoration: none; }
 
 /* ---- Access Card ---- */
 .access-card {
+  /* The seal and the gate's verdict are laid over this card, not squeezed into it. */
+  position: relative;
   text-align: center;
   background: white;
   border: 1px solid var(--line);
@@ -1159,7 +1161,10 @@ body:has(.gate-screen) { overflow: hidden; }
   height: calc(100dvh - 72px); overflow: hidden; transition: background 0.2s;
 }
 @media (max-width: 800px) { .gate-screen { height: calc(100dvh - 70px); } }
-.gate-ok { background: #e9f9f1; }
+/* The whole screen takes the verdict's colour for as long as it holds. */
+.gate-admit { background: #e9f9f1; }
+.gate-exit { background: #e8f0ff; }
+.gate-repeat { background: #fff7e6; }
 .gate-deny { background: #fdeeee; }
 .gate-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .gate-direction { font-weight: 800; font-size: 13px; letter-spacing: 2px; padding: 6px 14px; border-radius: 999px; color: white; }
@@ -1564,3 +1569,168 @@ body:has(.gate-screen) { overflow: hidden; }
 .ticket-table tr.row-revoked td { color: #b0b6c4; text-decoration: line-through; }
 .ticket-table tr.row-revoked td:last-child { text-decoration: none; }
 .ticket-table tr.row-revoked .pill { text-decoration: none; }
+
+/* ---- Showing the check happen ----
+   Four screens share this vocabulary: the gate's verdict, the holder's spent code, the
+   passkey ceremony, and the seal mark itself. The rule they all follow is that the
+   animation carries information - a lock opening, a code burning, a ledger line being
+   written - and never the verdict on its own: every tone has its own glyph and its own
+   words, and reduced motion gets the same screen without the movement. ---- */
+
+.verdict-admit { --tone: #1c8a67; --tone-soft: #e9f9f1; }
+.verdict-exit { --tone: #2d5bff; --tone-soft: #e8f0ff; }
+.verdict-repeat { --tone: #b26a00; --tone-soft: #fff7e6; }
+.verdict-deny { --tone: #c0392b; --tone-soft: #fdeeee; }
+
+/* The seal: a lock that has to open before any answer is given. */
+.seal-mark { width: 64px; height: 64px; fill: none; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.seal-working { color: #3d4663; }
+.seal-admit { color: #1c8a67; }
+.seal-exit { color: var(--blue); }
+.seal-repeat { color: #b26a00; }
+.seal-deny { color: #c0392b; }
+.seal-ring { stroke: currentColor; stroke-width: 2.5; opacity: 0.3; transform-box: view-box; transform-origin: 32px 32px; }
+.seal-lock { stroke: currentColor; stroke-width: 3.2; transform-box: view-box; transform-origin: 32px 40px; }
+.seal-glyph { stroke: currentColor; stroke-width: 4.6; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.seal-shackle { transform-box: view-box; transform-origin: 40px 31px; }
+
+.seal-working .seal-ring { stroke-dasharray: 0.22 0.78; opacity: 0.9; animation: seal-spin 1.1s linear infinite; }
+.seal-working .seal-lock { animation: seal-breathe 1.6s ease-in-out infinite; }
+.seal-mark:not(.seal-working) .seal-ring { animation: seal-draw 0.5s ease forwards; }
+.seal-mark:not(.seal-working) .seal-shackle { animation: seal-shackle 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.5) forwards; }
+.seal-mark:not(.seal-working) .seal-lock { animation: seal-clear 0.42s 0.26s ease forwards; }
+.seal-mark:not(.seal-working) .seal-glyph { animation: seal-draw 0.4s 0.34s ease forwards; }
+
+@keyframes seal-spin { to { transform: rotate(360deg); } }
+@keyframes seal-breathe { 50% { opacity: 0.45; } }
+@keyframes seal-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes seal-shackle { to { transform: translateY(-7px) rotate(16deg); } }
+@keyframes seal-clear { to { opacity: 0; transform: scale(0.72); } }
+
+/* The terminal, while it is reading: a band travelling down the camera picture. */
+.gate-scanline {
+  position: absolute; left: 0; right: 0; top: 0; height: 110px; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, rgba(90, 145, 255, 0.3) 62%, rgba(255, 255, 255, 0.8) 100%);
+  animation: gate-sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes gate-sweep {
+  0% { transform: translateY(-110px); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(100dvh); opacity: 0; }
+}
+
+/* The terminal, once it has decided. Read from a metre away: one colour, one glyph,
+   one word - and under them the row that was written. */
+.gate-verdict {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px; padding: 24px;
+  text-align: center; color: white; overflow: hidden;
+}
+.gate-verdict > *:not(.verdict-wash) { position: relative; z-index: 1; }
+.verdict-wash {
+  /* The camera stays visible through the verdict - it is still a live picture - but
+     blurred, so a busy frame cannot compete with the word on top of it. */
+  position: absolute; inset: 0; background: var(--tone); opacity: 0.94;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  animation: verdict-wash 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.gate-verdict .seal-mark { color: white; width: 88px; height: 88px; }
+.verdict-headline { font-size: 46px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
+.verdict-detail { font-size: 15px; opacity: 0.95; overflow-wrap: anywhere; }
+.verdict-ledger {
+  margin-top: 6px; font-size: 12px; letter-spacing: 0.2px; min-height: 28px;
+  padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.2);
+  font-variant-numeric: tabular-nums;
+}
+.verdict-ledger::after { content: '▌'; animation: caret 1s steps(1) infinite; }
+.verdict-deny .verdict-headline { animation: verdict-shake 0.42s ease; }
+@keyframes verdict-wash { from { clip-path: circle(0% at 50% 50%); } to { clip-path: circle(150% at 50% 50%); } }
+@keyframes verdict-shake {
+  25% { transform: translateX(-9px); }
+  50% { transform: translateX(8px); }
+  75% { transform: translateX(-4px); }
+}
+@keyframes caret { 50% { opacity: 0; } }
+.gate-ledger-line { font-size: 12px; color: #9198aa; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .verdict-headline { font-size: 34px; } }
+
+/* The holder's code, and the moment it is spent. */
+.code-stage { position: relative; display: inline-flex; margin: 4px 0; }
+.code-stage .code-canvas { position: relative; z-index: 1; }
+/* The ten seconds this code has left, drawn around it: a screenshot is worth nothing
+   for longer than this frame takes to close. */
+.code-life {
+  position: absolute; inset: -12px; border-radius: 22px; z-index: 0;
+  background: conic-gradient(from -90deg, var(--blue) var(--life, 100%), rgba(45, 91, 255, 0.14) 0);
+}
+.code-spent .code-canvas { animation: code-burn 0.8s ease forwards; }
+.code-spent::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; border-radius: var(--radius);
+  background: linear-gradient(to bottom, transparent 45%, rgba(255, 255, 255, 0.95) 50%, transparent 55%);
+  animation: code-cut 0.55s ease forwards;
+}
+@keyframes code-burn {
+  0% { filter: none; transform: none; }
+  30% { filter: contrast(1.7) brightness(1.2); }
+  100% { filter: blur(9px) grayscale(1) brightness(1.25); transform: scale(0.82); opacity: 0; }
+}
+@keyframes code-cut { from { opacity: 0; transform: translateY(-60%); } 40% { opacity: 1; } to { opacity: 0; transform: translateY(60%); } }
+
+/* The verdict on the phone: what was decided, and the row that says so. */
+.scan-flash {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px; padding: 24px;
+  text-align: center; background: white; border: 2px solid var(--tone);
+  border-radius: 22px; animation: flash-in 0.32s ease both;
+}
+/* Over a burning code, the verdict waits for the code to finish burning. */
+.flash-spent { animation-delay: 0.55s; }
+.flash-headline { font-size: 20px; color: var(--tone); }
+.flash-note { font-size: 12px; color: #66708b; margin: 0; }
+.flash-state {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px;
+  margin: 6px 0 0; text-align: left;
+}
+.flash-state dt { font-size: 11px; color: #9ba2b4; font-weight: 600; }
+.flash-state dd { font-size: 13px; margin: 0; font-weight: 700; }
+.flash-ledger {
+  font-size: 11px; color: #66708b; background: var(--bg-section);
+  padding: 4px 10px; border-radius: 999px; font-variant-numeric: tabular-nums;
+}
+@keyframes flash-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+/* The passkey ceremony, narrated while it runs. */
+.ceremony-seal {
+  position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; padding: 28px;
+  text-align: center; background: rgba(255, 255, 255, 0.97); border-radius: 22px;
+  animation: flash-in 0.25s ease both;
+}
+.ceremony-seal strong { font-size: 17px; line-height: 1.45; }
+.ceremony-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; text-align: left; }
+.ceremony-steps li { display: flex; align-items: center; gap: 9px; font-size: 13px; color: #9ba2b4; }
+.ceremony-steps li::before {
+  content: ''; width: 16px; height: 16px; border-radius: 50%; flex: none;
+  border: 2px solid currentColor; display: grid; place-items: center; font-size: 10px;
+}
+/* Scoped to the list so these beat the resting colour set on every step. */
+.ceremony-steps li.step-now { color: var(--ink); font-weight: 700; }
+.ceremony-steps li.step-now::before { border-color: var(--blue); animation: step-pulse 1s ease-in-out infinite; }
+.ceremony-steps li.step-done { color: #1c8a67; }
+.ceremony-steps li.step-done::before { content: '✓'; border-color: #1c8a67; font-weight: 700; }
+@keyframes step-pulse { 50% { box-shadow: 0 0 0 5px rgba(45, 91, 255, 0.16); } }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Same screens, same words, no movement: every animation here ends where it started
+     saying something, so holding the end state loses nothing. */
+  .seal-mark *, .verdict-wash, .verdict-headline, .gate-verdict, .scan-flash,
+  .ceremony-seal, .ceremony-steps li::before, .code-spent .code-canvas, .code-spent::after {
+    animation: none !important;
+  }
+  .gate-scanline { display: none; }
+  .seal-mark:not(.seal-working) .seal-lock { opacity: 0; }
+  .seal-mark .seal-ring, .seal-mark .seal-glyph { stroke-dashoffset: 0; }
+  .code-spent .code-canvas { opacity: 0; }
+  .verdict-ledger::after { content: none; }
+}

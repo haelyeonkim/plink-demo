@@ -5,11 +5,14 @@ import {
   cancelTransfer, fetchFaceStatus, fetchTicket, reissueTicket, requestOtp, verifyOtp,
   type TicketView,
 } from '../ticket/api';
-import { passkeyError, runCeremony, supportsPasskeys } from '../ticket/passkey';
+import { passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import FaceEnrolment from './FaceEnrolment';
 import Crowding from './Crowding';
 import { openLive } from '../ticket/live';
+import ScanFlash, { type Movement } from './ScanFlash';
+import { reducedMotion } from '../motion';
+import CeremonySeal, { type Ceremony } from './CeremonySeal';
 
 type Direction = 'IN' | 'OUT';
 
@@ -21,6 +24,11 @@ function inAppBrowser(): boolean {
 
 function ticketRequiresNoOtp(ticket: TicketView | null): boolean {
   return ticket != null && ticket.event.claimRequiresOtp === false;
+}
+
+/** A beat, so a finished seal is seen closing rather than only reported. */
+function beat(ms: number): Promise<void> {
+  return new Promise(resolve => { window.setTimeout(resolve, reducedMotion() ? 0 : ms); });
 }
 
 function timeText(value: string): string {
@@ -41,6 +49,10 @@ export default function TicketPage() {
   const [faceEnrolled, setFaceEnrolled] = useState(false);
   const [transferTo, setTransferTo] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
+  // The gate's verdict about this ticket, held only as long as it is worth watching.
+  const [movement, setMovement] = useState<Movement | null>(null);
+  const [ceremony, setCeremony] = useState<Ceremony | null>(null);
+  const wasInside = useRef<boolean | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -60,10 +72,35 @@ export default function TicketPage() {
   // network that will not carry a socket.
   useEffect(() => {
     const live = openLive(`/ws/tickets/${sessionId}/${token}`, message => {
+      // The server only sends this ticket's movements down this socket, so anything
+      // arriving here is about the person holding the phone.
+      if (message.type === 'MOVEMENT') setMovement(message as unknown as Movement);
       if (message.type === 'PRESENCE' || message.type === 'MOVEMENT') void reload();
     });
     return () => live.close();
   }, [sessionId, token, reload]);
+
+  // A network that will not carry the socket still has to show the holder that they were
+  // read: the poll notices the ledger moved, and the screen says so with what it knows.
+  useEffect(() => {
+    if (!ticket) return;
+    const inside = ticket.presence.inside;
+    const before = wasInside.current;
+    wasInside.current = inside;
+    if (before === null || before === inside) return;
+    setMovement(current => current ?? {
+      outcome: inside ? 'ADMITTED' : 'EXITED',
+      direction: inside ? 'IN' : 'OUT',
+      at: new Date().toISOString(),
+    });
+  }, [ticket]);
+
+  // A verdict is a moment, not a state: it plays, and then the ticket is a ticket again.
+  useEffect(() => {
+    if (!movement) return;
+    const timer = window.setTimeout(() => setMovement(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [movement]);
 
   // The gate changes this ticket's state, not the phone. Coming back to the screen -
   // after a scan, after the screen locked - has to show where the holder actually is.
@@ -76,6 +113,27 @@ export default function TicketPage() {
       window.removeEventListener('focus', refresh);
     };
   }, [reload]);
+
+  /** Runs a ceremony with the seal on screen, and leaves its verdict up for a moment. */
+  const sealed = useCallback(async function <T>(
+    kind: Ceremony['kind'], run: (onStage: (stage: CeremonyStage) => void) => Promise<T>,
+  ): Promise<T> {
+    setCeremony({ kind, state: 'preparing' });
+    try {
+      const result = await run(state => setCeremony({ kind, state }));
+      setCeremony({ kind, state: 'done' });
+      return result;
+    } catch (failure) {
+      setCeremony({ kind, state: 'failed' });
+      throw failure;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ceremony || (ceremony.state !== 'done' && ceremony.state !== 'failed')) return;
+    const timer = window.setTimeout(() => setCeremony(null), ceremony.state === 'done' ? 1600 : 2400);
+    return () => window.clearTimeout(timer);
+  }, [ceremony]);
 
   async function guard(action: () => Promise<void>) {
     if (busy) return;
@@ -101,7 +159,8 @@ export default function TicketPage() {
   });
 
   const claim = () => guard(async () => {
-    const result = await runCeremony(sessionId, token, { email: email.trim() });
+    const result = await sealed('claim', onStage =>
+      runCeremony(sessionId, token, { email: email.trim(), onStage }));
     const viaTransfer = result.mode === 'register' ? result.viaTransfer
       : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
     setNotice(viaTransfer
@@ -111,8 +170,11 @@ export default function TicketPage() {
   });
 
   const present = (direction: Direction) => guard(async () => {
-    const result = await runCeremony(sessionId, token, { direction });
+    const result = await sealed('open', onStage => runCeremony(sessionId, token, { direction, onStage }));
     if (result.mode === 'authenticate' && result.intent === 'PRESENT') {
+      // The seal closes, and only then does the code appear - the order the holder is
+      // being told the story in.
+      await beat(900);
       setGrant(result.grant);
       return;
     }
@@ -161,7 +223,7 @@ export default function TicketPage() {
   if (grant) {
     return (
       <section className="page-section page-tight">
-        <RotatingCode grant={grant} ticket={ticket}
+        <RotatingCode grant={grant} ticket={ticket} movement={movement}
           onDone={async () => { setGrant(null); await reload(); }} onRefresh={reload} />
       </section>
     );
@@ -172,6 +234,11 @@ export default function TicketPage() {
   return (
     <section className="page-section page-tight">
       <div className="access-card">
+        {/* Both overlays sit on the card itself: what is being decided is this ticket. */}
+        {ceremony && <CeremonySeal ceremony={ceremony} />}
+        {movement && !ceremony && (
+          <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
+        )}
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
         <h2>{ticket.seat ? `${ticket.seat} 좌석` : '입장권'}</h2>
 
@@ -319,9 +386,11 @@ export default function TicketPage() {
  * The code is minted locally from the grant secret, so it keeps rotating even if the
  * phone loses signal in the queue.
  */
-function RotatingCode({ grant, ticket, onDone, onRefresh }: {
+function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
   grant: Grant;
   ticket: TicketView;
+  /** The gate's verdict, once it has been read. Until then the code is still live. */
+  movement: Movement | null;
   onDone: () => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
@@ -381,20 +450,43 @@ function RotatingCode({ grant, ticket, onDone, onRefresh }: {
   }, [grant]);
 
   useEffect(() => {
-    if (ticket.presence.inside !== wasInside.current) { void done.current(); }
-  }, [ticket.presence.inside]);
+    if (ticket.presence.inside === wasInside.current) return;
+    wasInside.current = ticket.presence.inside;
+    if (movement) return;
+    // The ledger moved, so this code has been spent. The verdict lands a beat later -
+    // on the socket, or on the poll that noticed - and burning the code is what closes
+    // this screen. Closing now would take the QR away before either could be seen.
+    const timer = window.setTimeout(() => { void done.current(); }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [ticket.presence.inside, movement]);
+
+  // The code was spent: show it being spent, then hand the holder back their ticket.
+  useEffect(() => {
+    if (!movement) return;
+    const timer = window.setTimeout(() => { void done.current(); }, 3400);
+    return () => window.clearTimeout(timer);
+  }, [movement]);
 
   return (
     <div className="access-card">
+      {/* Laid over the whole card: the code burns underneath, and what is left is the
+          row the gate wrote about this ticket. */}
+      {movement && <ScanFlash movement={movement} spent inside={ticket.presence.inside} />}
       <p className="eyebrow center"><span></span> {grant.direction === 'IN' ? '입장' : '퇴장'}</p>
-      <h2>게이트 단말에 비춰 주세요</h2>
-      <canvas ref={canvas} width={260} height={260} className="code-canvas" aria-label="입장 QR 코드" />
+      <h2>{movement ? '읽혔어요' : '게이트 단말에 비춰 주세요'}</h2>
+      <div className={`code-stage${movement ? ' code-spent' : ''}`}>
+        <canvas ref={canvas} width={260} height={260} className="code-canvas" aria-label="입장 QR 코드" />
+        {/* The ring is the ten seconds this code has left, drawn where it is being used. */}
+        {!movement && <span className="code-life" style={{ ['--life' as string]: `${rotation * 10}%` }} aria-hidden="true" />}
+      </div>
       {failed
         ? <p className="error-text" role="alert">{failed}</p>
-        : <p className="code-timer" role="status">{left}초 후 만료 · {rotation}초 후 갱신</p>}
-      <p className="hint-text">
-        화면 밝기를 최대로 올리면 인식이 빨라요. 캡처한 QR은 다음 코드가 만들어지는 순간 무효가 됩니다.
-      </p>
+        : !movement && <p className="code-timer" role="status">{left}초 후 만료 · {rotation}초 후 갱신</p>}
+      {!movement && (
+        <p className="hint-text">
+          화면 밝기를 최대로 올리면 인식이 빨라요. 캡처한 QR은 다음 코드가 만들어지는 순간 무효가 됩니다.
+        </p>
+      )}
       <button className="btn-secondary" onClick={() => { void onDone(); }}>닫기</button>
     </div>
   );

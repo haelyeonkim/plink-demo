@@ -26,6 +26,15 @@ export function supportsPasskeys(): boolean {
 export interface TransferStarted { status: string; toEmail: string; expiresAt: string }
 
 /**
+ * Where the ceremony has got to, for a screen that wants to show it.
+ *
+ * <p>These are the three things that actually happen, in order: the server hands out a
+ * challenge, the device proves who holds the key, and the server checks the signature.
+ * A screen that narrates them is describing the real work rather than stalling politely.
+ */
+export type CeremonyStage = 'preparing' | 'signing' | 'verifying';
+
+/**
  * Best-effort coarse position, used only to bind a presentation to the venue. It never
  * blocks: a refusal or a slow fix simply leaves the reading out, and the server treats
  * an absent reading as unknown rather than as a failure.
@@ -61,6 +70,7 @@ export async function runCeremony(
     direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string;
     /** The address the ticket was issued to, typed back when no code was required. */
     email?: string;
+    onStage?: (stage: CeremonyStage) => void;
   } = {},
 ): Promise<
   | { mode: 'register'; claimed: true; viaTransfer: boolean }
@@ -69,6 +79,8 @@ export async function runCeremony(
   | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true; viaTransfer: boolean }
 > {
   const base = ticketBase(sessionId, token);
+  const stage = options_.onStage ?? (() => {});
+  stage('preparing');
   const position = options_.intent === 'TRANSFER' ? {} : await coarsePosition();
   const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -78,6 +90,7 @@ export async function runCeremony(
   publicKey.challenge = decode(publicKey.challenge);
 
   let credential: PublicKeyCredential | null;
+  stage('signing');
   if (mode === 'register') {
     publicKey.user.id = decode(publicKey.user.id);
     publicKey.excludeCredentials = (publicKey.excludeCredentials || [])
@@ -107,6 +120,7 @@ export async function runCeremony(
       userHandle: r.userHandle ? encode(r.userHandle) : null,
     };
   }
+  stage('verifying');
   const result = await read(await mutate(`${base}/passkey/finish`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

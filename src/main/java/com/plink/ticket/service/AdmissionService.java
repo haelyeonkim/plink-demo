@@ -78,8 +78,8 @@ public class AdmissionService {
         movement.put("gateLabel", gate == null ? null : gate.label);
         movement.put("zone", gate == null ? null : gate.zone);
         movement.put("at", java.time.Instant.now().toString());
-        live.publish(session.id, "MOVEMENT", movement);
-        live.publish(session.id, "PRESENCE", snapshots.presence(ticket.id));
+        live.publishForTicket(session.id, ticket.id, "MOVEMENT", movement);
+        live.publishForTicket(session.id, ticket.id, "PRESENCE", snapshots.presence(ticket.id));
         live.publish(session.id, "CROWDING", snapshots.crowding(session.id));
         live.publish(session.id, "OCCUPANCY", snapshots.occupancy(session.id));
     }

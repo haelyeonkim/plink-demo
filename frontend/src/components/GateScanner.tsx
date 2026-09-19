@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan, gateSync } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
+import GateVerdict, { type Verdict } from './GateVerdict';
+import type { SealTone } from './SealMark';
+import { clockText } from '../motion';
 
 interface GateInfo {
   gateId: string;
@@ -11,12 +14,17 @@ interface GateInfo {
   sessionName: string;
 }
 
-interface Outcome {
-  kind: 'ok' | 'deny';
-  headline: string;
-  detail: string;
-  at: number;
+/** How long the verdict holds the screen. A refusal stays longer: it has to be read. */
+function hold(tone: SealTone): number {
+  return tone === 'admit' || tone === 'exit' ? 2400 : 4200;
 }
+
+const HEADLINES: Record<string, { tone: SealTone; headline: string }> = {
+  ADMITTED: { tone: 'admit', headline: '입장' },
+  EXITED: { tone: 'exit', headline: '퇴장' },
+  DUPLICATE: { tone: 'repeat', headline: '중복 스캔' },
+  DENIED: { tone: 'deny', headline: '거부' },
+};
 
 const STORAGE = 'plink.gate.credentials';
 const CAMERA = 'plink.gate.camera';
@@ -51,7 +59,10 @@ export default function GateScanner() {
   const [facing, setFacing] = useState<'user' | 'environment'>(
     () => (localStorage.getItem(CAMERA) === 'environment' ? 'environment' : 'user'));
 
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [outcome, setOutcome] = useState<Verdict | null>(null);
+  // The standing line keeps the last result; the flash owns the screen for a moment and
+  // then gets out of the way, so the camera is never buried under an old verdict.
+  const [flash, setFlash] = useState<Verdict | null>(null);
   // A terminal is opened to be used: the camera starts reading as soon as the gate is
   // known, and both ways in are live. Either toggle can still be turned off by staff.
   const [scanning, setScanning] = useState(true);
@@ -81,17 +92,37 @@ export default function GateScanner() {
       .catch(err => setError(err instanceof Error ? err.message : '단말을 연결하지 못했어요.'));
   }, [gateId, gateToken, gate]);
 
+  // Every lane ends here, so the screen reacts the same way whether the visitor held up
+  // a phone or simply walked past the camera.
+  const announce = useCallback((verdict: Omit<Verdict, 'at'>) => {
+    const settled = { ...verdict, at: Date.now() };
+    setOutcome(settled);
+    setFlash(settled);
+  }, []);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), hold(flash.tone));
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  const ledgerLine = useCallback((kind: string, entryCount?: number) => {
+    const where = gate?.label || gate?.gateId || '게이트';
+    const round = typeof entryCount === 'number' && entryCount > 0 ? ` · 입장 ${entryCount}회차` : '';
+    return `${kind} ${clockText()} · ${where}${round}`;
+  }, [gate]);
+
   const submit = useCallback(async (code: string) => {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
       const seat = result.seat ? ` · ${result.seat}` : '';
-      setOutcome({
-        kind: result.outcome === 'DENIED' ? 'deny' : 'ok',
-        headline: result.outcome === 'EXITED' ? '퇴장' : result.outcome === 'DUPLICATE' ? '중복 스캔' : '입장',
+      const verdict = HEADLINES[result.outcome as string] ?? HEADLINES.ADMITTED;
+      announce({
+        ...verdict,
         detail: `${result.ticketRef}${seat}${result.message ? ` · ${result.message}` : ''}`,
-        at: Date.now(),
+        ledger: ledgerLine(verdict.tone === 'deny' ? '거부됨' : '기록됨', result.entryCount),
       });
     } catch (err) {
       // A transport failure is not a refusal: the visitor is in front of us and the
@@ -100,20 +131,23 @@ export default function GateScanner() {
         const events = [...readQueue(), { code, method: 'QR', capturedAt: new Date().toISOString() }];
         writeQueue(events);
         setQueued(events.length);
-        setOutcome({ kind: 'ok', headline: '오프라인 기록', detail: '연결이 돌아오면 서버와 맞춥니다.', at: Date.now() });
+        announce({
+          tone: 'repeat', headline: '오프라인 기록',
+          detail: '연결이 돌아오면 서버와 맞춥니다.',
+          ledger: ledgerLine('보류됨'),
+        });
       } else {
-        setOutcome({
-          kind: 'deny',
-          headline: '거부',
+        announce({
+          tone: 'deny', headline: '거부',
           detail: err instanceof Error ? err.message : '확인할 수 없는 코드예요.',
-          at: Date.now(),
+          ledger: ledgerLine('거부됨'),
         });
       }
     } finally {
       // Hold briefly so the operator sees the result before the next read.
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
-  }, [gateId, gateToken]);
+  }, [gateId, gateToken, announce, ledgerLine]);
 
   // Face runs on the same stream as the QR decoder: the operator never switches modes,
   // and a visitor either holds up a phone or simply walks up.
@@ -128,11 +162,11 @@ export default function GateScanner() {
         const frames = await captureFrames(video.current, 2, 120);
         const result = await gateFaceScan(gateId.trim(), gateToken.trim(), frames, challenge);
         const seat = result.seat ? ` · ${result.seat}` : '';
-        setOutcome({
-          kind: 'ok',
-          headline: result.outcome === 'EXITED' ? '퇴장' : result.outcome === 'DUPLICATE' ? '중복' : '입장',
-          detail: `얼굴 · ${result.ticketRef}${seat}`,
-          at: Date.now(),
+        const verdict = HEADLINES[result.outcome as string] ?? HEADLINES.ADMITTED;
+        announce({
+          ...verdict,
+          detail: `얼굴 확인 · ${result.ticketRef}${seat}`,
+          ledger: ledgerLine('기록됨', result.entryCount),
         });
         faceFailures.current = 0;
       } catch (err) {
@@ -140,7 +174,7 @@ export default function GateScanner() {
         // "no match" is the normal state between visitors, not something to flash.
         if (message && !message.includes('찾지 못했')) {
           faceFailures.current += 1;
-          setOutcome({ kind: 'deny', headline: '거부', detail: message, at: Date.now() });
+          announce({ tone: 'deny', headline: '거부', detail: message, ledger: ledgerLine('거부됨') });
           // A face service that is down would otherwise deny every two seconds and bury
           // the QR lane in red. Three in a row is enough to call it out and step back.
           if (faceFailures.current >= 3) {
@@ -154,7 +188,7 @@ export default function GateScanner() {
       }
     }, 2000);
     return () => { stopped = true; window.clearInterval(timer); };
-  }, [gate, scanning, faceMode, gateId, gateToken]);
+  }, [gate, scanning, faceMode, gateId, gateToken, announce, ledgerLine]);
 
   useEffect(() => {
     if (!gate || !scanning) return;
@@ -260,9 +294,8 @@ export default function GateScanner() {
     );
   }
 
-  const fresh = outcome && Date.now() - outcome.at < 4000;
   return (
-    <section className={`gate-screen ${fresh ? (outcome!.kind === 'ok' ? 'gate-ok' : 'gate-deny') : ''}`}>
+    <section className={`gate-screen ${flash ? `gate-${flash.tone}` : ''}`}>
       <header className="gate-head">
         <span className={`gate-direction gate-${gate.direction.toLowerCase()}`}>
           {gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
@@ -289,12 +322,20 @@ export default function GateScanner() {
         <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
         <canvas ref={frame} hidden />
         <div className="gate-grid" aria-hidden="true" />
+        {/* A terminal that looks asleep between visitors reads as a terminal that is not
+            checking. The sweep runs only while it really is reading. */}
+        {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
+        {flash && <GateVerdict key={flash.at} verdict={flash} />}
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
       </div>
 
       <div className="gate-result" role="status" aria-live="polite">
         {outcome
-          ? <><strong>{outcome.headline}</strong><span>{outcome.detail}</span></>
+          ? <>
+              <strong>{outcome.headline}</strong>
+              <span>{outcome.detail}</span>
+              <code className="gate-ledger-line">{outcome.ledger}</code>
+            </>
           : <span>입장권을 비춰 주세요.</span>}
       </div>
       {error && <p className="error-text" role="alert">{error}</p>}
