@@ -1151,47 +1151,128 @@ a { color: inherit; text-decoration: none; }
 .consent-list li { margin-bottom: 4px; }
 .camera-preview { width: 100%; border-radius: var(--radius); background: var(--ink); aspect-ratio: 4 / 3; object-fit: cover; margin-bottom: 12px; }
 
-/* Gate terminal: a tablet screen, not a page. */
-/* The terminal fills the device and never scrolls: the camera is the screen, and a
-   tablet on a stand has nobody to scroll it. dvh, so a mobile browser's collapsing
-   toolbar does not leave a gap or push the result line off the bottom. */
-body:has(.gate-screen) { overflow: hidden; }
+/* ---- Gate terminal ----
+   A tablet on a stand, not a page: it fills the device, never scrolls, and is dark so
+   that the camera - the only thing on it that matters - is the brightest thing in the
+   room. dvh, so a collapsing mobile toolbar cannot push the result line off the bottom.
+   The chrome stays quiet; the verdict is allowed to shout. ---- */
+body:has(.gate-screen) { overflow: hidden; background: #070b16; }
+/* A terminal is a kiosk: the site's own mark is not what the staff or the visitor in
+   front of it need, and the camera wants the height. */
+body:has(.gate-screen) .header-plain { display: none; }
 .gate-screen {
-  display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 16px;
-  height: calc(100dvh - 72px); overflow: hidden; transition: background 0.2s;
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px;
+  height: 100dvh; overflow: hidden; color: #fff;
+  background: #070b16; transition: background 0.35s ease;
 }
-@media (max-width: 800px) { .gate-screen { height: calc(100dvh - 70px); } }
-/* The whole screen takes the verdict's colour for as long as it holds. */
-.gate-admit { background: #e9f9f1; }
-.gate-exit { background: #e8f0ff; }
-.gate-repeat { background: #fff7e6; }
-.gate-deny { background: #fdeeee; }
-.gate-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.gate-direction { font-weight: 800; font-size: 13px; letter-spacing: 2px; padding: 6px 14px; border-radius: 999px; color: white; }
-.gate-in { background: #2cb68c; }
-.gate-out { background: var(--blue); }
-.gate-bidirectional { background: #6b5ce7; }
-.gate-label { font-size: 13px; color: #697590; margin-right: auto; }
+/* The room's light changes with the verdict, deeply rather than brightly. */
+.gate-admit { background: #04201a; }
+.gate-exit { background: #061a33; }
+.gate-repeat { background: #241803; }
+.gate-deny { background: #290c0b; }
+
+.gate-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 2px; }
+.gate-direction {
+  font-weight: 800; font-size: 12px; letter-spacing: 1.5px; padding: 5px 12px;
+  border-radius: 8px; border: 1px solid currentColor;
+}
+.gate-in { color: #46d6a8; background: rgba(70, 214, 168, 0.12); }
+.gate-out { color: #7aa5ff; background: rgba(122, 165, 255, 0.12); }
+.gate-bidirectional { color: #b3a6ff; background: rgba(179, 166, 255, 0.12); }
+.gate-label { display: flex; flex-direction: column; line-height: 1.25; margin-right: auto; }
+.gate-label b { font-size: 14px; font-weight: 700; }
+.gate-label small { font-size: 11px; color: rgba(255, 255, 255, 0.45); }
+.gate-queued {
+  font-size: 11px; font-weight: 700; color: #ffcf7a; padding: 4px 10px;
+  border-radius: 999px; background: rgba(255, 207, 122, 0.12);
+}
+/* A terminal that looks asleep reads as a terminal that is not checking. */
+.gate-live { font-size: 11px; color: rgba(255, 255, 255, 0.55); display: flex; align-items: center; gap: 6px; }
+.gate-live::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: #46d6a8;
+  box-shadow: 0 0 0 3px rgba(70, 214, 168, 0.18); animation: live-pulse 1.8s ease-in-out infinite;
+}
+.gate-live-off::before { background: rgba(255, 255, 255, 0.3); box-shadow: none; animation: none; }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
+.btn-ghost {
+  font: inherit; font-size: 12px; color: rgba(255, 255, 255, 0.75); cursor: pointer;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px; padding: 6px 13px; transition: background 0.15s, color 0.15s;
+}
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+
 .gate-viewport {
-  position: relative; flex: 1 1 auto; min-height: 0; border-radius: 18px;
-  overflow: hidden; background: var(--ink);
+  position: relative; flex: 1 1 auto; min-height: 0; border-radius: 20px;
+  overflow: hidden; background: #000; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 .gate-viewport video { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* The front camera faces the visitor, so it reads as a mirror; the rear one does not. */
 .gate-viewport video.mirrored { transform: scaleX(-1); }
-/* A plain grid, not a QR box and a face oval: the same camera reads both, so a guide
-   shaped like one of them tells the visitor the wrong thing. */
-.gate-grid {
-  position: absolute; inset: 0; pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.22) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.22) 1px, transparent 1px);
-  background-size: 33.333% 33.333%;
-  background-position: -1px -1px;
+.gate-frame {
+  position: absolute; inset: 7% 8%; pointer-events: none;
+  --edge: rgba(255, 255, 255, 0.5); --len: 38px; --thick: 2px;
+  background:
+    linear-gradient(var(--edge), var(--edge)) 0 0 / var(--len) var(--thick) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 0 0 / var(--thick) var(--len) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 100% 0 / var(--len) var(--thick) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 100% 0 / var(--thick) var(--len) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 0 100% / var(--len) var(--thick) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 0 100% / var(--thick) var(--len) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 100% 100% / var(--len) var(--thick) no-repeat,
+    linear-gradient(var(--edge), var(--edge)) 100% 100% / var(--thick) var(--len) no-repeat;
 }
-.gate-idle { position: absolute; inset: auto 0 16px; text-align: center; color: white; font-size: 13px; }
-.gate-result { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 18px; min-height: 76px; display: flex; flex-direction: column; gap: 4px; }
-.gate-result strong { font-size: 26px; }
+/* Darkens the edges of the picture, so the middle - where a code is held up - reads. */
+.gate-vignette {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0, 0, 0, 0.55) 100%);
+}
+.gate-idle {
+  position: absolute; inset: auto 0 20px; z-index: 2; text-align: center;
+  color: rgba(255, 255, 255, 0.72); font-size: 13px;
+}
+
+/* Before a terminal has been handed its gate. */
+.gate-setup { align-items: center; justify-content: center; }
+.setup-card {
+  max-width: 460px; text-align: center; padding: 34px 32px; border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.setup-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #46d6a8; }
+.setup-card h2 { font-size: 22px; margin: 10px 0 12px; }
+.setup-card p { font-size: 13px; color: rgba(255, 255, 255, 0.6); margin: 0 0 18px; }
+.setup-card b { color: rgba(255, 255, 255, 0.85); }
+.setup-card .gate-error { margin-bottom: 16px; }
+
+/* The standing line: what the last read was, still there when the verdict has gone. */
+.gate-result {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px; padding: 13px 18px; min-height: 60px;
+}
+.gate-result strong { font-size: 20px; letter-spacing: -0.4px; color: var(--tone-lit, #fff); }
+.result-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--tone-lit, rgba(255, 255, 255, 0.4));
+}
+.result-detail { font-size: 13px; color: rgba(255, 255, 255, 0.62); overflow-wrap: anywhere; }
+.gate-ledger-line {
+  margin-left: auto; font-size: 12px; color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.result-count { font-size: 11px; color: rgba(255, 255, 255, 0.35); }
+.gate-error { margin: 0; font-size: 12px; color: #ff9d95; text-align: center; }
+@media (max-width: 700px) {
+  .gate-ledger-line { margin-left: 0; width: 100%; }
+  .gate-result { gap: 8px; }
+}
+/* A phone held by a staff member: the row has to stay one row, so the parts that only
+   confirm what the operator already knows step aside. */
+@media (max-width: 560px) {
+  .gate-head { gap: 6px; }
+  .gate-label small, .gate-live { display: none; }
+  .btn-ghost { padding: 5px 10px; font-size: 11px; }
+  .gate-direction { padding: 5px 9px; letter-spacing: 1px; }
+}
 
 /* Organiser console */
 .session-list { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -1577,10 +1658,12 @@ body:has(.gate-screen) { overflow: hidden; }
    written - and never the verdict on its own: every tone has its own glyph and its own
    words, and reduced motion gets the same screen without the movement. ---- */
 
-.verdict-admit { --tone: #1c8a67; --tone-soft: #e9f9f1; }
-.verdict-exit { --tone: #2d5bff; --tone-soft: #e8f0ff; }
-.verdict-repeat { --tone: #b26a00; --tone-soft: #fff7e6; }
-.verdict-deny { --tone: #c0392b; --tone-soft: #fdeeee; }
+/* One tone per verdict, in three weights: the colour itself, a lit one for dark
+   screens, and a deep one the wash falls away to. */
+.verdict-admit { --tone: #14855f; --tone-soft: #e9f9f1; --tone-lit: #46d6a8; --tone-deep: #064434; }
+.verdict-exit { --tone: #2d5bff; --tone-soft: #e8f0ff; --tone-lit: #7aa5ff; --tone-deep: #0f2a72; }
+.verdict-repeat { --tone: #ad6500; --tone-soft: #fff7e6; --tone-lit: #ffcf7a; --tone-deep: #5e3800; }
+.verdict-deny { --tone: #bf3226; --tone-soft: #fdeeee; --tone-lit: #ff9d95; --tone-deep: #61170f; }
 
 /* The seal: a lock that has to open before any answer is given. */
 .seal-mark { width: 64px; height: 64px; fill: none; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -1609,12 +1692,13 @@ body:has(.gate-screen) { overflow: hidden; }
 
 /* The terminal, while it is reading: a band travelling down the camera picture. */
 .gate-scanline {
-  position: absolute; left: 0; right: 0; top: 0; height: 110px; pointer-events: none;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, rgba(90, 145, 255, 0.3) 62%, rgba(255, 255, 255, 0.8) 100%);
+  position: absolute; left: 0; right: 0; top: 0; z-index: 1; height: 90px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(120, 180, 255, 0) 0%, rgba(110, 170, 255, 0.12) 70%, rgba(190, 220, 255, 0.38) 100%);
   animation: gate-sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 @keyframes gate-sweep {
-  0% { transform: translateY(-110px); opacity: 0; }
+  0% { transform: translateY(-90px); opacity: 0; }
   12% { opacity: 1; }
   88% { opacity: 1; }
   100% { transform: translateY(100dvh); opacity: 0; }
@@ -1623,25 +1707,32 @@ body:has(.gate-screen) { overflow: hidden; }
 /* The terminal, once it has decided. Read from a metre away: one colour, one glyph,
    one word - and under them the row that was written. */
 .gate-verdict {
-  position: absolute; inset: 0; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 8px; padding: 24px;
-  text-align: center; color: white; overflow: hidden;
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 24px;
+  text-align: center; color: white; overflow: hidden; border-radius: 20px;
+  /* The picture keeps a lit edge in the verdict's colour: from across the lane it is
+     the frame, not the text, that says which way this read went. */
+  box-shadow: inset 0 0 0 3px var(--tone-lit), inset 0 0 120px rgba(0, 0, 0, 0.35);
 }
 .gate-verdict > *:not(.verdict-wash) { position: relative; z-index: 1; }
 .verdict-wash {
   /* The camera stays visible through the verdict - it is still a live picture - but
      blurred, so a busy frame cannot compete with the word on top of it. */
-  position: absolute; inset: 0; background: var(--tone); opacity: 0.94;
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  position: absolute; inset: 0; opacity: 0.95;
+  background: radial-gradient(ellipse at 50% 38%, var(--tone) 0%, var(--tone) 34%, var(--tone-deep) 100%);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   animation: verdict-wash 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-.gate-verdict .seal-mark { color: white; width: 88px; height: 88px; }
-.verdict-headline { font-size: 46px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
-.verdict-detail { font-size: 15px; opacity: 0.95; overflow-wrap: anywhere; }
+.gate-verdict .seal-mark {
+  color: white; width: 104px; height: 104px;
+  filter: drop-shadow(0 6px 24px rgba(0, 0, 0, 0.35));
+}
+.verdict-headline { font-size: 62px; font-weight: 800; letter-spacing: -2px; line-height: 1.05; }
+.verdict-detail { font-size: 17px; opacity: 0.88; overflow-wrap: anywhere; }
 .verdict-ledger {
-  margin-top: 6px; font-size: 12px; letter-spacing: 0.2px; min-height: 28px;
-  padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.2);
-  font-variant-numeric: tabular-nums;
+  margin-top: 10px; font-size: 12.5px; letter-spacing: 0.2px; min-height: 30px;
+  padding: 7px 16px; border-radius: 999px; background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.18); font-variant-numeric: tabular-nums;
 }
 .verdict-ledger::after { content: '▌'; animation: caret 1s steps(1) infinite; }
 .verdict-deny .verdict-headline { animation: verdict-shake 0.42s ease; }
@@ -1653,7 +1744,11 @@ body:has(.gate-screen) { overflow: hidden; }
 }
 @keyframes caret { 50% { opacity: 0; } }
 .gate-ledger-line { font-size: 12px; color: #9198aa; font-variant-numeric: tabular-nums; }
-@media (max-width: 600px) { .verdict-headline { font-size: 34px; } }
+@media (max-width: 700px) {
+  .verdict-headline { font-size: 38px; }
+  .gate-verdict .seal-mark { width: 76px; height: 76px; }
+  .verdict-detail { font-size: 14px; }
+}
 
 /* The holder's code, and the moment it is spent. */
 .code-stage { position: relative; display: inline-flex; margin: 4px 0; }

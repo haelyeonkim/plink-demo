@@ -69,6 +69,9 @@ export default function GateScanner() {
   const [faceMode, setFaceMode] = useState(
     () => localStorage.getItem(FACE_MODE) !== 'off');
   const [queued, setQueued] = useState(readQueue().length);
+  // What this terminal has handled since it was opened. Staff read it as proof the
+  // lane is moving, and it costs nothing to keep.
+  const [handled, setHandled] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLCanvasElement>(null);
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
@@ -98,6 +101,7 @@ export default function GateScanner() {
     const settled = { ...verdict, at: Date.now() };
     setOutcome(settled);
     setFlash(settled);
+    setHandled(count => count + 1);
   }, []);
 
   useEffect(() => {
@@ -279,16 +283,16 @@ export default function GateScanner() {
 
   if (!gate) {
     return (
-      <section className="page-section page-tight">
-        <div className="access-card">
-          <p className="eyebrow center"><span></span> GATE TERMINAL</p>
+      <section className="gate-screen gate-setup">
+        <div className="setup-card">
+          <span className="setup-eyebrow">GATE TERMINAL</span>
           <h2>단말이 연결되어 있지 않아요</h2>
-          <p className="hint-text">
+          <p>
             관리 화면에서 발급한 <b>설정 링크</b>를 이 태블릿에서 열고 인증번호를 입력하면 연결됩니다.
             토큰을 직접 입력할 필요는 없어요.
           </p>
-          {error && <p className="error-text" role="alert">{error}</p>}
-          <button className="btn-secondary" onClick={() => window.location.reload()}>다시 확인</button>
+          {error && <p className="gate-error" role="alert">{error}</p>}
+          <button className="btn-ghost" onClick={() => window.location.reload()}>다시 확인</button>
         </div>
       </section>
     );
@@ -301,27 +305,34 @@ export default function GateScanner() {
           {gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
         </span>
         <span className="gate-label">
-          {gate.label || gate.gateId} · {gate.sessionName}
-          {queued > 0 && <strong> · 오프라인 대기 {queued}건</strong>}
+          <b>{gate.label || gate.gateId}</b>
+          <small>{gate.sessionName}</small>
         </span>
-        <button className="btn-tiny" onClick={() => setScanning(value => !value)}>
+        {queued > 0 && <span className="gate-queued">오프라인 대기 {queued}건</span>}
+        <span className={`gate-live${scanning ? '' : ' gate-live-off'}`}>
+          {scanning ? '읽는 중' : '멈춤'}
+        </span>
+        <button className="btn-ghost" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
-        <button className="btn-tiny" onClick={() => setFaceMode(value => {
+        <button className="btn-ghost" onClick={() => setFaceMode(value => {
           localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
           return !value;
         })}>
-          {faceMode ? '얼굴 인식 끄기' : '얼굴 인식 켜기'}
+          얼굴 인식 {faceMode ? '끄기' : '켜기'}
         </button>
-        <button className="btn-tiny" onClick={flipCamera} title="앞뒤 카메라 전환">
-          카메라 {facing === 'user' ? '전면' : '후면'} ⟳
+        <button className="btn-ghost" onClick={flipCamera} title="앞뒤 카메라 전환">
+          {facing === 'user' ? '전면' : '후면'} 카메라
         </button>
       </header>
 
       <div className="gate-viewport">
         <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
         <canvas ref={frame} hidden />
-        <div className="gate-grid" aria-hidden="true" />
+        {/* Corners, not a box: the same camera reads a code and a face, so a guide
+            shaped like either one would tell the visitor the wrong thing. */}
+        <div className="gate-frame" aria-hidden="true" />
+        <div className="gate-vignette" aria-hidden="true" />
         {/* A terminal that looks asleep between visitors reads as a terminal that is not
             checking. The sweep runs only while it really is reading. */}
         {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
@@ -329,16 +340,24 @@ export default function GateScanner() {
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
       </div>
 
-      <div className="gate-result" role="status" aria-live="polite">
-        {outcome
-          ? <>
-              <strong>{outcome.headline}</strong>
-              <span>{outcome.detail}</span>
-              <code className="gate-ledger-line">{outcome.ledger}</code>
-            </>
-          : <span>입장권을 비춰 주세요.</span>}
+      <div className={`gate-result${outcome ? ` verdict-${outcome.tone}` : ''}`}
+        role="status" aria-live="polite">
+        {outcome ? (
+          <>
+            <span className="result-dot" aria-hidden="true" />
+            <strong>{outcome.headline}</strong>
+            <span className="result-detail">{outcome.detail}</span>
+            <code className="gate-ledger-line">{outcome.ledger}</code>
+          </>
+        ) : (
+          <>
+            <span className="result-dot result-dot-idle" aria-hidden="true" />
+            <span className="result-detail">입장권을 비춰 주세요</span>
+          </>
+        )}
+        {handled > 0 && <span className="result-count">이 단말 {handled}건</span>}
       </div>
-      {error && <p className="error-text" role="alert">{error}</p>}
+      {error && <p className="gate-error" role="alert">{error}</p>}
     </section>
   );
 }
