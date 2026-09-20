@@ -342,6 +342,71 @@ class ConsoleOperationsTest {
         assertEquals(1, mailbox.sent.size());
     }
 
+    /**
+     * One address, one ticket. Two links to the same inbox cannot both be used - the
+     * second device to register wins and the other link is dead mail - so the console
+     * refuses instead of quietly creating the confusion.
+     */
+    @Test void asecondTicketForTheSameAddressIsRefused() {
+        long sessionId = newSession();
+        tickets.issue(sessionId, "twice@example.com", "A-1", null, null);
+
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> tickets.issue(sessionId, "TWICE@example.com", "A-2", null, null));
+        assertEquals(HttpStatus.CONFLICT, refused.getStatusCode());
+        assertEquals(1, ticketRepository.findBySession(sessionId).size());
+
+        // Another event is another question entirely.
+        assertNotNull(tickets.issue(newSession(), "twice@example.com", "A-1", null, null));
+    }
+
+    /** Revoking a ticket is how the address is freed for a replacement. */
+    @Test void arevokedTicketNoLongerHoldsTheAddress() {
+        long sessionId = newSession();
+        long first = ((Number) tickets.issue(sessionId, "again@example.com", "A-1", null, null)
+            .get("ticketId")).longValue();
+        tickets.setRevoked(first, true);
+
+        Map<String, Object> second = tickets.issue(sessionId, "again@example.com", "A-2", null, null);
+        assertNotEquals(first, ((Number) second.get("ticketId")).longValue());
+    }
+
+    /**
+     * Deleting is for a ticket issued by mistake. It frees the address, and because the
+     * ledger hangs off the ticket, one that has already been through a gate is refused
+     * until the operator says they mean that too.
+     */
+    @Test void aticketCanBeDeletedAndTheAddressReused() {
+        long sessionId = newSession();
+        long ticketId = ((Number) tickets.issue(sessionId, "oops@example.com", "A-1", null, null)
+            .get("ticketId")).longValue();
+
+        Map<String, Object> gone = tickets.delete(ticketId, false);
+        assertEquals(true, gone.get("deleted"));
+        assertTrue(ticketRepository.findById(ticketId).isEmpty());
+        assertTrue(jdbc.queryForList("SELECT 1 FROM ticket_presence WHERE ticket_id = ?", ticketId).isEmpty(),
+            "입장권에 매달린 기록도 함께 사라집니다");
+
+        // The address is free again, which is the reason to delete rather than revoke.
+        assertNotNull(tickets.issue(sessionId, "oops@example.com", "A-1", null, null));
+    }
+
+    @Test void deletingATicketThatHasEnteredNeedsSayingSo() {
+        long sessionId = newSession();
+        long ticketId = ((Number) tickets.issue(sessionId, "inside@example.com", "A-9", null, null)
+            .get("ticketId")).longValue();
+        jdbc.update("INSERT INTO admission_event (ticket_id, session_id, direction, method, result) "
+            + "VALUES (?, ?, 'IN', 'QR', 'ADMITTED')", ticketId, sessionId);
+
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> tickets.delete(ticketId, false));
+        assertEquals(HttpStatus.CONFLICT, refused.getStatusCode());
+        assertTrue(ticketRepository.findById(ticketId).isPresent(), "거부됐으면 남아 있어야 합니다");
+
+        assertEquals(1, ((Number) tickets.delete(ticketId, true).get("movements")).intValue());
+        assertTrue(ticketRepository.findById(ticketId).isEmpty());
+    }
+
     @Test void deletingASessionTakesItsTicketsWithIt() {
         long sessionId = newSession();
         Map<String, Object> issued = tickets.issue(sessionId, "holder@example.com", "A-1", null, null);

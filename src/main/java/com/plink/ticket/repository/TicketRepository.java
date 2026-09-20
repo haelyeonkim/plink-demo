@@ -67,6 +67,24 @@ public class TicketRepository {
         return keys.getKey().longValue();
     }
 
+    /**
+     * Live tickets already issued to an address for this event. Revoked ones are left
+     * out: cancelling a ticket is how an organiser frees the address up again.
+     */
+    public List<Ticket> findLiveBySessionAndEmail(long sessionId, String email) {
+        return jdbc.query("SELECT * FROM ticket WHERE session_id = ? AND LOWER(issued_to_email) = ? "
+            + "AND status <> 'REVOKED'", MAPPER, sessionId, email.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /**
+     * Removes the ticket itself. Everything hanging off it - its passkey, presence,
+     * transfers, grants and ledger rows - is cascaded by the schema, which is why this
+     * is the console's "delete" and revoking is what keeps the record.
+     */
+    public void delete(long id) {
+        jdbc.update("DELETE FROM ticket WHERE id = ?", id);
+    }
+
     public Optional<Ticket> findByTokenHmac(String tokenHmac) {
         return jdbc.query("SELECT * FROM ticket WHERE token_hmac = ?", MAPPER, tokenHmac).stream().findFirst();
     }

@@ -16,7 +16,7 @@ const LINKS: Array<[string, string]> = [
  * has no account here and a terminal is a kiosk, so neither gets site navigation or a
  * sign-in button.
  */
-function isStandalone(pathname: string): boolean {
+export function isStandalone(pathname: string): boolean {
   if (pathname === '/tickets/gate') return true;
   // Operator screens live under /tickets too, and they keep the site's navigation.
   if (pathname.startsWith('/tickets/admin') || pathname.startsWith('/tickets/sessions')) return false;

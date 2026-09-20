@@ -1,10 +1,22 @@
 import { Link, useLocation } from 'react-router-dom';
+import { isStandalone } from './Header';
 
 export default function Footer() {
   // A gate terminal is a kiosk: every pixel below the camera is wasted, and there is
   // nowhere for a visitor to navigate to.
   const { pathname } = useLocation();
   if (pathname.startsWith('/tickets/gate')) return null;
+
+  // A holder's ticket is one screen held in a queue. It keeps the one link that has to
+  // stay reachable - what happens to a face, and to an address - and drops the rest so
+  // the ticket itself does not need scrolling to.
+  if (isStandalone(pathname)) {
+    return (
+      <footer className="footer footer-bare">
+        <Link className="footer-link" to="/privacy">개인정보처리방침</Link>
+      </footer>
+    );
+  }
 
   return (
     <footer className="footer">

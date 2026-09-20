@@ -141,6 +141,7 @@ export default function TicketAdmin() {
   // Minting a link puts the old one out of use, so the row's button asks first rather
   // than doing it under a name that sounds like reading.
   const [confirmReissue, setConfirmReissue] = useState<{ row: TicketRow; notify: boolean } | null>(null);
+  const [confirmTicket, setConfirmTicket] = useState<TicketRow | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -212,6 +213,20 @@ export default function TicketAdmin() {
     setNotice(revoked
       ? `${result.ticketRef} 비활성화했어요. 링크가 열리지 않고 게이트도 거부합니다.`
       : `${result.ticketRef} 다시 사용할 수 있어요.`);
+    await loadSession(selected!);
+  });
+
+  /**
+   * Removes a ticket outright. A ticket that has been through a gate takes its ledger
+   * rows with it, so that one is only sent with the operator's explicit say-so.
+   */
+  const deleteTicket = (row: TicketRow) => act(async () => {
+    const force = row.entryCount > 0;
+    const result = await read(await mutate(
+      `/api/admin/tickets/${row.ticketId}?force=${force}`, { method: 'DELETE' }));
+    setNotice(`${result.ticketRef} 입장권을 삭제했어요.`
+      + (result.movements > 0 ? ` 게이트 기록 ${result.movements}건도 함께 지웠습니다.` : '')
+      + ` 이제 ${row.issuedToEmail} 주소로 다시 발급할 수 있어요.`);
     await loadSession(selected!);
   });
 
@@ -511,7 +526,8 @@ export default function TicketAdmin() {
             </dl>
             <p className="hint-text">
               발급하면 수신 이메일로 개인 링크가 갑니다. 휴대폰을 넣으면 문자로도 보냅니다.
-              발급된 목록은 <b>발급 현황</b> 탭에 있어요.
+              한 이메일에는 한 장만 발급됩니다 — 다시 보내려면 <b>재발송</b>을, 다른 사람에게 주려면
+              기존 입장권을 삭제하세요. 발급된 목록은 <b>발급 현황</b> 탭에 있어요.
             </p>
 
             <BulkImport
@@ -586,6 +602,8 @@ export default function TicketAdmin() {
                       ) : (
                         <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, true)}>비활성화</button>
                       )}
+                      <button className="btn-tiny btn-tiny-danger"
+                        onClick={() => setConfirmTicket(row)}>삭제</button>
                     </td>
                   </tr>
                   {issued?.from === 'row' && issued.ticketId === row.ticketId && (
@@ -950,6 +968,32 @@ export default function TicketAdmin() {
           reissueLink(row.ticketId, notify);
         }}
         onCancel={() => setConfirmReissue(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmTicket != null}
+        title="입장권을 삭제할까요?"
+        message={confirmTicket && confirmTicket.entryCount > 0
+          ? '이 입장권과 게이트를 지난 기록까지 함께 사라집니다. 되돌릴 수 없어요. 기록을 남겨야 한다면 '
+            + '삭제 대신 비활성화를 쓰세요.'
+          : '이 입장권이 사라지고 링크는 더 이상 열리지 않습니다. 같은 이메일로 다시 발급할 수 있어요.'}
+        details={confirmTicket ? [
+          ['입장권', confirmTicket.ticketRef],
+          ['받는 사람', confirmTicket.holderEmail ?? confirmTicket.issuedToEmail],
+          ['상태', ticketState(confirmTicket).label],
+          ['입장 이력', `${confirmTicket.entryCount}회`],
+        ] : undefined}
+        /* Gate history is the one thing here that cannot be reissued, so removing it
+           asks for the reference to be typed. */
+        requireText={confirmTicket && confirmTicket.entryCount > 0 ? confirmTicket.ticketRef : undefined}
+        confirmLabel="입장권 삭제"
+        onConfirm={() => {
+          if (!confirmTicket) return;
+          const row = confirmTicket;
+          setConfirmTicket(null);
+          deleteTicket(row);
+        }}
+        onCancel={() => setConfirmTicket(null)}
       />
 
       <ConfirmDialog

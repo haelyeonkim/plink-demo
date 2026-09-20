@@ -49,6 +49,9 @@ export default function TicketPage() {
   const [faceEnrolled, setFaceEnrolled] = useState(false);
   const [transferTo, setTransferTo] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
+  // Everything that is not "get me through the door" folds away, so the ticket itself
+  // fits the screen a person is holding in a queue.
+  const [manage, setManage] = useState(false);
   // The gate's verdict about this ticket, held only as long as it is worth watching.
   const [movement, setMovement] = useState<Movement | null>(null);
   const [ceremony, setCeremony] = useState<Ceremony | null>(null);
@@ -222,7 +225,7 @@ export default function TicketPage() {
   }
   if (grant) {
     return (
-      <section className="page-section page-tight">
+      <section className="page-section page-tight ticket-page">
         <RotatingCode grant={grant} ticket={ticket} movement={movement}
           onDone={async () => { setGrant(null); await reload(); }} onRefresh={reload} />
       </section>
@@ -232,7 +235,7 @@ export default function TicketPage() {
   const skipOtp = ticketRequiresNoOtp(ticket);
 
   return (
-    <section className="page-section page-tight">
+    <section className="page-section page-tight ticket-page">
       <div className="access-card">
         {/* Both overlays sit on the card itself: what is being decided is this ticket. */}
         {ceremony && <CeremonySeal ceremony={ceremony} />}
@@ -240,14 +243,22 @@ export default function TicketPage() {
           <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
         )}
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
-        <h2>{ticket.seat ? `${ticket.seat} 좌석` : '입장권'}</h2>
+        <h2>
+          {ticket.seat ? `${ticket.seat} 좌석` : '입장권'}
+          {/* Where the holder is belongs beside the ticket's name, not in a row of
+              its own halfway down a list. */}
+          {ticket.claimed && (
+            <span className={`pill pill-${ticket.presence.inside ? 'in' : 'out'}`}>
+              {ticket.presence.inside ? '장내' : '장외'}
+            </span>
+          )}
+        </h2>
 
         <dl className="ticket-meta">
           <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
           {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           {ticket.tier && <><dt>등급</dt><dd>{ticket.tier}</dd></>}
           <dt>등록 이메일</dt><dd>{ticket.holderEmailMasked}</dd>
-          <dt>상태</dt><dd>{ticket.presence.inside ? '장내' : '장외'}</dd>
           {ticket.presence.reentryRemaining !== null && (
             <><dt>남은 재입장</dt><dd>{ticket.presence.reentryRemaining}회</dd></>
           )}
@@ -288,32 +299,42 @@ export default function TicketPage() {
               <button className="btn-primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>
             )}
 
-            <div className="button-row">
-              {!ticket.transfer && !ticket.presence.inside && (
-                <button className="btn-secondary" onClick={() => setShowTransfer(value => !value)} disabled={busy}>
-                  {showTransfer ? '양도 취소' : '양도하기'}
-                </button>
-              )}
-              <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
-            </div>
-            {showTransfer && !ticket.transfer && !ticket.presence.inside && (
-              <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
-                <div className="field">
-                  <label htmlFor="transfer-to">받는 사람 이메일</label>
-                  <input id="transfer-to" type="email" required value={transferTo}
-                    onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
-                </div>
-                <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
-              </form>
-            )}
             {!faceEnrolled && (
               <p className="hint-text">
-                버튼을 누르면 지문·얼굴 인증을 거친 뒤에만 QR이 표시됩니다. QR은 10초마다 새로 만들어지고
-                한 번 사용하면 사라져요.
+                지문·얼굴 인증을 거친 뒤에만 QR이 열립니다. QR은 10초마다 새로 만들어져요.
               </p>
             )}
-            <FaceEnrolment sessionId={sessionId} token={token}
-              inside={ticket.presence.inside} onChange={reload} />
+
+            {/* Folded by default: the door comes first, and the rest is housekeeping. */}
+            <button className="manage-toggle" aria-expanded={manage}
+              onClick={() => setManage(value => !value)}>
+              입장권 관리
+              <span className="entity-chevron" aria-hidden="true">{manage ? '▴' : '▾'}</span>
+            </button>
+            {manage && (
+              <div className="manage-panel">
+                <div className="button-row">
+                  {!ticket.transfer && !ticket.presence.inside && (
+                    <button className="btn-secondary" onClick={() => setShowTransfer(value => !value)} disabled={busy}>
+                      {showTransfer ? '양도 취소' : '양도하기'}
+                    </button>
+                  )}
+                  <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
+                </div>
+                {showTransfer && !ticket.transfer && !ticket.presence.inside && (
+                  <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
+                    <div className="field">
+                      <label htmlFor="transfer-to">받는 사람 이메일</label>
+                      <input id="transfer-to" type="email" required value={transferTo}
+                        onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
+                    </div>
+                    <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
+                  </form>
+                )}
+                <FaceEnrolment sessionId={sessionId} token={token}
+                  inside={ticket.presence.inside} onChange={reload} />
+              </div>
+            )}
           </>
         ) : ticket.claimExpired ? (
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
@@ -376,7 +397,7 @@ export default function TicketPage() {
       </div>
 
       {/* Under the ticket, where somebody standing in the queue is already looking. */}
-      {ticket.claimed && <Crowding sessionId={sessionId} token={token} />}
+      {ticket.claimed && !manage && <Crowding sessionId={sessionId} token={token} />}
     </section>
   );
 }
@@ -397,6 +418,10 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [left, setLeft] = useState(0);
   const [rotation, setRotation] = useState(0);
+  // Which rotation is on screen and how much of it was already gone when it arrived.
+  // The ring runs from this in CSS rather than being redrawn on every tick, so it
+  // sweeps at the screen's own refresh rate instead of stepping four times a second.
+  const [cycle, setCycle] = useState<{ index: number; elapsed: number } | null>(null);
   const [failed, setFailed] = useState('');
   const wasInside = useRef(ticket.presence.inside);
   // Held in refs, not read as dependencies: the poll below re-renders the parent every
@@ -412,7 +437,7 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
     const minter = new CodeMinter(grant);
     let stopped = false;
 
-    async function draw() {
+    async function draw(replacing: boolean) {
       if (stopped) return;
       try {
         const next = await minter.next();
@@ -421,20 +446,34 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
             errorCorrectionLevel: 'M', margin: 2, width: 260,
             color: { dark: '#122145', light: '#ffffff' },
           });
+          // A new code replaces the old one under the holder's hand. Fading it in says
+          // that something changed without the snap of a repaint.
+          if (replacing && !reducedMotion() && typeof canvas.current.animate === 'function') {
+            canvas.current.animate(
+              [{ opacity: 0.25, filter: 'blur(4px)' }, { opacity: 1, filter: 'none' }],
+              { duration: 420, easing: 'ease-out' });
+          }
         }
       } catch {
         setFailed('QR을 만들지 못했어요. 다시 인증해 주세요.');
       }
     }
 
-    void draw();
+    void draw(false);
+    const period = grant.periodSeconds;
+    // The ring starts part-way through the window the phone happened to open in.
+    setCycle({ index: minter.windowIndex(), elapsed: period - minter.secondsToRotation() });
     // Redrawn when the rotation window actually turns over, so the QR changes exactly
     // when the countdown says it does - not on a timer started at mount, and not on
     // every poll.
     let shown = minter.windowIndex();
     const tick = window.setInterval(() => {
       const current = minter.windowIndex();
-      if (current !== shown) { shown = current; void draw(); }
+      if (current !== shown) {
+        shown = current;
+        void draw(true);
+        setCycle({ index: current, elapsed: 0 });
+      }
       setLeft(minter.secondsLeft());
       setRotation(minter.secondsToRotation());
       if (minter.secondsLeft() <= 0) { void done.current(); }
@@ -476,8 +515,18 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
       <h2>{movement ? '읽혔어요' : '게이트 단말에 비춰 주세요'}</h2>
       <div className={`code-stage${movement ? ' code-spent' : ''}`}>
         <canvas ref={canvas} width={260} height={260} className="code-canvas" aria-label="입장 QR 코드" />
-        {/* The ring is the ten seconds this code has left, drawn where it is being used. */}
-        {!movement && <span className="code-life" style={{ ['--life' as string]: `${rotation * 10}%` }} aria-hidden="true" />}
+        {/* The ring is this code's own life, drawn where it is being used: one unbroken
+            sweep per rotation, keyed so each new code starts its own. */}
+        {!movement && cycle && (
+          <svg className="code-life" viewBox="0 0 100 100" aria-hidden="true">
+            <rect className="life-track" x="1.4" y="1.4" width="97.2" height="97.2" rx="9" pathLength="1" />
+            <rect key={cycle.index} className="life-run" x="1.4" y="1.4" width="97.2" height="97.2"
+              rx="9" pathLength="1" style={{
+                animationDuration: `${grant.periodSeconds}s`,
+                animationDelay: `-${cycle.elapsed}s`,
+              }} />
+          </svg>
+        )}
       </div>
       {failed
         ? <p className="error-text" role="alert">{failed}</p>

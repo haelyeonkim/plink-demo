@@ -203,6 +203,14 @@ public class AdmissionRepository {
             + "WHERE p.state = 'INSIDE' AND s.unmatched_exit = 'AUTO_EXIT' AND p.inside_since IS NOT NULL");
     }
 
+    /** How often this ticket has actually passed a gate, either way and by any method. */
+    public int countMovements(long ticketId) {
+        Integer value = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM admission_event WHERE ticket_id = ? "
+            + "AND result IN ('ADMITTED', 'EXITED')", Integer.class, ticketId);
+        return value == null ? 0 : value;
+    }
+
     /** Whether this ticket has ever been carried through a gate as a QR code. */
     public int countQrMovements(long ticketId) {
         Integer value = jdbc.queryForObject(

@@ -483,6 +483,9 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   margin-left: 6px;
 }
+/* Destructive, and it should not be the first thing the eye lands on. */
+.btn-tiny-danger { color: #c0392b; border-color: #f0cdc9; }
+.btn-tiny-danger:hover { background: #fdeeee; }
 .btn-tiny:hover { border-color: var(--blue); color: var(--blue); }
 
 .btn-delete {
@@ -1125,6 +1128,39 @@ a { color: inherit; text-decoration: none; }
 .cell-code code { font-size: 11px; }
 .code-display code { overflow-wrap: anywhere; min-width: 0; font-size: 15px; }
 
+/* The holder's ticket is meant to be read at a glance in a queue, so it is built to
+   sit inside one screen: the card centres itself in what is left under the header and
+   everything that is not "get me through the door" folds away behind one button. */
+/* The bare footer under a holder's ticket: one link, and out of the way. */
+.footer-bare { padding: 8px 24px 14px; border-top: none; justify-content: center; }
+.footer-bare .footer-link { font-size: 11px; }
+.ticket-page {
+  /* What is left of the screen under the plain header and above that one link. */
+  min-height: calc(100dvh - 104px);
+  display: flex; flex-direction: column; justify-content: center;
+  padding-top: 8px; padding-bottom: 16px;
+}
+.ticket-page .access-card { margin: 0 auto 10px; padding: 22px 22px 20px; }
+.ticket-page .access-card h2 {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 20px; margin-bottom: 14px;
+}
+.ticket-page .eyebrow { margin-bottom: 6px; }
+.ticket-page .ticket-meta { gap: 5px 14px; margin-bottom: 14px; }
+.ticket-page .hint-text { margin-top: 10px; }
+.ticket-page .crowding-card { margin: 0 auto; padding: 16px 20px; }
+/* The fold itself: a full-width row that reads as a control, not as a button competing
+   with the one that opens the door. */
+.manage-toggle {
+  width: 100%; margin-top: 14px; padding: 9px 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font: inherit; font-size: 13px; color: #66708b;
+  background: var(--bg-section); border: 1px solid var(--line); border-radius: 10px;
+}
+.manage-toggle:hover { color: var(--ink); }
+.manage-panel { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+.manage-panel h3 { font-size: 14px; margin: 18px 0 8px; }
+
 /* ---- Ticketing ----
    Reuses the P-Link vocabulary (page-section, access-card, field, btn-*). Only the
    things the existing pages have no equivalent for are defined here: the rotating
@@ -1144,7 +1180,12 @@ a { color: inherit; text-decoration: none; }
 .warn-text { color: #8a5a00; background: #fff7e6; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin: 8px 0 16px; text-align: left; }
 .hint-text { color: #9198aa; font-size: 12px; margin: 8px 0 0; }
 
-.code-canvas { border-radius: var(--radius); background: white; max-width: 100%; height: auto; }
+/* On a short screen the code shrinks rather than pushing the close button off the
+   bottom: it is still the biggest thing on the page either way. */
+.code-canvas {
+  border-radius: var(--radius); background: white; height: auto;
+  width: min(260px, 100%, 42vh); max-width: 100%;
+}
 .code-timer { font-weight: 700; font-size: 15px; margin: 16px 0 4px; font-variant-numeric: tabular-nums; }
 
 .consent-list { text-align: left; font-size: 12px; color: #3d4663; margin: 0 0 16px; padding-left: 18px; }
@@ -1769,11 +1810,16 @@ body:has(.gate-screen) .header-plain { display: none; }
 .code-stage { position: relative; display: inline-flex; margin: 4px 0; }
 .code-stage .code-canvas { position: relative; z-index: 1; }
 /* The ten seconds this code has left, drawn around it: a screenshot is worth nothing
-   for longer than this frame takes to close. */
-.code-life {
-  position: absolute; inset: -12px; border-radius: 22px; z-index: 0;
-  background: conic-gradient(from -90deg, var(--blue) var(--life, 100%), rgba(45, 91, 255, 0.14) 0);
+   for longer than this frame takes to close. One CSS animation per rotation, so the
+   sweep is continuous rather than a value nudged along four times a second. */
+.code-life { position: absolute; inset: -13px; z-index: 0; overflow: visible; }
+.life-track, .life-run { fill: none; stroke-width: 1.5; stroke-linejoin: round; }
+.life-track { stroke: rgba(45, 91, 255, 0.13); }
+.life-run {
+  stroke: var(--blue); stroke-dasharray: 1;
+  animation-name: life-drain; animation-timing-function: linear; animation-fill-mode: forwards;
 }
+@keyframes life-drain { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 1; } }
 .code-spent .code-canvas { animation: code-burn 0.8s ease forwards; }
 .code-spent::after {
   content: ''; position: absolute; inset: 0; z-index: 2; border-radius: var(--radius);
@@ -1839,6 +1885,8 @@ body:has(.gate-screen) .header-plain { display: none; }
     animation: none !important;
   }
   .gate-scanline { display: none; }
+  /* The ring still says how much of the code's life is left; it just stops sweeping. */
+  .life-run { animation-play-state: paused; }
   .seal-mark:not(.seal-working) .seal-lock { opacity: 0; }
   .seal-mark .seal-ring, .seal-mark .seal-glyph { stroke-dashoffset: 0; }
   .code-spent .code-canvas { opacity: 0; }

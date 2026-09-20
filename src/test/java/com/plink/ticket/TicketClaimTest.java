@@ -217,9 +217,10 @@ class TicketClaimTest {
     }
 
     /**
-     * The reason this identity exists: a person accumulates tickets, not passkeys. The
-     * second ticket for the same address asks them to prove the passkey they already
-     * have instead of creating another entry on their device.
+     * The reason this identity exists: a person accumulates tickets, not passkeys. Their
+     * next ticket - a different event, since one event gives an address one ticket -
+     * asks them to prove the passkey they already have instead of creating another
+     * entry on their device.
      */
     @Test void aSecondTicketForTheSamePersonAuthenticatesInsteadOfRegistering() throws Exception {
         MockHttpSession first = verifiedSession("holder@example.com");
@@ -233,13 +234,15 @@ class TicketClaimTest {
         holders.insert(holderId, new ByteArray(new byte[] { 1, 2, 3, 4 }),
             new ByteArray(new byte[] { 5, 6, 7, 8 }), 0, "test");
 
-        tickets.issue(sessionId, "holder@example.com", "D-9", null);
+        long nextEvent = sessions.insert("다음 회차", null,
+            Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
+        tickets.issue(nextEvent, "holder@example.com", "D-9", null);
         String secondUrl = mailbox.lastTicketUrl().orElseThrow();
         String secondToken = secondUrl.substring(secondUrl.lastIndexOf('/') + 1);
         MockHttpSession second = verifiedSession("holder@example.com",
-            "/api/tickets/" + sessionId + "/" + secondToken);
+            "/api/tickets/" + nextEvent + "/" + secondToken);
 
-        mvc.perform(post("/api/tickets/" + sessionId + "/" + secondToken + "/passkey/options")
+        mvc.perform(post("/api/tickets/" + nextEvent + "/" + secondToken + "/passkey/options")
                 .session(second).with(csrf()).header("User-Agent", PHONE)
                 .contentType("application/json").content("{}"))
             .andExpect(status().isOk())

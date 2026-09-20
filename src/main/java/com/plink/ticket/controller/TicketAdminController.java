@@ -287,6 +287,16 @@ public class TicketAdminController {
     }
 
     /**
+     * Deletes a ticket issued by mistake. {@code force} is the operator saying they mean
+     * to take its gate record with it.
+     */
+    @DeleteMapping("/tickets/{ticketId}")
+    public Map<String, Object> deleteTicket(@PathVariable long ticketId,
+            @RequestParam(defaultValue = "false") boolean force) {
+        return ticketService.delete(ticketId, force);
+    }
+
+    /**
      * Shows a ticket's link again. Because no live token is kept, this rotates: the new
      * link is returned once and the previous one stops resolving immediately.
      */

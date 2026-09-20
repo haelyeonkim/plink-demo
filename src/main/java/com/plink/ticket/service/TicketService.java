@@ -114,6 +114,13 @@ public class TicketService {
         EventSession session = requireSession(sessionId);
         String recipient = EmailOtpService.normalize(email);
         String phone = normalizePhone(rawPhone);
+        // One ticket per address per event. Two links to the same inbox are two links
+        // that cannot both be used - the second binds a device, the first is left dead
+        // in a mailbox - and on the door it reads as one person holding two entries.
+        if (!tickets.findLiveBySessionAndEmail(sessionId, recipient).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                recipient + " 주소로 발급된 입장권이 이미 있어요. 기존 입장권을 삭제하거나 비활성화한 뒤 다시 발급해 주세요.");
+        }
 
         // The organiser's fields decide what a ticket may say. Seat and tier are read
         // from their own field when one is configured, so a catalogue is enforced the
@@ -284,6 +291,34 @@ public class TicketService {
         result.put("reissued", true);
         result.put("sentTo", mask(recipient));
         result.put("remaining", Math.max(0, properties.getRebindMaxPerTicket() - ticket.reissueCount - 1));
+        return result;
+    }
+
+    /**
+     * Removes a ticket outright.
+     *
+     * <p>Revoking is the everyday answer: it stops the ticket working and keeps the row
+     * that says it existed. Deleting is for a ticket issued by mistake - the wrong
+     * address, a duplicate - and it takes the ledger with it, so a ticket that has
+     * already walked through a gate is refused unless the caller insists.
+     */
+    @Transactional
+    public Map<String, Object> delete(long ticketId, boolean force) {
+        Ticket ticket = tickets.lockById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        int movements = admissions.countMovements(ticket.id);
+        if (movements > 0 && !force) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "이 입장권은 게이트를 " + movements + "번 통과한 기록이 있어요. "
+                + "기록까지 함께 지우려면 다시 한 번 확인해 주세요.");
+        }
+        presentations.revokeFor(ticket.id);
+        tickets.delete(ticket.id);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("deleted", true);
+        result.put("ticketId", ticket.id);
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("movements", movements);
         return result;
     }
 
