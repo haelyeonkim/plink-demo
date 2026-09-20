@@ -12,6 +12,9 @@ public class TicketProperties {
     private String tokenSecret = "";
     /** How long a freshly issued ticket URL can be claimed before the token is rotated. */
     private int claimTtlHours = 72;
+
+    /** How long a gate terminal's token is valid for, and what renewing it grants. */
+    private int gateTokenDays = 30;
     /** Lifetime of a presentation grant, i.e. how long the QR keeps rotating after one passkey tap. */
     private int presentationTtlSeconds = 90;
     /** Rotation period of the on-screen code. */
@@ -73,6 +76,9 @@ public class TicketProperties {
     public void setTokenSecret(String v) { this.tokenSecret = v; }
     public int getClaimTtlHours() { return claimTtlHours; }
     public void setClaimTtlHours(int v) { this.claimTtlHours = v; }
+
+    public int getGateTokenDays() { return gateTokenDays; }
+    public void setGateTokenDays(int v) { this.gateTokenDays = v; }
     public int getPresentationTtlSeconds() { return presentationTtlSeconds; }
     public void setPresentationTtlSeconds(int v) { this.presentationTtlSeconds = v; }
     public int getCodePeriodSeconds() { return codePeriodSeconds; }

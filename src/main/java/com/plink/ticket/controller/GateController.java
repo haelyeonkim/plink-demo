@@ -28,9 +28,12 @@ public class GateController {
     private final FaceService faces;
     private final OfflineSyncService offline;
     private final GateSetupService setup;
+    private final com.plink.ticket.repository.GateRepository gates;
 
     public GateController(GateAuthService auth, AdmissionService admissions, TicketService tickets,
-            FaceService faces, OfflineSyncService offline, GateSetupService setup) {
+            FaceService faces, OfflineSyncService offline, GateSetupService setup,
+            com.plink.ticket.repository.GateRepository gates) {
+        this.gates = gates;
         this.auth = auth;
         this.admissions = admissions;
         this.tickets = tickets;
@@ -67,7 +70,26 @@ public class GateController {
         result.put("sessionName", session.name);
         result.put("exitScanRequired", session.exitScanRequired);
         result.put("deviceBound", gate.boundDevice != null);
+        result.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
+            : gate.tokenExpiresAt.toInstant().toString());
         return result;
+    }
+
+    /**
+     * The terminal renewing its own end date.
+     *
+     * <p>Only a terminal that is still valid and still holds the gate can ask, so this
+     * is a tablet that has been working all week saying so, not a way back in for a
+     * token that has already lapsed - that one has to go through the console.
+     */
+    @PostMapping("/{gateId}/renew")
+    public Map<String, Object> renew(@PathVariable String gateId,
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device) {
+        Gate gate = auth.authenticate(gateId, token, device);
+        java.sql.Timestamp until = auth.tokenExpiry();
+        gates.renewToken(gate.id, until);
+        return Map.of("gateId", gate.id, "tokenExpiresAt", until.toInstant().toString());
     }
 
     /**

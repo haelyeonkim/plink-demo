@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan, gateSync } from '../ticket/api';
+import { gateFaceChallenge, gateFaceScan, gateInfo, gateRenew, gateScan, gateSync } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import GateVerdict, { type Verdict } from './GateVerdict';
 import type { SealTone } from './SealMark';
@@ -12,7 +12,18 @@ interface GateInfo {
   zone: string | null;
   direction: 'IN' | 'OUT' | 'BIDIRECTIONAL';
   sessionName: string;
+  /** Null for a terminal registered before tokens had an end date. */
+  tokenExpiresAt: string | null;
 }
+
+/** Days of validity left, or null when this terminal has no end date. */
+function daysLeft(gate: GateInfo | null): number | null {
+  if (!gate?.tokenExpiresAt) return null;
+  return Math.ceil((new Date(gate.tokenExpiresAt).getTime() - Date.now()) / 86400000);
+}
+
+/** Close enough to the end that the terminal renews itself rather than waiting. */
+const RENEW_WITHIN_DAYS = 5;
 
 /** How long the verdict holds the screen. A refusal stays longer: it has to be read. */
 function hold(tone: SealTone): number {
@@ -94,6 +105,33 @@ export default function GateScanner() {
       .then(info => setGate(info as GateInfo))
       .catch(err => setError(err instanceof Error ? err.message : '단말을 연결하지 못했어요.'));
   }, [gateId, gateToken, gate]);
+
+  /** Moves this terminal's end date out. The token and the gate binding are untouched. */
+  const renew = useCallback(async (quiet: boolean) => {
+    try {
+      const result = await gateRenew(gateId.trim(), gateToken.trim());
+      setGate(current => (current ? { ...current, tokenExpiresAt: result.tokenExpiresAt } : current));
+      if (!quiet) setError('');
+    } catch (err) {
+      // A terminal that cannot renew is still a terminal that scans, right up to the
+      // end date. Saying so once is enough; the header carries the countdown.
+      if (!quiet) setError(err instanceof Error ? err.message : '유효기간을 갱신하지 못했어요.');
+    }
+  }, [gateId, gateToken]);
+
+  // A tablet left on a stand for a season should not stop working because nobody in the
+  // office noticed a date. While it is still valid and still holds the gate, it renews
+  // itself; once it has lapsed only the console can, which is the point of the date.
+  const renewedAt = useRef(0);
+  useEffect(() => {
+    const left = daysLeft(gate);
+    if (gate == null || left == null || left > RENEW_WITHIN_DAYS || left <= 0) return;
+    // Renewing moves the date, which lands back here. Once in a while is the whole
+    // need, and it stops a window shorter than the band from renewing in a loop.
+    if (Date.now() - renewedAt.current < 12 * 3600_000) return;
+    renewedAt.current = Date.now();
+    void renew(true);
+  }, [gate, renew]);
 
   // Every lane ends here, so the screen reacts the same way whether the visitor held up
   // a phone or simply walked past the camera.
@@ -356,6 +394,13 @@ export default function GateScanner() {
           <small>{gate.sessionName}</small>
         </span>
         {queued > 0 && <span className="gate-queued">오프라인 대기 {queued}건</span>}
+        {/* Only once it is worth an operator's attention: a date months away is noise. */}
+        {daysLeft(gate) !== null && daysLeft(gate)! <= RENEW_WITHIN_DAYS && (
+          <button className="gate-queued gate-expiry" onClick={() => renew(false)}
+            title="유효기간을 연장합니다">
+            유효기간 {daysLeft(gate)! > 0 ? `${daysLeft(gate)}일 남음` : '지남'} · 갱신
+          </button>
+        )}
         <span className={`gate-live${scanning ? '' : ' gate-live-off'}`}>
           {scanning ? '읽는 중' : '멈춤'}
         </span>

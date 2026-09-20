@@ -31,6 +31,7 @@ public class GateRepository {
         g.setupCodeCipher = rs.getString("setup_code_cipher");
         g.setupExpiresAt = rs.getTimestamp("setup_expires_at");
         g.setupAttempts = rs.getInt("setup_attempts");
+        g.tokenExpiresAt = rs.getTimestamp("token_expires_at");
         return g;
     };
 
@@ -49,9 +50,10 @@ public class GateRepository {
     }
 
     public void insert(String id, long sessionId, String label, String zone, String direction,
-            String tokenHmac, String tokenCipher) {
-        jdbc.update("INSERT INTO gate (id, session_id, label, zone, direction, token_hmac, token_cipher) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?)", id, sessionId, label, zone, direction, tokenHmac, tokenCipher);
+            String tokenHmac, String tokenCipher, java.sql.Timestamp tokenExpiresAt) {
+        jdbc.update("INSERT INTO gate (id, session_id, label, zone, direction, token_hmac, token_cipher, "
+            + "token_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, sessionId, label, zone, direction, tokenHmac, tokenCipher, tokenExpiresAt);
     }
 
     /** Claims the gate for one terminal. */
@@ -65,9 +67,19 @@ public class GateRepository {
         jdbc.update("UPDATE gate SET bound_device = NULL, bound_at = NULL WHERE id = ?", id);
     }
 
-    public void rotateToken(String id, String tokenHmac, String tokenCipher) {
-        jdbc.update("UPDATE gate SET token_hmac = ?, token_cipher = ?, bound_device = NULL, bound_at = NULL "
-            + "WHERE id = ?", tokenHmac, tokenCipher, id);
+    public void rotateToken(String id, String tokenHmac, String tokenCipher,
+            java.sql.Timestamp tokenExpiresAt) {
+        jdbc.update("UPDATE gate SET token_hmac = ?, token_cipher = ?, token_expires_at = ?, "
+            + "bound_device = NULL, bound_at = NULL WHERE id = ?",
+            tokenHmac, tokenCipher, tokenExpiresAt, id);
+    }
+
+    /**
+     * Pushes the end date out without touching the token, so the tablet that is holding
+     * the gate carries on: renewing is a decision about time, not about credentials.
+     */
+    public void renewToken(String id, java.sql.Timestamp tokenExpiresAt) {
+        jdbc.update("UPDATE gate SET token_expires_at = ? WHERE id = ?", tokenExpiresAt, id);
     }
 
     public java.util.Optional<Gate> findBySetupToken(String setupTokenHmac) {

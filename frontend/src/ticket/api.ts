@@ -173,6 +173,16 @@ export async function gateInfo(gateId: string, gateToken: string) {
   return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}`, { headers: gateHeaders(gateToken) }));
 }
 
+/**
+ * The terminal renewing its own validity. Only a terminal that is still valid and still
+ * holds the gate can ask, so this is a tablet that has been working all week saying so.
+ */
+export async function gateRenew(gateId: string, gateToken: string) {
+  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/renew`, {
+    method: 'POST', headers: gateHeaders(gateToken, true),
+  }));
+}
+
 export async function gateScan(gateId: string, gateToken: string, code: string) {
   const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/scan`, {
     method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ code }),

@@ -64,6 +64,16 @@ interface GateRow {
   gateId: string; label: string | null; zone: string | null; direction: string;
   boundDevice: string | null; lastSeenAt: string | null;
   setupUrl: string | null; setupCode: string | null; setupExpiresAt: string | null;
+  /** Null for a terminal registered before tokens had an end date. */
+  tokenExpiresAt: string | null; tokenExpired: boolean;
+}
+
+/** How a terminal's remaining time reads: the number of days, and how alarming it is. */
+function validity(gate: GateRow): { label: string; tone: string } {
+  if (gate.tokenExpiresAt === null) return { label: '유효기간 없음', tone: 'wait' };
+  const days = Math.ceil((new Date(gate.tokenExpiresAt).getTime() - Date.now()) / 86400000);
+  if (gate.tokenExpired || days <= 0) return { label: '유효기간 지남', tone: 'off' };
+  return { label: `유효기간 ${days}일 남음`, tone: days <= 3 ? 'warn' : 'ok' };
 }
 
 type Tab = 'issue' | 'tickets' | 'gates' | 'movements' | 'settings';
@@ -306,6 +316,14 @@ export default function TicketAdmin() {
   const rotateGateToken = (gateId: string) => act(async () => {
     await read(await mutate(`/api/admin/gates/${gateId}/token`, { method: 'POST' }));
     setNotice(`${gateId} 토큰을 새로 발급했어요. 단말은 설정 링크로 다시 연결해야 합니다.`);
+    await loadSession(selected!);
+  });
+
+  /** Moves a terminal's end date without touching its token, so the tablet carries on. */
+  const renewGate = (gateId: string) => act(async () => {
+    const result = await read(await mutate(`/api/admin/gates/${gateId}/renew`, { method: 'POST' }));
+    setNotice(`${gateId}의 유효기간을 ${new Date(result.tokenExpiresAt).toLocaleDateString('ko-KR')}까지 `
+      + '연장했어요. 단말은 그대로 쓰면 됩니다.');
     await loadSession(selected!);
   });
 
@@ -688,6 +706,11 @@ export default function TicketAdmin() {
                   <code title={gate.setupUrl ?? ''}>{gate.setupUrl ?? '(설정 링크 없음 — 재발급이 필요합니다)'}</code>
                   {gate.setupCode && <span className="gate-code">인증번호 {gate.setupCode}</span>}
                   <div className="gate-meta">
+                    <span className={`pill pill-${validity(gate).tone}`}>{validity(gate).label}</span>
+                    {gate.tokenExpiresAt && (
+                      <span> {new Date(gate.tokenExpiresAt).toLocaleDateString('ko-KR')}까지</span>
+                    )}
+                    {' · '}
                     {gate.boundDevice
                       ? `단말 ${gate.boundDevice}… 연결됨${gate.lastSeenAt ? ` · 최근 ${new Date(gate.lastSeenAt).toLocaleTimeString('ko-KR')}` : ''}`
                       : '연결된 단말 없음'}
@@ -698,6 +721,7 @@ export default function TicketAdmin() {
                     링크 복사
                   </button>
                   <button className="btn-tiny" onClick={() => reopenSetup(gate.gateId)}>설정 링크 재발급</button>
+                  <button className="btn-tiny" onClick={() => renewGate(gate.gateId)}>유효기간 갱신</button>
                   <button className="btn-tiny" onClick={() => releaseGate(gate.gateId)}
                     disabled={!gate.boundDevice}>연결 해제</button>
                   <button className="btn-tiny" onClick={() => rotateGateToken(gate.gateId)}>토큰 폐기</button>
@@ -709,6 +733,8 @@ export default function TicketAdmin() {
               태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 — 긴 토큰을 직접 입력할 일은 없어요.
               게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
               장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.
+              단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 —
+              현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다.
             </p>
           </div>
         </div>

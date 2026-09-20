@@ -1,6 +1,7 @@
 package com.plink.ticket.controller;
 
 import com.plink.ticket.model.EventSession;
+import com.plink.ticket.model.Gate;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.TicketField;
@@ -540,7 +541,7 @@ public class TicketAdminController {
         // A terminal without a place cannot answer "how busy is the main hall?".
         String zone = required(body.get("zone"), "게이트가 있는 장소를 입력해 주세요.");
         gates.insert(gateId, id, body.get("label"), zone, direction,
-            gateAuth.hash(token), cipher.seal(token));
+            gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
 
         // The terminal is enrolled from a link and a code; nobody types the token.
         Map<String, Object> result = new LinkedHashMap<>(gateSetup.open(gateId));
@@ -560,8 +561,24 @@ public class TicketAdminController {
         gates.findById(gateId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
         String token = Secrets.randomToken(24);
-        gates.rotateToken(gateId, gateAuth.hash(token), cipher.seal(token));
+        gates.rotateToken(gateId, gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
         return Map.of("gateId", gateId, "gateToken", token);
+    }
+
+    /**
+     * Pushes a terminal's end date out without touching its token.
+     *
+     * <p>The tablet on the stand keeps working through this: the operator is answering
+     * "is this terminal still ours?", which is a question about time rather than about
+     * credentials. Rotating the token is the answer to the other question.
+     */
+    @PostMapping("/gates/{gateId}/renew")
+    public Map<String, Object> renewGate(@PathVariable String gateId) {
+        Gate gate = gates.findById(gateId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
+        java.sql.Timestamp until = gateAuth.tokenExpiry();
+        gates.renewToken(gate.id, until);
+        return Map.of("gateId", gate.id, "tokenExpiresAt", until.toInstant().toString());
     }
 
     /** Releases the terminal holding this gate, so another tablet can take it. */
@@ -590,6 +607,9 @@ public class TicketAdminController {
             row.put("boundDevice", gate.boundDevice == null ? null
                 : gate.boundDevice.substring(0, Math.min(8, gate.boundDevice.length())));
             row.put("lastSeenAt", gate.lastSeenAt == null ? null : gate.lastSeenAt.toInstant().toString());
+            row.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
+                : gate.tokenExpiresAt.toInstant().toString());
+            row.put("tokenExpired", gate.tokenExpired());
             result.add(row);
         });
         return result;

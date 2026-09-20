@@ -83,7 +83,7 @@ class FaceTrackTest {
 
     private Gate gate(long sessionId, String direction) {
         String id = "g" + Secrets.randomAlnum(10);
-        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null);
+        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null, null);
         return gates.findById(id).orElseThrow();
     }
 

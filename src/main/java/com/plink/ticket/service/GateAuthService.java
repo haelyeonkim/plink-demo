@@ -28,6 +28,18 @@ public class GateAuthService {
         return Secrets.hmacHex(properties.getTokenSecret(), "gate-token|" + token);
     }
 
+    /**
+     * When a token handed out now should stop working.
+     *
+     * <p>A terminal keeps its token for the run of an event, which is also how one walks
+     * out of a building inside a tablet nobody collected. An end date bounds that, and
+     * renewing moves it without disturbing the tablet that is working.
+     */
+    public java.sql.Timestamp tokenExpiry() {
+        return java.sql.Timestamp.from(
+            Instant.now().plus(Duration.ofDays(properties.getGateTokenDays())));
+    }
+
     /** A terminal that has gone quiet this long can be replaced by another. */
     static final Duration TAKEOVER_AFTER = Duration.ofMinutes(10);
 
@@ -48,6 +60,10 @@ public class GateAuthService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "등록되지 않은 단말이에요."));
         if (token == null || !Secrets.constantEquals(gate.tokenHmac, hash(token))) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "단말 인증에 실패했어요.");
+        }
+        if (gate.tokenExpired()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                "단말 유효기간이 지났어요. 관리 화면에서 유효기간을 갱신해 주세요.");
         }
         if (deviceId == null || deviceId.isBlank()) {
             return gate;

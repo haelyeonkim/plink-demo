@@ -156,7 +156,7 @@ class ConsoleOperationsTest {
         long sessionId = newSession();
         String gateId = "g" + Secrets.randomAlnum(8);
         String token = Secrets.randomToken(24);
-        gates.insert(gateId, sessionId, "정문", "A", "IN", gateAuth.hash(token), cipher.seal(token));
+        gates.insert(gateId, sessionId, "정문", "A", "IN", gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
 
         Gate stored = gates.findById(gateId).orElseThrow();
         assertNotEquals(token, stored.tokenCipher, "평문으로 보관하지 않습니다");
@@ -167,7 +167,7 @@ class ConsoleOperationsTest {
         long sessionId = newSession();
         String gateId = "g" + Secrets.randomAlnum(8);
         String token = Secrets.randomToken(24);
-        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token));
+        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
 
         assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id);
         // The same tablet keeps working; a second one is turned away.
@@ -185,15 +185,51 @@ class ConsoleOperationsTest {
         long sessionId = newSession();
         String gateId = "g" + Secrets.randomAlnum(8);
         String first = Secrets.randomToken(24);
-        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(first), cipher.seal(first));
+        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(first), cipher.seal(first), gateAuth.tokenExpiry());
         gateAuth.authenticate(gateId, first, "tablet-1");
 
         String second = Secrets.randomToken(24);
-        gates.rotateToken(gateId, gateAuth.hash(second), cipher.seal(second));
+        gates.rotateToken(gateId, gateAuth.hash(second), cipher.seal(second), gateAuth.tokenExpiry());
 
         assertThrows(ResponseStatusException.class, () -> gateAuth.authenticate(gateId, first, "tablet-1"),
             "이전 토큰은 더 이상 통하지 않습니다");
         assertEquals(gateId, gateAuth.authenticate(gateId, second, "tablet-2").id);
+    }
+
+    /**
+     * A terminal's token has an end date, and renewing it moves the date without
+     * disturbing the tablet: the token, and the device holding the gate, both stand.
+     */
+    @Test void aGateTokenExpiresAndTheConsoleCanRenewIt() {
+        long sessionId = newSession();
+        String gateId = "g" + Secrets.randomAlnum(8);
+        String token = Secrets.randomToken(24);
+        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token),
+            gateAuth.tokenExpiry());
+        gateAuth.authenticate(gateId, token, "tablet-1");
+
+        gates.renewToken(gateId, Timestamp.from(Instant.now().minus(1, ChronoUnit.MINUTES)));
+        ResponseStatusException lapsed = assertThrows(ResponseStatusException.class,
+            () -> gateAuth.authenticate(gateId, token, "tablet-1"));
+        assertEquals(HttpStatus.UNAUTHORIZED, lapsed.getStatusCode());
+        assertTrue(String.valueOf(lapsed.getReason()).contains("유효기간"), lapsed.getReason());
+
+        adminController.renewGate(gateId);
+        assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id,
+            "갱신은 토큰도 단말 연결도 건드리지 않습니다");
+        assertEquals("tablet-1", gates.findById(gateId).orElseThrow().boundDevice);
+    }
+
+    /** Terminals registered before tokens had an end date keep working until renewed. */
+    @Test void agateWithNoEndDateStillWorks() {
+        long sessionId = newSession();
+        String gateId = "g" + Secrets.randomAlnum(8);
+        String token = Secrets.randomToken(24);
+        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token), null);
+
+        assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id);
+        assertNotNull(adminController.renewGate(gateId).get("tokenExpiresAt"));
+        assertNotNull(gates.findById(gateId).orElseThrow().tokenExpiresAt);
     }
 
     @Test void aSeatOutsideTheCatalogueIsRefused() {

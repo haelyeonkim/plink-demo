@@ -73,7 +73,7 @@ class AdmissionLedgerTest {
 
         Gate gate(String direction) {
             String id = "g" + Secrets.randomAlnum(10);
-            gates.insert(id, sessionId, direction + " 게이트", "A", direction, gateAuth.hash("t-" + id), null);
+            gates.insert(id, sessionId, direction + " 게이트", "A", direction, gateAuth.hash("t-" + id), null, null);
             return gates.findById(id).orElseThrow();
         }
 
@@ -291,7 +291,7 @@ class AdmissionLedgerTest {
         Map<String, Object> issued = tickets.issue(sessionId, "nobody@example.com", "B-2", null);
         Ticket unbound = ticketRepository.findById(((Number) issued.get("ticketId")).longValue()).orElseThrow();
         String id = "g" + Secrets.randomAlnum(10);
-        gates.insert(id, sessionId, "IN", "A", "IN", gateAuth.hash("t"), null);
+        gates.insert(id, sessionId, "IN", "A", "IN", gateAuth.hash("t"), null, null);
         Gate gate = gates.findById(id).orElseThrow();
 
         Map<String, Object> grant = presentations.issue(unbound, "IN", true);

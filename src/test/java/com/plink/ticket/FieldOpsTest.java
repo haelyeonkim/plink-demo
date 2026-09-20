@@ -76,7 +76,7 @@ class FieldOpsTest {
 
     private Gate gate(long sessionId, String direction) {
         String id = "g" + Secrets.randomAlnum(10);
-        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null);
+        gates.insert(id, sessionId, direction, "A", direction, gateAuth.hash("t"), null, null);
         return gates.findById(id).orElseThrow();
     }
 
@@ -227,8 +227,8 @@ class FieldOpsTest {
         Ticket ticket = boundTicket(sessionId);
         String hall = "g" + Secrets.randomAlnum(8);
         String lobby = "g" + Secrets.randomAlnum(8);
-        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null);
-        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null, null);
+        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null, null);
 
         ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
         ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
@@ -253,8 +253,8 @@ class FieldOpsTest {
         Ticket ticket = boundTicket(sessionId);
         String hall = "g" + Secrets.randomAlnum(8);
         String lobby = "g" + Secrets.randomAlnum(8);
-        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null);
-        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null);
+        gates.insert(hall, sessionId, "메인홀 입구", "메인홀", "BIDIRECTIONAL", gateAuth.hash("t"), null, null);
+        gates.insert(lobby, sessionId, "로비", "로비", "BIDIRECTIONAL", gateAuth.hash("t"), null, null);
         ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
         ledger.append(ticket.id, sessionId, "IN", hall, "QR", "ADMITTED", null, null);
         ledger.append(ticket.id, sessionId, "IN", lobby, "QR", "ADMITTED", null, null);

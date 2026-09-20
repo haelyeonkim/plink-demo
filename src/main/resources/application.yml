@@ -72,6 +72,9 @@ plink:
     # OFF | ADVISE | ENFORCE, applied to holder routes only.
     mobile-only: ${TICKET_MOBILE_ONLY:ADVISE}
     claim-ttl-hours: ${TICKET_CLAIM_TTL_HOURS:72}
+    # How long a gate terminal's token is good for, and what renewing it grants. A
+    # terminal renews itself while it is still valid; once past this, the console must.
+    gate-token-days: ${TICKET_GATE_TOKEN_DAYS:30}
     presentation-ttl-seconds: ${TICKET_PRESENTATION_TTL_SECONDS:90}
     code-period-seconds: ${TICKET_CODE_PERIOD_SECONDS:10}
     rebind-max-per-ticket: ${TICKET_REBIND_MAX:2}

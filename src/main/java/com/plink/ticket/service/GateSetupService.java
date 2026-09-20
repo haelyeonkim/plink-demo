@@ -119,7 +119,8 @@ public class GateSetupService {
             // The stored token cannot be read back, so mint one rather than stranding the
             // terminal; the previous tablet would have to be set up again anyway.
             terminalToken = Secrets.randomToken(24);
-            gates.rotateToken(gate.id, auth.hash(terminalToken), cipher.seal(terminalToken));
+            gates.rotateToken(gate.id, auth.hash(terminalToken), cipher.seal(terminalToken),
+                auth.tokenExpiry());
         }
         gates.bindDevice(gate.id, deviceId);
 
