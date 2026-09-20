@@ -26,6 +26,21 @@ function ticketRequiresNoOtp(ticket: TicketView | null): boolean {
   return ticket != null && ticket.event.claimRequiresOtp === false;
 }
 
+/**
+ * The countdown ring around the code, as a path.
+ *
+ * <p>A rounded rectangle written out rather than a {@code <rect>}: {@code pathLength}
+ * is only dependably honoured on a path, and without it Safari read the dash pattern in
+ * user units and drew a dotted frame instead of a draining one.
+ */
+const RING = (() => {
+  const inset = 1.6, radius = 9, far = 100 - inset;
+  return `M${inset + radius} ${inset}H${far - radius}A${radius} ${radius} 0 0 1 ${far} ${inset + radius}`
+    + `V${far - radius}A${radius} ${radius} 0 0 1 ${far - radius} ${far}`
+    + `H${inset + radius}A${radius} ${radius} 0 0 1 ${inset} ${far - radius}`
+    + `V${inset + radius}A${radius} ${radius} 0 0 1 ${inset + radius} ${inset}Z`;
+})();
+
 /** A beat, so a finished seal is seen closing rather than only reported. */
 function beat(ms: number): Promise<void> {
   return new Promise(resolve => { window.setTimeout(resolve, reducedMotion() ? 0 : ms); });
@@ -519,12 +534,11 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
             sweep per rotation, keyed so each new code starts its own. */}
         {!movement && cycle && (
           <svg className="code-life" viewBox="0 0 100 100" aria-hidden="true">
-            <rect className="life-track" x="1.4" y="1.4" width="97.2" height="97.2" rx="9" pathLength="1" />
-            <rect key={cycle.index} className="life-run" x="1.4" y="1.4" width="97.2" height="97.2"
-              rx="9" pathLength="1" style={{
-                animationDuration: `${grant.periodSeconds}s`,
-                animationDelay: `-${cycle.elapsed}s`,
-              }} />
+            <path className="life-track" d={RING} pathLength="1" />
+            <path key={cycle.index} className="life-run" d={RING} pathLength="1" style={{
+              animationDuration: `${grant.periodSeconds}s`,
+              animationDelay: `-${cycle.elapsed}s`,
+            }} />
           </svg>
         )}
       </div>
