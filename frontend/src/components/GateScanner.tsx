@@ -300,7 +300,39 @@ export default function GateScanner() {
 
   return (
     <section className={`gate-screen ${flash ? `gate-${flash.tone}` : ''}`}>
-      <header className="gate-head">
+      <div className={`gate-result${outcome ? ` verdict-${outcome.tone}` : ''}`}
+        role="status" aria-live="polite">
+        {outcome ? (
+          <>
+            <span className="result-dot" aria-hidden="true" />
+            <strong>{outcome.headline}</strong>
+            <span className="result-detail">{outcome.detail}</span>
+            <code className="gate-ledger-line">{outcome.ledger}</code>
+          </>
+        ) : (
+          <>
+            <span className="result-dot result-dot-idle" aria-hidden="true" />
+            <span className="result-detail">입장권을 비춰 주세요</span>
+          </>
+        )}
+        {handled > 0 && <span className="result-count">이 단말 {handled}건</span>}
+      </div>
+
+      <div className="gate-viewport">
+        <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
+        <canvas ref={frame} hidden />
+        {/* Corners, not a box: the same camera reads a code and a face, so a guide
+            shaped like either one would tell the visitor the wrong thing. */}
+        <div className="gate-frame" aria-hidden="true" />
+        <div className="gate-vignette" aria-hidden="true" />
+        {/* A terminal that looks asleep between visitors reads as a terminal that is not
+            checking. The sweep runs only while it really is reading. */}
+        {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
+        {flash && <GateVerdict key={flash.at} verdict={flash} />}
+        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
+      </div>
+
+      <footer className="gate-controls">
         <span className={`gate-direction gate-${gate.direction.toLowerCase()}`}>
           {gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
         </span>
@@ -324,39 +356,7 @@ export default function GateScanner() {
         <button className="btn-ghost" onClick={flipCamera} title="앞뒤 카메라 전환">
           {facing === 'user' ? '전면' : '후면'} 카메라
         </button>
-      </header>
-
-      <div className="gate-viewport">
-        <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
-        <canvas ref={frame} hidden />
-        {/* Corners, not a box: the same camera reads a code and a face, so a guide
-            shaped like either one would tell the visitor the wrong thing. */}
-        <div className="gate-frame" aria-hidden="true" />
-        <div className="gate-vignette" aria-hidden="true" />
-        {/* A terminal that looks asleep between visitors reads as a terminal that is not
-            checking. The sweep runs only while it really is reading. */}
-        {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
-        {flash && <GateVerdict key={flash.at} verdict={flash} />}
-        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
-      </div>
-
-      <div className={`gate-result${outcome ? ` verdict-${outcome.tone}` : ''}`}
-        role="status" aria-live="polite">
-        {outcome ? (
-          <>
-            <span className="result-dot" aria-hidden="true" />
-            <strong>{outcome.headline}</strong>
-            <span className="result-detail">{outcome.detail}</span>
-            <code className="gate-ledger-line">{outcome.ledger}</code>
-          </>
-        ) : (
-          <>
-            <span className="result-dot result-dot-idle" aria-hidden="true" />
-            <span className="result-detail">입장권을 비춰 주세요</span>
-          </>
-        )}
-        {handled > 0 && <span className="result-count">이 단말 {handled}건</span>}
-      </div>
+      </footer>
       {error && <p className="gate-error" role="alert">{error}</p>}
     </section>
   );

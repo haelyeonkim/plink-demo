@@ -1171,7 +1171,8 @@ body:has(.gate-screen) .header-plain { display: none; }
 .gate-repeat { background: #241803; }
 .gate-deny { background: #290c0b; }
 
-.gate-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 2px; }
+/* Under the picture, where the hands holding the tablet already are. */
+.gate-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 2px 2px 0; }
 .gate-direction {
   font-weight: 800; font-size: 12px; letter-spacing: 1.5px; padding: 5px 12px;
   border-radius: 8px; border: 1px solid currentColor;
@@ -1243,7 +1244,8 @@ body:has(.gate-screen) .header-plain { display: none; }
 .setup-card b { color: rgba(255, 255, 255, 0.85); }
 .setup-card .gate-error { margin-bottom: 16px; }
 
-/* The standing line: what the last read was, still there when the verdict has gone. */
+/* Above the picture, at the operator's eye line: what the last read was, still there
+   when the verdict has gone. */
 .gate-result {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.09);
@@ -1268,7 +1270,7 @@ body:has(.gate-screen) .header-plain { display: none; }
 /* A phone held by a staff member: the row has to stay one row, so the parts that only
    confirm what the operator already knows step aside. */
 @media (max-width: 560px) {
-  .gate-head { gap: 6px; }
+  .gate-controls { gap: 6px; }
   .gate-label small, .gate-live { display: none; }
   .btn-ghost { padding: 5px 10px; font-size: 11px; }
   .gate-direction { padding: 5px 9px; letter-spacing: 1px; }
