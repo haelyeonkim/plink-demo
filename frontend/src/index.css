@@ -1231,6 +1231,19 @@ body:has(.gate-screen) .header-plain { display: none; }
   position: absolute; inset: auto 0 20px; z-index: 2; text-align: center;
   color: rgba(255, 255, 255, 0.72); font-size: 13px;
 }
+/* Glass, over the picture: near enough to the lens to read as belonging to it, and
+   above the verdict so a terminal facing the wrong way can still be turned round. */
+.gate-flip {
+  position: absolute; top: 14px; right: 14px; z-index: 3;
+  width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
+  cursor: pointer; color: #fff; background: rgba(8, 12, 24, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s, transform 0.15s;
+}
+.gate-flip:hover { background: rgba(8, 12, 24, 0.7); }
+.gate-flip:active { transform: scale(0.92); }
+.gate-flip svg { width: 26px; height: 26px; display: block; }
 
 /* Before a terminal has been handed its gate. */
 .gate-setup { align-items: center; justify-content: center; }

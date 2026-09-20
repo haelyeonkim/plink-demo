@@ -330,6 +330,21 @@ export default function GateScanner() {
         {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
         {flash && <GateVerdict key={flash.at} verdict={flash} />}
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
+        {/* On the picture rather than in the bar below: it is the picture it changes. */}
+        <button className="gate-flip" onClick={flipCamera}
+          title={`${facing === 'user' ? '전면' : '후면'} 카메라 · 앞뒤 전환`}
+          aria-label={`지금 ${facing === 'user' ? '전면' : '후면'} 카메라입니다. 앞뒤 전환`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2.8 8.8a2 2 0 0 1 2-2H7l1.1-1.9h7.8L17 6.8h2.2a2 2 0 0 1 2 2v8.4a2 2 0 0 1-2 2H4.8a2 2 0 0 1-2-2z" />
+            {/* A broken ring with a head at each end: the universal swap, big enough to
+                read at arm's length. */}
+            <path d="M8.4 13.1a3.6 3.6 0 0 1 7.2 0" />
+            <path d="M14 11.8l1.6 1.6 1.6-1.6" />
+            <path d="M15.6 13.7a3.6 3.6 0 0 1-7.2 0" />
+            <path d="M10 15l-1.6-1.6L6.8 15" />
+          </svg>
+        </button>
       </div>
 
       <footer className="gate-controls">
@@ -352,9 +367,6 @@ export default function GateScanner() {
           return !value;
         })}>
           얼굴 인식 {faceMode ? '끄기' : '켜기'}
-        </button>
-        <button className="btn-ghost" onClick={flipCamera} title="앞뒤 카메라 전환">
-          {facing === 'user' ? '전면' : '후면'} 카메라
         </button>
       </footer>
       {error && <p className="gate-error" role="alert">{error}</p>}
