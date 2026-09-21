@@ -27,9 +27,17 @@ function daysLeft(gate: GateInfo | null): number | null {
 /** Close enough to the end that the terminal renews itself rather than waiting. */
 const RENEW_WITHIN_DAYS = 5;
 
-/** How long the verdict holds the screen. A refusal stays longer: it has to be read. */
+/**
+ * How long the verdict holds the screen, and so how long the terminal rests.
+ *
+ * <p>The two are the same number on purpose: while an answer is up, the terminal is not
+ * reading. Somebody who has just been let in is still in the picture while they pick
+ * their bag up and walk through, and without the pause the face lane would read them
+ * again a second later. A refusal holds longest, because it is the one that has to be
+ * read before the next person steps up.
+ */
 function hold(tone: SealTone): number {
-  return tone === 'admit' || tone === 'exit' ? 2400 : 4200;
+  return tone === 'admit' || tone === 'exit' ? 3500 : 4200;
 }
 
 const HEADLINES: Record<string, { tone: SealTone; headline: string }> = {
@@ -72,6 +80,8 @@ export default function GateScanner() {
   const [facing, setFacing] = useState<'user' | 'environment'>(
     () => (localStorage.getItem(CAMERA) === 'environment' ? 'environment' : 'user'));
 
+  // Until when the terminal is deliberately not reading, having just decided something.
+  const restUntil = useRef(0);
   const [outcome, setOutcome] = useState<Verdict | null>(null);
   // The standing line keeps the last result; the flash owns the screen for a moment and
   // then gets out of the way, so the camera is never buried under an old verdict.
@@ -139,9 +149,17 @@ export default function GateScanner() {
   // a phone or simply walked past the camera.
   const announce = useCallback((verdict: Omit<Verdict, 'at'>) => {
     const settled = { ...verdict, at: Date.now() };
-    setOutcome(settled);
-    setFlash(settled);
+    restUntil.current = settled.at + hold(settled.tone);
     setHandled(count => count + 1);
+    setOutcome(current => {
+      // The same answer about the same person, moments apart: somebody has stayed in
+      // front of the camera. The line below keeps the newest time, but taking the whole
+      // screen again would say something happened when nothing did.
+      const repeat = current !== null && current.headline === settled.headline
+        && current.detail === settled.detail && settled.at - current.at < 8000;
+      if (!repeat) setFlash(settled);
+      return settled;
+    });
   }, []);
 
   useEffect(() => {
@@ -157,7 +175,7 @@ export default function GateScanner() {
   }, [gate]);
 
   const submit = useCallback(async (code: string) => {
-    if (inFlight.current) return;
+    if (inFlight.current || Date.now() < restUntil.current) return;
     inFlight.current = true;
     try {
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
@@ -199,7 +217,8 @@ export default function GateScanner() {
     if (!gate || !scanning || !faceMode) return;
     let stopped = false;
     const timer = window.setInterval(async () => {
-      if (stopped || inFlight.current || !video.current || video.current.videoWidth === 0) return;
+      if (stopped || inFlight.current || Date.now() < restUntil.current) return;
+      if (!video.current || video.current.videoWidth === 0) return;
       inFlight.current = true;
       try {
         const { challenge } = await gateFaceChallenge(gateId.trim(), gateToken.trim());
