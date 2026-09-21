@@ -1202,16 +1202,28 @@ a { color: inherit; text-decoration: none; }
    that the camera - the only thing on it that matters - is the brightest thing in the
    room. dvh, so a collapsing mobile toolbar cannot push the result line off the bottom.
    The chrome stays quiet; the verdict is allowed to shout. ---- */
-body:has(.gate-screen) { overflow: hidden; background: #070b16; }
+body:has(.gate-screen) { overflow: hidden; background: #070b16; transition: background 0.35s ease; }
+/* The room's light still changes with the verdict even though the terminal itself is
+   only as wide as it needs to be. */
+body:has(.gate-admit) { background: #04201a; }
+body:has(.gate-exit) { background: #061a33; }
+body:has(.gate-repeat) { background: #241803; }
+body:has(.gate-deny) { background: #290c0b; }
 /* A terminal is a kiosk: the site's own mark is not what the staff or the visitor in
    front of it need, and the camera wants the height. */
 body:has(.gate-screen) .header-plain { display: none; }
+/* A terminal is looked at from a metre away, not read across a desk: past about a
+   thousand pixels the picture stops gaining anything and the chrome starts drifting
+   apart. So the screen is capped and centred, and the colour of the verdict is carried
+   by the page behind it. */
 .gate-screen {
   display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px;
   height: 100dvh; overflow: hidden; color: #fff;
-  background: #070b16; transition: background 0.35s ease;
+  width: 100%; max-width: 1080px; margin: 0 auto;
+  background: transparent; transition: background 0.35s ease;
 }
-/* The room's light changes with the verdict, deeply rather than brightly. */
+/* The panel takes the same colour as the page behind it, which keeps the verdict
+   readable where :has() is not understood. */
 .gate-admit { background: #04201a; }
 .gate-exit { background: #061a33; }
 .gate-repeat { background: #241803; }
