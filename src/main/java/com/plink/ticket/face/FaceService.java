@@ -179,12 +179,23 @@ public class FaceService {
      */
     public Match identify(EventSession session, List<byte[]> frames, String challenge, String gateId) {
         TicketProperties.Face config = properties.getFace();
+        // Is anybody there at all, before judging whether they are real. A gate spends
+        // most of its day looking at an empty lane, and an empty lane scores badly on
+        // liveness - which is how a terminal with nobody in front of it ended up
+        // flashing a refusal every two seconds.
+        FaceVector probe;
+        try {
+            probe = embedder.embed(frames);
+        } catch (ResponseStatusException nobody) {
+            String reason = nobody.getReason();
+            faces.recordAttempt(session.id, null, gateId, "GATE", "NO_FACE", null, null, null, reason);
+            throw absent(reason == null ? "얼굴이 보이지 않아요." : reason);
+        }
         double liveness = embedder.liveness(frames, challenge);
         if (liveness < config.getLivenessThreshold()) {
             faces.recordAttempt(session.id, null, gateId, "GATE", "LIVENESS_FAILED", null, null, liveness, null);
             throw refuse("실제 얼굴인지 확인하지 못했어요. 안내 데스크에서 도움을 받아 주세요.");
         }
-        FaceVector probe = embedder.embed(frames);
 
         long bestTicket = 0;
         double best = -1, second = -1;
@@ -200,7 +211,9 @@ public class FaceService {
         }
         if (bestTicket == 0 || best < config.getMatchThreshold()) {
             faces.recordAttempt(session.id, null, gateId, "GATE", "NO_MATCH", best, second, liveness, null);
-            throw refuse("등록된 얼굴을 찾지 못했어요. QR로 입장하거나 안내 데스크로 와 주세요.");
+            // Somebody the event does not know is not somebody the event is refusing:
+            // most people at a gate are walking past it with a QR in their pocket.
+            throw absent("등록된 얼굴을 찾지 못했어요. QR로 입장하거나 안내 데스크로 와 주세요.");
         }
         if (second >= 0 && best - second < config.getMarginThreshold()) {
             faces.recordAttempt(session.id, bestTicket, gateId, "GATE", "AMBIGUOUS", best, second, liveness,
@@ -222,7 +235,17 @@ public class FaceService {
         return faces.purgeExpired(Timestamp.from(Instant.now()));
     }
 
+    /** A verdict about somebody: the terminal shows this. */
     private ResponseStatusException refuse(String message) {
         return new ResponseStatusException(HttpStatus.FORBIDDEN, message);
+    }
+
+    /**
+     * Nothing to act on - an empty lane, or a face this event has never seen. Separated
+     * from a refusal by its status so a terminal can stay quiet without reading Korean
+     * prose to decide.
+     */
+    private ResponseStatusException absent(String message) {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, message);
     }
 }

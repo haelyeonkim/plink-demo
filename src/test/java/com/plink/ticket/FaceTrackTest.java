@@ -165,6 +165,26 @@ class FaceTrackTest {
         assertEquals(Boolean.TRUE, result.get("inside"));
     }
 
+    /**
+     * A gate looks at an empty lane most of the day. Nothing in front of the camera is
+     * not a refusal, and it must not reach the terminal as one: the screen would flash
+     * red at nobody every two seconds.
+     */
+    @Test void anEmptyLaneIsNotARefusal() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "holder@example.com");
+        faces.consent(ticket, "holder@example.com", true);
+        faces.enrol(ticket, capture("theta"));
+        EventSession session = tickets.requireSession(sessionId);
+
+        ResponseStatusException nobody = assertThrows(ResponseStatusException.class,
+            () -> faces.identify(session, List.of(new byte[] { 1, 2, 3 }), null, "g1"));
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, nobody.getStatusCode(),
+            "사람이 없는 것은 거부가 아닙니다");
+        assertTrue(faceRepository.recentAttempts(sessionId, 5).stream()
+            .anyMatch(row -> "NO_FACE".equals(row.get("result"))), "무엇을 봤는지는 남습니다");
+    }
+
     @Test void anUnknownFaceIsRefused() {
         long sessionId = newSession();
         Ticket ticket = boundTicket(sessionId, "holder@example.com");
@@ -175,6 +195,8 @@ class FaceTrackTest {
         ResponseStatusException refused = assertThrows(ResponseStatusException.class,
             () -> faces.identify(session, capture("stranger"), null, "g1"));
         assertTrue(refused.getReason().contains("등록된 얼굴을 찾지 못했어요"), refused.getReason());
+        // A stranger walking past with a QR in their pocket is not being refused either.
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, refused.getStatusCode());
     }
 
     @Test void reentryCanBeRestrictedToFace() {

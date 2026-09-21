@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { gateFaceChallenge, gateFaceScan, gateInfo, gateRenew, gateScan, gateSync } from '../ticket/api';
+import {
+  ApiError, gateFaceChallenge, gateFaceScan, gateInfo, gateRenew, gateScan, gateSync,
+} from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import GateVerdict, { type Verdict } from './GateVerdict';
 import type { SealTone } from './SealMark';
@@ -212,18 +214,26 @@ export default function GateScanner() {
         });
         faceFailures.current = 0;
       } catch (err) {
+        const status = err instanceof ApiError ? err.status : 0;
         const message = err instanceof Error ? err.message : '';
-        // "no match" is the normal state between visitors, not something to flash.
-        if (message && !message.includes('찾지 못했')) {
-          faceFailures.current += 1;
+        // An empty lane, or somebody this event has never seen: the camera looks at
+        // that all day and it is not a verdict about anybody. The screen stays as it is.
+        if (status === 404) { faceFailures.current = 0; return; }
+        if (status === 403) {
+          // A face that was seen and refused - a photograph held up, or two holders too
+          // alike to tell apart. That one the operator has to see.
+          faceFailures.current = 0;
           announce({ tone: 'deny', headline: '거부', detail: message, ledger: ledgerLine('거부됨') });
-          // A face service that is down would otherwise deny every two seconds and bury
-          // the QR lane in red. Three in a row is enough to call it out and step back.
-          if (faceFailures.current >= 3) {
-            setFaceMode(false);
-            localStorage.setItem(FACE_MODE, 'off');
-            setError('얼굴 인식을 사용할 수 없어 껐어요. QR은 그대로 동작합니다.');
-          }
+          return;
+        }
+        // Anything else is the service rather than the visitor. A face service that is
+        // down would otherwise bury the QR lane in red, so it is counted quietly and
+        // called out once.
+        faceFailures.current += 1;
+        if (faceFailures.current >= 3) {
+          setFaceMode(false);
+          localStorage.setItem(FACE_MODE, 'off');
+          setError('얼굴 인식을 사용할 수 없어 껐어요. QR은 그대로 동작합니다.');
         }
       } finally {
         window.setTimeout(() => { inFlight.current = false; }, 1200);
