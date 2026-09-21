@@ -12,7 +12,7 @@ import Crowding from './Crowding';
 import { openLive } from '../ticket/live';
 import ScanFlash, { type Movement } from './ScanFlash';
 import { reducedMotion } from '../motion';
-import CeremonySeal, { type Ceremony } from './CeremonySeal';
+import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
 
 type Direction = 'IN' | 'OUT';
 
@@ -45,6 +45,16 @@ const RING = (() => {
 function beat(ms: number): Promise<void> {
   return new Promise(resolve => { window.setTimeout(resolve, reducedMotion() ? 0 : ms); });
 }
+
+/**
+ * How long each step of the ceremony is held on screen.
+ *
+ * <p>The three steps are real work, but on a fast connection all three land inside a
+ * blink and the holder sees a flicker where they were meant to read what their phone
+ * was doing. This is not reduced-motion territory: it is legibility, so it holds even
+ * for somebody who has asked for less movement.
+ */
+const STEP_MS = 800;
 
 function timeText(value: string): string {
   return new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -132,17 +142,34 @@ export default function TicketPage() {
     };
   }, [reload]);
 
-  /** Runs a ceremony with the seal on screen, and leaves its verdict up for a moment. */
+  /**
+   * Runs a ceremony with the seal on screen, and leaves its verdict up for a moment.
+   *
+   * <p>Steps are queued rather than shown as they arrive: each one waits for the one
+   * before it to have been on screen long enough to read, so the narration keeps its
+   * order and its pace whatever the network does.
+   */
   const sealed = useCallback(async function <T>(
     kind: Ceremony['kind'], run: (onStage: (stage: CeremonyStage) => void) => Promise<T>,
   ): Promise<T> {
-    setCeremony({ kind, state: 'preparing' });
+    let queue = Promise.resolve();
+    const show = (state: SealState) => {
+      queue = queue.then(() => {
+        setCeremony({ kind, state });
+        return new Promise<void>(resolve => { window.setTimeout(resolve, STEP_MS); });
+      });
+    };
+    show('preparing');
     try {
-      const result = await run(state => setCeremony({ kind, state }));
-      setCeremony({ kind, state: 'done' });
+      const result = await run(state => show(state));
+      show('done');
+      // The steps finish playing before the caller moves on, so a fast ceremony still
+      // reads as three things happening rather than one flash.
+      await queue;
       return result;
     } catch (failure) {
-      setCeremony({ kind, state: 'failed' });
+      queue = queue.then(() => { setCeremony({ kind, state: 'failed' }); });
+      await queue;
       throw failure;
     }
   }, []);
@@ -192,7 +219,7 @@ export default function TicketPage() {
     if (result.mode === 'authenticate' && result.intent === 'PRESENT') {
       // The seal closes, and only then does the code appear - the order the holder is
       // being told the story in.
-      await beat(900);
+      await beat(600);
       setGrant(result.grant);
       return;
     }
