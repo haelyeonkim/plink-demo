@@ -319,11 +319,18 @@ export default function TicketAdmin() {
     await loadSession(selected!);
   });
 
-  /** Moves a terminal's end date without touching its token, so the tablet carries on. */
-  const renewGate = (gateId: string) => act(async () => {
-    const result = await read(await mutate(`/api/admin/gates/${gateId}/renew`, { method: 'POST' }));
-    setNotice(`${gateId}의 유효기간을 ${new Date(result.tokenExpiresAt).toLocaleDateString('ko-KR')}까지 `
-      + '연장했어요. 단말은 그대로 쓰면 됩니다.');
+  /**
+   * Moves a terminal's end date without touching its token, so the tablet carries on.
+   * Zero days means no end date at all, for a terminal wired into a venue.
+   */
+  const renewGate = (gateId: string, days?: number) => act(async () => {
+    const result = await read(await mutate(
+      `/api/admin/gates/${gateId}/renew${days === undefined ? '' : `?days=${days}`}`,
+      { method: 'POST' }));
+    setNotice(result.tokenExpiresAt === null
+      ? `${gateId}의 유효기간을 없앴어요. 관리 화면에서 다시 기간을 줄 수 있습니다.`
+      : `${gateId}의 유효기간을 ${new Date(result.tokenExpiresAt).toLocaleDateString('ko-KR')}까지 `
+        + '연장했어요. 단말은 그대로 쓰면 됩니다.');
     await loadSession(selected!);
   });
 
@@ -722,6 +729,9 @@ export default function TicketAdmin() {
                   </button>
                   <button className="btn-tiny" onClick={() => reopenSetup(gate.gateId)}>설정 링크 재발급</button>
                   <button className="btn-tiny" onClick={() => renewGate(gate.gateId)}>유효기간 갱신</button>
+                  {gate.tokenExpiresAt !== null && (
+                    <button className="btn-tiny" onClick={() => renewGate(gate.gateId, 0)}>무제한</button>
+                  )}
                   <button className="btn-tiny" onClick={() => releaseGate(gate.gateId)}
                     disabled={!gate.boundDevice}>연결 해제</button>
                   <button className="btn-tiny" onClick={() => rotateGateToken(gate.gateId)}>토큰 폐기</button>
@@ -734,7 +744,8 @@ export default function TicketAdmin() {
               게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
               장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.
               단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 —
-              현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다.
+              현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다. 건물에 붙박이로 설치한
+              단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.
             </p>
           </div>
         </div>

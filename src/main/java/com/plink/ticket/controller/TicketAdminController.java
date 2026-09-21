@@ -571,14 +571,27 @@ public class TicketAdminController {
      * <p>The tablet on the stand keeps working through this: the operator is answering
      * "is this terminal still ours?", which is a question about time rather than about
      * credentials. Rotating the token is the answer to the other question.
+     *
+     * @param days how long to grant, or 0 for a terminal that should not expire at all -
+     *     a fixture wired into a venue, or a gate being lived with while it is tested.
+     *     Omitted means the configured window.
      */
     @PostMapping("/gates/{gateId}/renew")
-    public Map<String, Object> renewGate(@PathVariable String gateId) {
+    public Map<String, Object> renewGate(@PathVariable String gateId,
+            @RequestParam(required = false) Integer days) {
         Gate gate = gates.findById(gateId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
-        java.sql.Timestamp until = gateAuth.tokenExpiry();
+        if (days != null && days < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "유효기간은 0일 이상이어야 해요.");
+        }
+        java.sql.Timestamp until = days == null ? gateAuth.tokenExpiry()
+            : days == 0 ? null
+            : java.sql.Timestamp.from(java.time.Instant.now().plus(java.time.Duration.ofDays(days)));
         gates.renewToken(gate.id, until);
-        return Map.of("gateId", gate.id, "tokenExpiresAt", until.toInstant().toString());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("gateId", gate.id);
+        result.put("tokenExpiresAt", until == null ? null : until.toInstant().toString());
+        return result;
     }
 
     /** Releases the terminal holding this gate, so another tablet can take it. */

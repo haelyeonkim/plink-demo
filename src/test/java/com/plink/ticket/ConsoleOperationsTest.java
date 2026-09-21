@@ -214,10 +214,16 @@ class ConsoleOperationsTest {
         assertEquals(HttpStatus.UNAUTHORIZED, lapsed.getStatusCode());
         assertTrue(String.valueOf(lapsed.getReason()).contains("유효기간"), lapsed.getReason());
 
-        adminController.renewGate(gateId);
+        adminController.renewGate(gateId, null);
         assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id,
             "갱신은 토큰도 단말 연결도 건드리지 않습니다");
         assertEquals("tablet-1", gates.findById(gateId).orElseThrow().boundDevice);
+
+        // Zero days is a terminal that should not expire at all, and it is reversible.
+        assertNull(adminController.renewGate(gateId, 0).get("tokenExpiresAt"));
+        assertNull(gates.findById(gateId).orElseThrow().tokenExpiresAt);
+        assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id);
+        assertNotNull(adminController.renewGate(gateId, 7).get("tokenExpiresAt"));
     }
 
     /** Terminals registered before tokens had an end date keep working until renewed. */
@@ -228,7 +234,7 @@ class ConsoleOperationsTest {
         gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token), null);
 
         assertEquals(gateId, gateAuth.authenticate(gateId, token, "tablet-1").id);
-        assertNotNull(adminController.renewGate(gateId).get("tokenExpiresAt"));
+        assertNotNull(adminController.renewGate(gateId, null).get("tokenExpiresAt"));
         assertNotNull(gates.findById(gateId).orElseThrow().tokenExpiresAt);
     }
 
