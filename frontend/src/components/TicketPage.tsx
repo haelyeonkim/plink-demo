@@ -153,16 +153,22 @@ export default function TicketPage() {
     kind: Ceremony['kind'], run: (onStage: (stage: CeremonyStage) => void) => Promise<T>,
   ): Promise<T> {
     let queue = Promise.resolve();
-    const show = (state: SealState) => {
-      queue = queue.then(() => {
+    /** Shows a step once the one before it has been read, and says when it is up. */
+    const show = (state: SealState): Promise<void> => {
+      const shown = queue.then(() => new Promise<void>(resolve => {
         setCeremony({ kind, state });
-        return new Promise<void>(resolve => { window.setTimeout(resolve, STEP_MS); });
-      });
+        // One frame, so "it is on screen" is true rather than merely scheduled.
+        window.requestAnimationFrame(() => resolve());
+      }));
+      queue = shown.then(() => new Promise<void>(resolve => {
+        window.setTimeout(resolve, STEP_MS);
+      }));
+      return shown;
     };
-    show('preparing');
+    void show('preparing');
     try {
       const result = await run(state => show(state));
-      show('done');
+      void show('done');
       // The steps finish playing before the caller moves on, so a fast ceremony still
       // reads as three things happening rather than one flash.
       await queue;

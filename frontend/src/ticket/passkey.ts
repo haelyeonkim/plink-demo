@@ -70,7 +70,12 @@ export async function runCeremony(
     direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string;
     /** The address the ticket was issued to, typed back when no code was required. */
     email?: string;
-    onStage?: (stage: CeremonyStage) => void;
+    /**
+     * Told where the ceremony has got to. A callback that returns a promise is waited
+     * for, so a screen narrating the steps can hold the authenticator back until the
+     * step that says "your device is about to ask you" is the one on screen.
+     */
+    onStage?: (stage: CeremonyStage) => void | Promise<void>;
   } = {},
 ): Promise<
   | { mode: 'register'; claimed: true; viaTransfer: boolean }
@@ -79,8 +84,8 @@ export async function runCeremony(
   | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true; viaTransfer: boolean }
 > {
   const base = ticketBase(sessionId, token);
-  const stage = options_.onStage ?? (() => {});
-  stage('preparing');
+  const stage = async (step: CeremonyStage) => { await options_.onStage?.(step); };
+  await stage('preparing');
   const position = options_.intent === 'TRANSFER' ? {} : await coarsePosition();
   const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -90,7 +95,9 @@ export async function runCeremony(
   publicKey.challenge = decode(publicKey.challenge);
 
   let credential: PublicKeyCredential | null;
-  stage('signing');
+  // The prompt belongs to this step, not to the one before it: the screen says the
+  // device is about to ask, and then the device asks.
+  await stage('signing');
   if (mode === 'register') {
     publicKey.user.id = decode(publicKey.user.id);
     publicKey.excludeCredentials = (publicKey.excludeCredentials || [])
@@ -120,7 +127,7 @@ export async function runCeremony(
       userHandle: r.userHandle ? encode(r.userHandle) : null,
     };
   }
-  stage('verifying');
+  await stage('verifying');
   const result = await read(await mutate(`${base}/passkey/finish`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
