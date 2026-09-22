@@ -146,6 +146,10 @@ export default function TicketAdmin() {
   const [gates, setGates] = useState<GateRow[]>([]);
   const [booths, setBooths] = useState<BoothRow[]>([]);
   const [gateRole, setGateRole] = useState('ADMISSION');
+  // Whether the issue form is giving to everybody or to a chosen few, and the one-ticket
+  // shortcut opened from a row in 발급 현황.
+  const [pickTickets, setPickTickets] = useState(false);
+  const [couponFor, setCouponFor] = useState<TicketRow | null>(null);
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   // Which tab is open is part of the address, so the browser's back button walks back
   // through the tabs the way it walks back through the pages.
@@ -372,21 +376,27 @@ export default function TicketAdmin() {
   });
 
   /** Gives an offer to everybody, or to one person the operator picked. */
-  const issueCoupons = (form: HTMLFormElement) => act(async () => {
+  const giveCoupons = (boothId: number, title: string, detail: string, ticketIds: number[]) =>
+    act(async () => {
+      const result = await read(await mutate(`/api/admin/sessions/${selected}/coupons`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boothId, title, detail, ticketIds }),
+      }));
+      setNotice(`${result.title} 쿠폰을 ${result.given}장 발급했어요`
+        + (result.already > 0 ? ` · 이미 가지고 있던 ${result.already}장은 그대로예요.` : '.'));
+      await loadSession(selected!);
+    });
+
+  const issueCoupons = (form: HTMLFormElement) => {
     const data = new FormData(form);
-    const target = String(data.get('ticketId') ?? '');
-    const result = await read(await mutate(`/api/admin/sessions/${selected}/coupons`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        boothId: Number(data.get('boothId')), title: data.get('title'), detail: data.get('detail'),
-        ticketIds: target ? [Number(target)] : [],
-      }),
-    }));
-    form.reset();
-    setNotice(`${result.title} 쿠폰을 ${result.given}장 발급했어요`
-      + (result.already > 0 ? ` · 이미 가지고 있던 ${result.already}장은 그대로예요.` : '.'));
-    await loadSession(selected!);
-  });
+    const chosen = data.getAll('ticketIds').map(Number);
+    if (pickTickets && chosen.length === 0) {
+      setError('쿠폰을 받을 입장권을 선택해 주세요.');
+      return;
+    }
+    void giveCoupons(Number(data.get('boothId')), String(data.get('title')),
+      String(data.get('detail') ?? ''), pickTickets ? chosen : []).then(() => form.reset());
+  };
 
   const setCouponStatus = (coupon: CouponRow, status: string) => act(async () => {
     await read(await mutate(`/api/admin/coupons/${coupon.couponId}/status`, {
@@ -478,6 +488,8 @@ export default function TicketAdmin() {
   const session = sessions.find(s => s.id === selected) ?? null;
   // A seat is spoken for as soon as a ticket carries it; the database enforces the same.
   const takenSeats = new Set(tickets.map(row => row.seat).filter((seat): seat is string => !!seat));
+  /** Tickets a coupon can be given to: a revoked one is not going to use it. */
+  const liveTickets = tickets.filter(row => row.status !== 'REVOKED');
   const usedTiers = new Set(tickets.map(row => row.tier).filter((tier): tier is string => !!tier));
   const fieldList = session?.fields ?? [];
 
@@ -690,6 +702,9 @@ export default function TicketAdmin() {
                         <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, false)}>다시 사용</button>
                       ) : (
                         <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, true)}>비활성화</button>
+                      )}
+                      {booths.length > 0 && (
+                        <button className="btn-tiny" onClick={() => setCouponFor(row)}>쿠폰 주기</button>
                       )}
                       <button className="btn-tiny btn-tiny-danger"
                         onClick={() => setConfirmTicket(row)}>삭제</button>
@@ -1096,6 +1111,57 @@ export default function TicketAdmin() {
         onCancel={() => setConfirmReissue(null)}
       />
 
+      {/* One person, one offer: the quickest path from a row in 발급 현황. */}
+      {couponFor && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setCouponFor(null)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="give-coupon"
+            onClick={event => event.stopPropagation()}>
+            <h3 id="give-coupon">쿠폰 주기</h3>
+            <p className="modal-message">
+              {couponFor.ticketRef}{couponFor.seat ? ` · ${couponFor.seat}` : ''} ·{' '}
+              {couponFor.holderEmail ?? couponFor.issuedToEmail}
+            </p>
+            <form onSubmit={event => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const row = couponFor;
+              setCouponFor(null);
+              void giveCoupons(Number(data.get('boothId')), String(data.get('title')),
+                String(data.get('detail') ?? ''), [row.ticketId]);
+            }}>
+              <div className="field">
+                <label htmlFor="give-booth">부스</label>
+                <select id="give-booth" name="boothId" required>
+                  {booths.map(booth => (
+                    <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="give-title">쿠폰 이름</label>
+                {/* Existing offers are suggested, because a second name for the same
+                    thing is how a tally stops adding up. */}
+                <input id="give-title" name="title" required list="coupon-offers"
+                  placeholder="예: 웰컴 드링크" />
+                <datalist id="coupon-offers">
+                  {[...new Set(booths.flatMap(booth => booth.offers.map(offer => offer.title)))]
+                    .map(title => <option key={title} value={title} />)}
+                </datalist>
+              </div>
+              <div className="field">
+                <label htmlFor="give-detail">상세 안내</label>
+                <textarea id="give-detail" name="detail" rows={3}
+                  placeholder="받는 사람에게 그대로 보여 줄 내용" />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setCouponFor(null)}>취소</button>
+                <button type="submit" className="btn-primary">쿠폰 주기</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         open={confirmBooth != null}
         title={`'${confirmBooth?.name}' 부스를 지울까요?`}
@@ -1204,16 +1270,26 @@ export default function TicketAdmin() {
                     placeholder="사용 조건, 시간, 수량 등 받는 사람에게 그대로 보여 줄 내용" />
                 </div>
                 <div className="field">
-                  <label htmlFor="coupon-ticket">받는 사람</label>
-                  <select id="coupon-ticket" name="ticketId" defaultValue="">
-                    <option value="">전체 입장권</option>
-                    {tickets.filter(row => row.status !== 'REVOKED').map(row => (
-                      <option key={row.ticketId} value={row.ticketId}>
-                        {row.ticketRef}{row.seat ? ` · ${row.seat}` : ''} · {row.holderEmail ?? row.issuedToEmail}
-                      </option>
-                    ))}
+                  <label htmlFor="coupon-scope">받는 사람</label>
+                  <select id="coupon-scope" value={pickTickets ? 'some' : 'all'}
+                    onChange={e => setPickTickets(e.target.value === 'some')}>
+                    <option value="all">전체 입장권 ({liveTickets.length}장)</option>
+                    <option value="some">선택한 입장권</option>
                   </select>
                 </div>
+                {pickTickets && (
+                  <div className="pick-list">
+                    {liveTickets.length === 0 && <p className="hint-text">발급된 입장권이 없어요.</p>}
+                    {liveTickets.map(row => (
+                      <label key={row.ticketId} className="pick-row">
+                        <input type="checkbox" name="ticketIds" value={row.ticketId} />
+                        <b>{row.ticketRef}</b>
+                        {row.seat && <span className="pick-seat">{row.seat}</span>}
+                        <small>{row.holderEmail ?? row.issuedToEmail}</small>
+                      </label>
+                    ))}
+                  </div>
+                )}
                 <button className="btn-primary" type="submit">쿠폰 발급</button>
               </>)}
             </form>
