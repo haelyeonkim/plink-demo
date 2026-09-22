@@ -146,10 +146,12 @@ export default function TicketAdmin() {
   const [gates, setGates] = useState<GateRow[]>([]);
   const [booths, setBooths] = useState<BoothRow[]>([]);
   const [gateRole, setGateRole] = useState('ADMISSION');
-  // Whether the issue form is giving to everybody or to a chosen few, and the one-ticket
-  // shortcut opened from a row in 발급 현황.
+  // The hand-out sheet: open with a ticket to give to that one person, or with null to
+  // choose the recipients inside. `pickTickets` is that choice — everybody, or a few.
+  const [couponSheet, setCouponSheet] = useState<{ only: TicketRow | null } | null>(null);
   const [pickTickets, setPickTickets] = useState(false);
-  const [couponFor, setCouponFor] = useState<TicketRow | null>(null);
+  // The sheet covers the page, so its own complaint has to be on the sheet.
+  const [sheetError, setSheetError] = useState('');
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   // Which tab is open is part of the address, so the browser's back button walks back
   // through the tabs the way it walks back through the pages.
@@ -387,15 +389,38 @@ export default function TicketAdmin() {
       await loadSession(selected!);
     });
 
+  // A dialog that covers the screen has to answer Escape, and the page behind it should
+  // not scroll while it is open.
+  useEffect(() => {
+    if (!couponSheet) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setCouponSheet(null); };
+    window.addEventListener('keydown', onKey);
+    const kept = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = kept;
+    };
+  }, [couponSheet]);
+
+  /** Opens the sheet, for one named person or for a choice made inside it. */
+  const openCouponSheet = (only: TicketRow | null) => {
+    setPickTickets(false);
+    setSheetError('');
+    setCouponSheet({ only });
+  };
+
   const issueCoupons = (form: HTMLFormElement) => {
+    const only = couponSheet?.only;
     const data = new FormData(form);
-    const chosen = data.getAll('ticketIds').map(Number);
-    if (pickTickets && chosen.length === 0) {
-      setError('쿠폰을 받을 입장권을 선택해 주세요.');
+    const chosen = only ? [only.ticketId] : data.getAll('ticketIds').map(Number);
+    if (!only && pickTickets && chosen.length === 0) {
+      setSheetError('쿠폰을 받을 입장권을 선택해 주세요.');
       return;
     }
+    setCouponSheet(null);
     void giveCoupons(Number(data.get('boothId')), String(data.get('title')),
-      String(data.get('detail') ?? ''), pickTickets ? chosen : []).then(() => form.reset());
+      String(data.get('detail') ?? ''), only || pickTickets ? chosen : []);
   };
 
   const setCouponStatus = (coupon: CouponRow, status: string) => act(async () => {
@@ -704,7 +729,7 @@ export default function TicketAdmin() {
                         <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, true)}>비활성화</button>
                       )}
                       {booths.length > 0 && (
-                        <button className="btn-tiny" onClick={() => setCouponFor(row)}>쿠폰 주기</button>
+                        <button className="btn-tiny" onClick={() => openCouponSheet(row)}>쿠폰 주기</button>
                       )}
                       <button className="btn-tiny btn-tiny-danger"
                         onClick={() => setConfirmTicket(row)}>삭제</button>
@@ -1111,52 +1136,95 @@ export default function TicketAdmin() {
         onCancel={() => setConfirmReissue(null)}
       />
 
-      {/* One person, one offer: the quickest path from a row in 발급 현황. */}
-      {couponFor && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setCouponFor(null)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="give-coupon"
+      {/* Handing out an offer is its own screen: the recipients can be a list as long as
+          the event, and a panel-sized dialog would make choosing them a scroll in a box. */}
+      {couponSheet && (
+        <div className="modal-backdrop sheet-backdrop" role="presentation"
+          onClick={() => setCouponSheet(null)}>
+          <div className="modal modal-sheet" role="dialog" aria-modal="true" aria-labelledby="coupon-sheet"
             onClick={event => event.stopPropagation()}>
-            <h3 id="give-coupon">쿠폰 주기</h3>
-            <p className="modal-message">
-              {couponFor.ticketRef}{couponFor.seat ? ` · ${couponFor.seat}` : ''} ·{' '}
-              {couponFor.holderEmail ?? couponFor.issuedToEmail}
-            </p>
-            <form onSubmit={event => {
-              event.preventDefault();
-              const data = new FormData(event.currentTarget);
-              const row = couponFor;
-              setCouponFor(null);
-              void giveCoupons(Number(data.get('boothId')), String(data.get('title')),
-                String(data.get('detail') ?? ''), [row.ticketId]);
-            }}>
-              <div className="field">
-                <label htmlFor="give-booth">부스</label>
-                <select id="give-booth" name="boothId" required>
-                  {booths.map(booth => (
-                    <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
-                  ))}
-                </select>
+            <form onSubmit={e => { e.preventDefault(); issueCoupons(e.currentTarget); }}>
+              <header className="sheet-head">
+                <div className="sheet-title">
+                  <h3 id="coupon-sheet">쿠폰 발급</h3>
+                  <p>
+                    {couponSheet.only
+                      ? `${couponSheet.only.ticketRef}`
+                        + `${couponSheet.only.seat ? ` · ${couponSheet.only.seat}` : ''} · `
+                        + `${couponSheet.only.holderEmail ?? couponSheet.only.issuedToEmail}`
+                      : '부스의 쿠폰을 입장권에 얹어 줍니다. 받는 사람은 새로 받을 것도 없어요.'}
+                  </p>
+                </div>
+                <button type="button" className="sheet-close" aria-label="닫기"
+                  onClick={() => setCouponSheet(null)}>✕</button>
+              </header>
+
+              <div className="sheet-body">
+                <div className="sheet-inner">
+                  <div className="form-row">
+                    <div className="field">
+                      <label htmlFor="give-booth">부스</label>
+                      <select id="give-booth" name="boothId" required>
+                        {booths.map(booth => (
+                          <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="give-title">쿠폰 이름</label>
+                      {/* Existing offers are suggested, because a second name for the same
+                          thing is how a tally stops adding up. */}
+                      <input id="give-title" name="title" required list="coupon-offers"
+                        placeholder="예: 웰컴 드링크" />
+                      <datalist id="coupon-offers">
+                        {[...new Set(booths.flatMap(booth => booth.offers.map(offer => offer.title)))]
+                          .map(title => <option key={title} value={title} />)}
+                      </datalist>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="give-detail">상세 안내</label>
+                    <textarea id="give-detail" name="detail" rows={3}
+                      placeholder="사용 조건, 시간, 수량 등 받는 사람에게 그대로 보여 줄 내용" />
+                  </div>
+
+                  {!couponSheet.only && (<>
+                    <div className="field">
+                      <label htmlFor="coupon-scope">받는 사람</label>
+                      <select id="coupon-scope" value={pickTickets ? 'some' : 'all'}
+                        onChange={e => setPickTickets(e.target.value === 'some')}>
+                        <option value="all">전체 입장권 ({liveTickets.length}장)</option>
+                        <option value="some">선택한 입장권</option>
+                      </select>
+                    </div>
+                    {pickTickets && (
+                      <div className="pick-list" onChange={() => setSheetError('')}>
+                        {liveTickets.length === 0 && <p className="hint-text">발급된 입장권이 없어요.</p>}
+                        {liveTickets.map(row => (
+                          <label key={row.ticketId} className="pick-row">
+                            <input type="checkbox" name="ticketIds" value={row.ticketId} />
+                            <b>{row.ticketRef}</b>
+                            {row.seat && <span className="pick-seat">{row.seat}</span>}
+                            <small>{row.holderEmail ?? row.issuedToEmail}</small>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </>)}
+
+                  <p className="hint-text">
+                    쿠폰은 부스 단말에 <b>입장 QR</b>을 비추면 사용됩니다. 같은 사람에게 같은 쿠폰을
+                    두 번 주면 한 장만 남습니다.
+                  </p>
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="give-title">쿠폰 이름</label>
-                {/* Existing offers are suggested, because a second name for the same
-                    thing is how a tally stops adding up. */}
-                <input id="give-title" name="title" required list="coupon-offers"
-                  placeholder="예: 웰컴 드링크" />
-                <datalist id="coupon-offers">
-                  {[...new Set(booths.flatMap(booth => booth.offers.map(offer => offer.title)))]
-                    .map(title => <option key={title} value={title} />)}
-                </datalist>
-              </div>
-              <div className="field">
-                <label htmlFor="give-detail">상세 안내</label>
-                <textarea id="give-detail" name="detail" rows={3}
-                  placeholder="받는 사람에게 그대로 보여 줄 내용" />
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setCouponFor(null)}>취소</button>
-                <button type="submit" className="btn-primary">쿠폰 주기</button>
-              </div>
+
+              <footer className="sheet-foot">
+                {sheetError && <p className="sheet-error" role="alert">{sheetError}</p>}
+                <button type="button" className="btn-secondary"
+                  onClick={() => setCouponSheet(null)}>취소</button>
+                <button type="submit" className="btn-primary">쿠폰 발급</button>
+              </footer>
             </form>
           </div>
         </div>
@@ -1244,58 +1312,10 @@ export default function TicketAdmin() {
               <button className="btn-primary" type="submit">부스 추가</button>
             </form>
 
-            <form onSubmit={e => { e.preventDefault(); issueCoupons(e.currentTarget); }}
-              key={`coupon-${booths.length}`}>
-              <h3>쿠폰 발급</h3>
-              {booths.length === 0 ? (
-                <p className="hint-text">부스를 먼저 만들면 그 부스의 쿠폰을 발급할 수 있어요.</p>
-              ) : (<>
-                <div className="form-row">
-                  <div className="field">
-                    <label htmlFor="coupon-booth">부스</label>
-                    <select id="coupon-booth" name="boothId" required>
-                      {booths.map(booth => (
-                        <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="coupon-title">쿠폰 이름</label>
-                    <input id="coupon-title" name="title" required placeholder="예: 웰컴 드링크" />
-                  </div>
-                </div>
-                <div className="field">
-                  <label htmlFor="coupon-detail">상세 안내</label>
-                  <textarea id="coupon-detail" name="detail" rows={3}
-                    placeholder="사용 조건, 시간, 수량 등 받는 사람에게 그대로 보여 줄 내용" />
-                </div>
-                <div className="field">
-                  <label htmlFor="coupon-scope">받는 사람</label>
-                  <select id="coupon-scope" value={pickTickets ? 'some' : 'all'}
-                    onChange={e => setPickTickets(e.target.value === 'some')}>
-                    <option value="all">전체 입장권 ({liveTickets.length}장)</option>
-                    <option value="some">선택한 입장권</option>
-                  </select>
-                </div>
-                {pickTickets && (
-                  <div className="pick-list">
-                    {liveTickets.length === 0 && <p className="hint-text">발급된 입장권이 없어요.</p>}
-                    {liveTickets.map(row => (
-                      <label key={row.ticketId} className="pick-row">
-                        <input type="checkbox" name="ticketIds" value={row.ticketId} />
-                        <b>{row.ticketRef}</b>
-                        {row.seat && <span className="pick-seat">{row.seat}</span>}
-                        <small>{row.holderEmail ?? row.issuedToEmail}</small>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                <button className="btn-primary" type="submit">쿠폰 발급</button>
-              </>)}
-            </form>
             <p className="hint-text">
-              쿠폰은 부스 단말에 <b>입장 QR</b>을 비추면 사용됩니다 — 받는 사람은 새로 받을 것도,
-              설치할 것도 없어요. 같은 사람에게 같은 쿠폰을 두 번 주면 한 장만 남습니다.
+              부스를 만들고 나면 <b>쿠폰 발급</b>으로 그 부스의 쿠폰을 입장권에 얹을 수 있어요.
+              쿠폰은 부스 단말에 입장 QR을 비추면 사용됩니다 — 받는 사람은 새로 받을 것도,
+              설치할 것도 없어요.
             </p>
           </div>
 
@@ -1323,7 +1343,11 @@ export default function TicketAdmin() {
             ))}
             {booths.length === 0 && <p className="hint-text">등록된 부스가 없어요.</p>}
 
-            <h3>발급된 쿠폰 ({coupons.length})</h3>
+            <div className="panel-head">
+              <h3>발급된 쿠폰 ({coupons.length})</h3>
+              <button className="btn-tiny" disabled={booths.length === 0}
+                onClick={() => openCouponSheet(null)}>쿠폰 발급</button>
+            </div>
             <div className="table-scroll">
               <table className="ticket-table">
                 <thead>
