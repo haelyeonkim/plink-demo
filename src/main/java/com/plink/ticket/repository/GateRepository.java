@@ -32,6 +32,9 @@ public class GateRepository {
         g.setupExpiresAt = rs.getTimestamp("setup_expires_at");
         g.setupAttempts = rs.getInt("setup_attempts");
         g.tokenExpiresAt = rs.getTimestamp("token_expires_at");
+        g.role = rs.getString("role");
+        long booth = rs.getLong("booth_id");
+        g.boothId = rs.wasNull() ? null : booth;
         return g;
     };
 
@@ -49,11 +52,23 @@ public class GateRepository {
             label, zone, direction, id);
     }
 
+    /** What this terminal is for, and which stand it belongs to when it is a booth. */
+    public void setRole(String id, String role, Long boothId) {
+        jdbc.update("UPDATE gate SET role = ?, booth_id = ? WHERE id = ?", role, boothId, id);
+    }
+
     public void insert(String id, long sessionId, String label, String zone, String direction,
             String tokenHmac, String tokenCipher, java.sql.Timestamp tokenExpiresAt) {
+        insert(id, sessionId, label, zone, direction, tokenHmac, tokenCipher, tokenExpiresAt,
+            "ADMISSION", null);
+    }
+
+    public void insert(String id, long sessionId, String label, String zone, String direction,
+            String tokenHmac, String tokenCipher, java.sql.Timestamp tokenExpiresAt,
+            String role, Long boothId) {
         jdbc.update("INSERT INTO gate (id, session_id, label, zone, direction, token_hmac, token_cipher, "
-            + "token_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            id, sessionId, label, zone, direction, tokenHmac, tokenCipher, tokenExpiresAt);
+            + "token_expires_at, role, booth_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            id, sessionId, label, zone, direction, tokenHmac, tokenCipher, tokenExpiresAt, role, boothId);
     }
 
     /** Claims the gate for one terminal. */

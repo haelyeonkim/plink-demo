@@ -62,6 +62,7 @@ interface IssuedTicket {
 
 interface GateRow {
   gateId: string; label: string | null; zone: string | null; direction: string;
+  role: string; boothId: number | null;
   boundDevice: string | null; lastSeenAt: string | null;
   setupUrl: string | null; setupCode: string | null; setupExpiresAt: string | null;
   /** Null for a terminal registered before tokens had an end date. */
@@ -76,13 +77,25 @@ function validity(gate: GateRow): { label: string; tone: string } {
   return { label: `유효기간 ${days}일 남음`, tone: days <= 3 ? 'warn' : 'ok' };
 }
 
-type Tab = 'issue' | 'tickets' | 'gates' | 'movements' | 'settings';
+interface BoothRow {
+  boothId: number; name: string; note: string | null;
+  offers: Array<{ title: string; issued: number; redeemed: number; voided: number }>;
+}
+
+interface CouponRow {
+  couponId: number; booth: string | null; title: string; detail: string | null;
+  status: string; ticketId: number; ticketRef: string | null; seat: string | null;
+  issuedToEmail: string | null; redeemedAt: string | null;
+}
+
+type Tab = 'issue' | 'tickets' | 'gates' | 'coupons' | 'movements' | 'settings';
 /** The settings tab is itself a stack of unrelated forms, so it carries its own tabs. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
 const TABS: Array<[Tab, string]> = [
   ['issue', '발급'],
   ['tickets', '발급 현황'],
   ['gates', '게이트'],
+  ['coupons', '쿠폰'],
   ['movements', '입·퇴장'],
   ['settings', '설정'],
 ];
@@ -131,6 +144,9 @@ export default function TicketAdmin() {
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string } | null>(null);
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
+  const [booths, setBooths] = useState<BoothRow[]>([]);
+  const [gateRole, setGateRole] = useState('ADMISSION');
+  const [coupons, setCoupons] = useState<CouponRow[]>([]);
   // Which tab is open is part of the address, so the browser's back button walks back
   // through the tabs the way it walks back through the pages.
   const [params, setParams] = useSearchParams();
@@ -152,6 +168,7 @@ export default function TicketAdmin() {
   // than doing it under a name that sounds like reading.
   const [confirmReissue, setConfirmReissue] = useState<{ row: TicketRow; notify: boolean } | null>(null);
   const [confirmTicket, setConfirmTicket] = useState<TicketRow | null>(null);
+  const [confirmBooth, setConfirmBooth] = useState<BoothRow | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -165,6 +182,8 @@ export default function TicketAdmin() {
       setTickets(await read(await fetch(`/api/admin/sessions/${id}/tickets`)));
       setOccupancy(await read(await fetch(`/api/admin/sessions/${id}/occupancy`)));
       setGates(await read(await fetch(`/api/admin/sessions/${id}/gates`)));
+      setBooths(await read(await fetch(`/api/admin/sessions/${id}/booths`)));
+      setCoupons(await read(await fetch(`/api/admin/sessions/${id}/coupons`)));
     } catch (err) { setError(err instanceof Error ? err.message : '행사 정보를 불러오지 못했어요.'); }
   }, []);
 
@@ -299,6 +318,7 @@ export default function TicketAdmin() {
       body: JSON.stringify({
         gateId: data.get('gateId'), label: data.get('label'),
         zone: data.get('zone'), direction: data.get('direction'),
+        role: data.get('role'), boothId: data.get('boothId'),
       }),
     }));
     form.reset();
@@ -331,6 +351,50 @@ export default function TicketAdmin() {
       ? `${gateId}의 유효기간을 없앴어요. 관리 화면에서 다시 기간을 줄 수 있습니다.`
       : `${gateId}의 유효기간을 ${new Date(result.tokenExpiresAt).toLocaleDateString('ko-KR')}까지 `
         + '연장했어요. 단말은 그대로 쓰면 됩니다.');
+    await loadSession(selected!);
+  });
+
+  const addBooth = (form: HTMLFormElement) => act(async () => {
+    const data = new FormData(form);
+    await read(await mutate(`/api/admin/sessions/${selected}/booths`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: data.get('name'), note: data.get('note') }),
+    }));
+    form.reset();
+    setNotice(`${data.get('name')} 부스를 만들었어요.`);
+    await loadSession(selected!);
+  });
+
+  const removeBooth = (booth: BoothRow) => act(async () => {
+    await read(await mutate(`/api/admin/booths/${booth.boothId}`, { method: 'DELETE' }));
+    setNotice(`${booth.name} 부스와 그 쿠폰을 지웠어요.`);
+    await loadSession(selected!);
+  });
+
+  /** Gives an offer to everybody, or to one person the operator picked. */
+  const issueCoupons = (form: HTMLFormElement) => act(async () => {
+    const data = new FormData(form);
+    const target = String(data.get('ticketId') ?? '');
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/coupons`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        boothId: Number(data.get('boothId')), title: data.get('title'), detail: data.get('detail'),
+        ticketIds: target ? [Number(target)] : [],
+      }),
+    }));
+    form.reset();
+    setNotice(`${result.title} 쿠폰을 ${result.given}장 발급했어요`
+      + (result.already > 0 ? ` · 이미 가지고 있던 ${result.already}장은 그대로예요.` : '.'));
+    await loadSession(selected!);
+  });
+
+  const setCouponStatus = (coupon: CouponRow, status: string) => act(async () => {
+    await read(await mutate(`/api/admin/coupons/${coupon.couponId}/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }));
+    setNotice(status === 'VOID' ? `${coupon.title} 쿠폰을 무효로 했어요.`
+      : `${coupon.title} 쿠폰을 다시 사용할 수 있게 했어요.`);
     await loadSession(selected!);
   });
 
@@ -686,6 +750,29 @@ export default function TicketAdmin() {
                 <option value="BIDIRECTIONAL">BIDIRECTIONAL · 겸용</option>
               </select>
             </div>
+            {/* A booth terminal reads the same code, but to hand something over. */}
+            <div className="form-row">
+              <div className="field">
+                <label htmlFor="gate-new-role">역할</label>
+                <select id="gate-new-role" name="role" value={gateRole}
+                  onChange={e => setGateRole(e.target.value)}>
+                  <option value="ADMISSION">입장 게이트</option>
+                  <option value="BOOTH" disabled={booths.length === 0}>
+                    {booths.length === 0 ? '부스 단말 (부스를 먼저 만드세요)' : '부스 단말 · 쿠폰'}
+                  </option>
+                </select>
+              </div>
+              {gateRole === 'BOOTH' && (
+                <div className="field">
+                  <label htmlFor="gate-new-booth">부스</label>
+                  <select id="gate-new-booth" name="boothId" required>
+                    {booths.map(booth => (
+                      <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
             <button className="btn-primary" type="submit">단말 등록</button>
             {gateSetup && (
               <div className="issued-link">
@@ -707,8 +794,10 @@ export default function TicketAdmin() {
             {gates.map(gate => (
               <div className="gate-row" key={gate.gateId}>
                 <div>
-                  <b>{gate.label || gate.gateId}</b> · {gate.direction}
-                  {gate.zone && ` · ${gate.zone}`}
+                  <b>{gate.label || gate.gateId}</b> · {gate.role === 'BOOTH' ? '부스 단말' : gate.direction}
+                  {gate.role === 'BOOTH'
+                    ? ` · ${booths.find(booth => booth.boothId === gate.boothId)?.name ?? '부스 없음'}`
+                    : gate.zone && ` · ${gate.zone}`}
                   <br />
                   <code title={gate.setupUrl ?? ''}>{gate.setupUrl ?? '(설정 링크 없음 — 재발급이 필요합니다)'}</code>
                   {gate.setupCode && <span className="gate-code">인증번호 {gate.setupCode}</span>}
@@ -1008,6 +1097,27 @@ export default function TicketAdmin() {
       />
 
       <ConfirmDialog
+        open={confirmBooth != null}
+        title={`'${confirmBooth?.name}' 부스를 지울까요?`}
+        message={'이 부스의 쿠폰이 모두 함께 사라집니다. 이미 사용한 기록도 같이 지워지니, '
+          + '기록을 남겨야 한다면 쿠폰을 무효화하는 쪽을 쓰세요.'}
+        details={confirmBooth ? [
+          ['부스', confirmBooth.name],
+          ['쿠폰 종류', confirmBooth.offers.length],
+          ['발급', confirmBooth.offers.reduce((sum, offer) => sum + offer.issued, 0)],
+          ['사용', confirmBooth.offers.reduce((sum, offer) => sum + offer.redeemed, 0)],
+        ] : undefined}
+        confirmLabel="부스 삭제"
+        onConfirm={() => {
+          if (!confirmBooth) return;
+          const booth = confirmBooth;
+          setConfirmBooth(null);
+          removeBooth(booth);
+        }}
+        onCancel={() => setConfirmBooth(null)}
+      />
+
+      <ConfirmDialog
         open={confirmTicket != null}
         title="입장권을 삭제할까요?"
         message={confirmTicket && confirmTicket.entryCount > 0
@@ -1049,6 +1159,137 @@ export default function TicketAdmin() {
         onConfirm={() => session && deleteSession(session.id)}
         onCancel={() => setConfirmDelete(false)}
       />
+
+      {session && tab === 'coupons' && (
+        <div className="tab-panel tab-split">
+          <div>
+            <form onSubmit={e => { e.preventDefault(); addBooth(e.currentTarget); }}>
+              <h3>부스</h3>
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="booth-name">이름</label>
+                  <input id="booth-name" name="name" required placeholder="예: 커피 스탠드" />
+                </div>
+                <div className="field">
+                  <label htmlFor="booth-note">위치 안내</label>
+                  <input id="booth-note" name="note" placeholder="예: 로비 왼쪽" />
+                </div>
+              </div>
+              <button className="btn-primary" type="submit">부스 추가</button>
+            </form>
+
+            <form onSubmit={e => { e.preventDefault(); issueCoupons(e.currentTarget); }}
+              key={`coupon-${booths.length}`}>
+              <h3>쿠폰 발급</h3>
+              {booths.length === 0 ? (
+                <p className="hint-text">부스를 먼저 만들면 그 부스의 쿠폰을 발급할 수 있어요.</p>
+              ) : (<>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="coupon-booth">부스</label>
+                    <select id="coupon-booth" name="boothId" required>
+                      {booths.map(booth => (
+                        <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="coupon-title">쿠폰 이름</label>
+                    <input id="coupon-title" name="title" required placeholder="예: 웰컴 드링크" />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="coupon-detail">상세 안내</label>
+                  <textarea id="coupon-detail" name="detail" rows={3}
+                    placeholder="사용 조건, 시간, 수량 등 받는 사람에게 그대로 보여 줄 내용" />
+                </div>
+                <div className="field">
+                  <label htmlFor="coupon-ticket">받는 사람</label>
+                  <select id="coupon-ticket" name="ticketId" defaultValue="">
+                    <option value="">전체 입장권</option>
+                    {tickets.filter(row => row.status !== 'REVOKED').map(row => (
+                      <option key={row.ticketId} value={row.ticketId}>
+                        {row.ticketRef}{row.seat ? ` · ${row.seat}` : ''} · {row.holderEmail ?? row.issuedToEmail}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button className="btn-primary" type="submit">쿠폰 발급</button>
+              </>)}
+            </form>
+            <p className="hint-text">
+              쿠폰은 부스 단말에 <b>입장 QR</b>을 비추면 사용됩니다 — 받는 사람은 새로 받을 것도,
+              설치할 것도 없어요. 같은 사람에게 같은 쿠폰을 두 번 주면 한 장만 남습니다.
+            </p>
+          </div>
+
+          <div>
+            <h3>부스 ({booths.length})</h3>
+            {booths.map(booth => (
+              <div className="gate-row" key={booth.boothId}>
+                <div>
+                  <b>{booth.name}</b>
+                  {booth.note && <span className="cell-note">{booth.note}</span>}
+                  <div className="gate-meta">
+                    {booth.offers.length === 0 ? '쿠폰 없음' : booth.offers.map(offer => (
+                      <span key={offer.title} className="pill pill-wait">
+                        {offer.title} {offer.redeemed}/{offer.issued}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="gate-actions">
+                  <button className="btn-tiny btn-tiny-danger" onClick={() => setConfirmBooth(booth)}>
+                    삭제
+                  </button>
+                </div>
+              </div>
+            ))}
+            {booths.length === 0 && <p className="hint-text">등록된 부스가 없어요.</p>}
+
+            <h3>발급된 쿠폰 ({coupons.length})</h3>
+            <div className="table-scroll">
+              <table className="ticket-table">
+                <thead>
+                  <tr><th>부스</th><th>쿠폰</th><th>입장권</th><th>상태</th><th /></tr>
+                </thead>
+                <tbody>
+                  {coupons.map(row => (
+                    <tr key={row.couponId} className={row.status === 'VOID' ? 'row-revoked' : ''}>
+                      <td data-label="부스">{row.booth ?? '-'}</td>
+                      <td data-label="쿠폰">{row.title}</td>
+                      <td data-label="입장권">
+                        {row.ticketRef}{row.seat ? ` · ${row.seat}` : ''}
+                        <small className="cell-note">{row.issuedToEmail}</small>
+                      </td>
+                      <td data-label="상태">
+                        <span className={`pill pill-${row.status === 'REDEEMED' ? 'ok'
+                          : row.status === 'VOID' ? 'off' : 'wait'}`}>
+                          {row.status === 'REDEEMED' ? '사용함' : row.status === 'VOID' ? '무효' : '미사용'}
+                        </span>
+                        {row.redeemedAt && <small className="cell-note">{shortTime(row.redeemedAt)}</small>}
+                      </td>
+                      <td className="cell-buttons">
+                        {row.status === 'VOID' ? (
+                          <button className="btn-tiny" onClick={() => setCouponStatus(row, 'ISSUED')}>
+                            되살리기
+                          </button>
+                        ) : (
+                          <button className="btn-tiny btn-tiny-danger"
+                            onClick={() => setCouponStatus(row, 'VOID')}>무효화</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {coupons.length === 0 && (
+                    <tr><td colSpan={5}><p className="hint-text">발급된 쿠폰이 없어요.</p></td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {session && tab === 'movements' && (
         <div className="tab-panel">

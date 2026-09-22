@@ -29,10 +29,13 @@ public class GateController {
     private final OfflineSyncService offline;
     private final GateSetupService setup;
     private final com.plink.ticket.repository.GateRepository gates;
+    private final com.plink.ticket.service.CouponService coupons;
 
     public GateController(GateAuthService auth, AdmissionService admissions, TicketService tickets,
             FaceService faces, OfflineSyncService offline, GateSetupService setup,
-            com.plink.ticket.repository.GateRepository gates) {
+            com.plink.ticket.repository.GateRepository gates,
+            com.plink.ticket.service.CouponService coupons) {
+        this.coupons = coupons;
         this.gates = gates;
         this.auth = auth;
         this.admissions = admissions;
@@ -70,6 +73,11 @@ public class GateController {
         result.put("sessionName", session.name);
         result.put("exitScanRequired", session.exitScanRequired);
         result.put("deviceBound", gate.boundDevice != null);
+        // What this terminal is for. A booth terminal reads the same code, to give
+        // something rather than to admit somebody.
+        result.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
+        result.put("booth", gate.boothId == null ? null
+            : coupons.requireBooth(gate.sessionId, gate.boothId).name);
         result.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
             : gate.tokenExpiresAt.toInstant().toString());
         return result;
@@ -111,6 +119,12 @@ public class GateController {
             @RequestHeader(value = "X-Gate-Device", required = false) String device,
             @RequestBody Map<String, Object> body) {
         Gate gate = auth.authenticate(gateId, token, device);
+        // A stand hands something over against a code the holder chose to show. Walking
+        // past a camera is not that choice, so a booth terminal reads codes only.
+        if (gate.booth()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT, "부스 단말은 QR만 읽어요.");
+        }
         EventSession session = tickets.requireSession(gate.sessionId);
         String challenge = body.get("challenge") == null ? null : String.valueOf(body.get("challenge"));
         try {
@@ -158,6 +172,9 @@ public class GateController {
         String code = body.get("code");
         String method = body.getOrDefault("method", "QR");
         if (!"QR".equals(method) && !"FACE".equals(method)) method = "QR";
+        // A booth asks a different question of the same code: not "may this person come
+        // in?" but "is there still something here for them?".
+        if (gate.booth()) return coupons.redeemByCode(gate, code);
         try {
             return admissions.admit(gate, code, method);
         } catch (ResponseStatusException refused) {

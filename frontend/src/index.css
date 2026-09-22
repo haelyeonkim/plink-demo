@@ -1149,6 +1149,32 @@ a { color: inherit; text-decoration: none; }
 .ticket-page .ticket-meta { gap: 5px 14px; margin-bottom: 14px; }
 .ticket-page .hint-text { margin-top: 10px; }
 .ticket-page .crowding-card { margin: 0 auto; padding: 16px 20px; }
+/* Coupons on the ticket: what this person can still collect, and where. */
+.coupon-strip { margin-top: 14px; text-align: left; }
+.coupon-head { font-size: 12px; color: #9198aa; margin: 0 0 6px; }
+.coupon-head b { color: var(--ink); }
+.coupon-spent { color: #b0b6c4; }
+.coupon-strip ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.coupon-row {
+  width: 100%; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font: inherit; text-align: left; padding: 9px 12px; border-radius: 10px;
+  background: var(--bg-section); border: 1px solid var(--line);
+}
+.coupon-row:hover { border-color: var(--blue); }
+.coupon-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.coupon-booth { font-size: 11px; color: #9198aa; margin-right: auto; overflow-wrap: anywhere; }
+.coupon-row .pill { flex: none; }
+/* Opened, it says what was actually promised, in the organiser's own words. */
+.coupon-detail {
+  position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 26px;
+  text-align: center; background: white; border-radius: 22px;
+  animation: flash-in 0.25s ease both;
+}
+.coupon-detail h3 { font-size: 19px; margin: 0; }
+.coupon-detail-text { font-size: 13px; color: #3d4663; line-height: 1.7; margin: 2px 0 0; white-space: pre-wrap; }
+.coupon-detail .btn-secondary { width: auto; margin-top: 6px; }
+
 /* The fold itself: a full-width row that reads as a control, not as a button competing
    with the one that opens the door. */
 .manage-toggle {
@@ -1238,6 +1264,7 @@ body:has(.gate-screen) .header-plain { display: none; }
 .gate-in { color: #46d6a8; background: rgba(70, 214, 168, 0.12); }
 .gate-out { color: #7aa5ff; background: rgba(122, 165, 255, 0.12); }
 .gate-bidirectional { color: #b3a6ff; background: rgba(179, 166, 255, 0.12); }
+.gate-booth { color: #ffcf7a; background: rgba(255, 207, 122, 0.12); }
 .gate-label { display: flex; flex-direction: column; line-height: 1.25; margin-right: auto; }
 .gate-label b { font-size: 14px; font-weight: 700; }
 .gate-label small { font-size: 11px; color: rgba(255, 255, 255, 0.45); }

@@ -6,6 +6,17 @@ export interface TicketTransfer {
   expiresAt: string;
 }
 
+/** An offer this ticket holds at a booth, and what became of it. */
+export interface TicketCoupon {
+  couponId: number;
+  booth: string | null;
+  boothNote: string | null;
+  title: string;
+  detail: string | null;
+  status: 'ISSUED' | 'REDEEMED' | 'VOID';
+  redeemedAt: string | null;
+}
+
 export interface TicketView {
   ticketRef: string;
   claimed: boolean;
@@ -32,6 +43,8 @@ export interface TicketView {
     reentryRemaining: number | null;
     reentryUntil: string | null;
   };
+  /** Empty for most events; the screen shows nothing when there is nothing. */
+  coupons: TicketCoupon[];
 }
 
 export class ApiError extends Error {

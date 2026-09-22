@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
   cancelTransfer, fetchFaceStatus, fetchTicket, reissueTicket, requestOtp, verifyOtp,
-  type TicketView,
+  type TicketCoupon, type TicketView,
 } from '../ticket/api';
 import { passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
@@ -11,6 +11,8 @@ import FaceEnrolment from './FaceEnrolment';
 import Crowding from './Crowding';
 import { openLive } from '../ticket/live';
 import ScanFlash, { type Movement } from './ScanFlash';
+import CouponList from './CouponList';
+import CouponFlash, { type Handover } from './CouponFlash';
 import { reducedMotion } from '../motion';
 import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
 
@@ -80,6 +82,9 @@ export default function TicketPage() {
   // The gate's verdict about this ticket, held only as long as it is worth watching.
   const [movement, setMovement] = useState<Movement | null>(null);
   const [ceremony, setCeremony] = useState<Ceremony | null>(null);
+  // The coupon being read, and the one a booth has just taken.
+  const [coupon, setCoupon] = useState<TicketCoupon | null>(null);
+  const [used, setUsed] = useState<Handover | null>(null);
   const wasInside = useRef<boolean | null>(null);
 
   const reload = useCallback(async () => {
@@ -103,7 +108,14 @@ export default function TicketPage() {
       // The server only sends this ticket's movements down this socket, so anything
       // arriving here is about the person holding the phone.
       if (message.type === 'MOVEMENT') setMovement(message as unknown as Movement);
-      if (message.type === 'PRESENCE' || message.type === 'MOVEMENT') void reload();
+      // A booth took a coupon: the ticket says so on the spot, as a door does.
+      if (message.type === 'COUPON') {
+        setUsed(message as unknown as Handover);
+        setCoupon(null);
+      }
+      if (message.type === 'PRESENCE' || message.type === 'MOVEMENT' || message.type === 'COUPON') {
+        void reload();
+      }
     });
     return () => live.close();
   }, [sessionId, token, reload]);
@@ -129,6 +141,12 @@ export default function TicketPage() {
     const timer = window.setTimeout(() => setMovement(null), 6000);
     return () => window.clearTimeout(timer);
   }, [movement]);
+
+  useEffect(() => {
+    if (!used) return;
+    const timer = window.setTimeout(() => setUsed(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [used]);
 
   // The gate changes this ticket's state, not the phone. Coming back to the screen -
   // after a scan, after the screen locked - has to show where the holder actually is.
@@ -274,7 +292,7 @@ export default function TicketPage() {
   if (grant) {
     return (
       <section className="page-section page-tight ticket-page">
-        <RotatingCode grant={grant} ticket={ticket} movement={movement}
+        <RotatingCode grant={grant} ticket={ticket} movement={movement} used={used}
           onDone={async () => { setGrant(null); await reload(); }} onRefresh={reload} />
       </section>
     );
@@ -289,6 +307,24 @@ export default function TicketPage() {
         {ceremony && <CeremonySeal ceremony={ceremony} />}
         {movement && !ceremony && (
           <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
+        )}
+        {used && !ceremony && !movement && <CouponFlash used={used} spent={false} />}
+        {coupon && (
+          <div className="coupon-detail" role="dialog" aria-label="쿠폰 상세">
+            <p className="eyebrow center"><span></span> {coupon.booth ?? '쿠폰'}</p>
+            <h3>{coupon.title}</h3>
+            <span className={`pill pill-${coupon.status === 'REDEEMED' ? 'off' : 'ok'}`}>
+              {coupon.status === 'REDEEMED' ? '사용함' : '사용 가능'}
+            </span>
+            {coupon.detail && <p className="coupon-detail-text">{coupon.detail}</p>}
+            <dl className="flash-state">
+              {coupon.boothNote && <><dt>위치</dt><dd>{coupon.boothNote}</dd></>}
+              {coupon.redeemedAt
+                ? <><dt>사용</dt><dd>{timeText(coupon.redeemedAt)}</dd></>
+                : <><dt>사용 방법</dt><dd>부스 단말에 입장 QR을 비추세요</dd></>}
+            </dl>
+            <button className="btn-secondary" onClick={() => setCoupon(null)}>닫기</button>
+          </div>
         )}
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
         <h2>
@@ -352,6 +388,10 @@ export default function TicketPage() {
                 지문·얼굴 인증을 거친 뒤에만 QR이 열립니다. QR은 10초마다 새로 만들어져요.
               </p>
             )}
+
+            {/* On the ticket, not behind a menu: a coupon nobody can see is not a
+                coupon. Tapping one opens what it actually promises. */}
+            <CouponList coupons={ticket.coupons} onOpen={setCoupon} />
 
             {/* Folded by default: the door comes first, and the rest is housekeeping. */}
             <button className="manage-toggle" aria-expanded={manage}
@@ -455,11 +495,13 @@ export default function TicketPage() {
  * The code is minted locally from the grant secret, so it keeps rotating even if the
  * phone loses signal in the queue.
  */
-function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
+function RotatingCode({ grant, ticket, movement, used, onDone, onRefresh }: {
   grant: Grant;
   ticket: TicketView;
   /** The gate's verdict, once it has been read. Until then the code is still live. */
   movement: Movement | null;
+  /** A stand took a coupon against this code, which spends it exactly as a door does. */
+  used: Handover | null;
   onDone: () => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
@@ -549,23 +591,24 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
 
   // The code was spent: show it being spent, then hand the holder back their ticket.
   useEffect(() => {
-    if (!movement) return;
+    if (!movement && !used) return;
     const timer = window.setTimeout(() => { void done.current(); }, 3400);
     return () => window.clearTimeout(timer);
-  }, [movement]);
+  }, [movement, used]);
 
   return (
     <div className="access-card">
       {/* Laid over the whole card: the code burns underneath, and what is left is the
           row the gate wrote about this ticket. */}
       {movement && <ScanFlash movement={movement} spent inside={ticket.presence.inside} />}
+      {!movement && used && <CouponFlash used={used} spent />}
       <p className="eyebrow center"><span></span> {grant.direction === 'IN' ? '입장' : '퇴장'}</p>
-      <h2>{movement ? '읽혔어요' : '게이트 단말에 비춰 주세요'}</h2>
-      <div className={`code-stage${movement ? ' code-spent' : ''}`}>
+      <h2>{movement || used ? '읽혔어요' : '게이트 단말에 비춰 주세요'}</h2>
+      <div className={`code-stage${movement || used ? ' code-spent' : ''}`}>
         <canvas ref={canvas} width={260} height={260} className="code-canvas" aria-label="입장 QR 코드" />
         {/* The ring is this code's own life, drawn where it is being used: one unbroken
             sweep per rotation, keyed so each new code starts its own. */}
-        {!movement && cycle && (
+        {!movement && !used && cycle && (
           <svg className="code-life" viewBox="0 0 100 100" aria-hidden="true">
             <path className="life-track" d={RING} pathLength="1" />
             <path key={cycle.index} className="life-run" d={RING} pathLength="1" style={{
@@ -577,8 +620,10 @@ function RotatingCode({ grant, ticket, movement, onDone, onRefresh }: {
       </div>
       {failed
         ? <p className="error-text" role="alert">{failed}</p>
-        : !movement && <p className="code-timer" role="status">{left}초 후 만료 · {rotation}초 후 갱신</p>}
-      {!movement && (
+        : !movement && !used && (
+          <p className="code-timer" role="status">{left}초 후 만료 · {rotation}초 후 갱신</p>
+        )}
+      {!movement && !used && (
         <p className="hint-text">
           화면 밝기를 최대로 올리면 인식이 빨라요. 캡처한 QR은 다음 코드가 만들어지는 순간 무효가 됩니다.
         </p>

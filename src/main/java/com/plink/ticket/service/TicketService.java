@@ -43,14 +43,16 @@ public class TicketService {
     private final MessageSender sms;
     private final TicketProperties properties;
     private final TextCipher cipher;
+    private final CouponService coupons;
     private final String baseUrl;
 
     public TicketService(TicketRepository tickets, TicketFieldRepository fields,
             EventSessionRepository sessions,
             HolderRepository holders, AdmissionRepository admissions,
             TransferRepository transfers, PresentationService presentations, EmailSender mail,
-            MessageSender sms, TicketProperties properties, TextCipher cipher,
+            MessageSender sms, TicketProperties properties, TextCipher cipher, CouponService coupons,
             @Value("${plink.auth.base-url}") String baseUrl) {
+        this.coupons = coupons;
         this.tickets = tickets;
         this.fields = fields;
         this.sessions = sessions;
@@ -439,6 +441,9 @@ public class TicketService {
             ? null
             : presence.lastExitAt.toInstant().plus(session.reentryGraceMinutes, ChronoUnit.MINUTES).toString());
         result.put("presence", state);
+        // What this ticket can collect while it is inside. Empty for most events, so it
+        // costs nothing to carry, and the screen shows nothing when there is nothing.
+        result.put("coupons", coupons.forTicket(session.id, ticket.id));
         return result;
     }
 

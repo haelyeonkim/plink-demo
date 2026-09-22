@@ -14,6 +14,9 @@ interface GateInfo {
   zone: string | null;
   direction: 'IN' | 'OUT' | 'BIDIRECTIONAL';
   sessionName: string;
+  /** ADMISSION moves people through a door; BOOTH hands something over. */
+  role: 'ADMISSION' | 'BOOTH';
+  booth: string | null;
   /** Null for a terminal registered before tokens had an end date. */
   tokenExpiresAt: string | null;
 }
@@ -46,6 +49,21 @@ const HEADLINES: Record<string, { tone: SealTone; headline: string }> = {
   DUPLICATE: { tone: 'repeat', headline: '중복 스캔' },
   DENIED: { tone: 'deny', headline: '거부' },
 };
+
+/**
+ * What a booth's read answers with. The headline is the offer itself, because the person
+ * behind the counter needs to know what to hand over, not that a check passed.
+ */
+function couponVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'ledger'> {
+  const title = String(result.title ?? '쿠폰');
+  const ticket = [result.ticketRef, result.seat].filter(Boolean).join(' · ');
+  if (result.outcome === 'ALREADY') {
+    return { tone: 'repeat', headline: '이미 받아 감', detail: `${title}${ticket ? ` · ${ticket}` : ''}` };
+  }
+  const left = typeof result.remaining === 'number' && result.remaining > 0
+    ? ` · 남은 쿠폰 ${result.remaining}장` : '';
+  return { tone: 'admit', headline: title, detail: `${ticket}${left}` };
+}
 
 const STORAGE = 'plink.gate.credentials';
 const CAMERA = 'plink.gate.camera';
@@ -179,6 +197,11 @@ export default function GateScanner() {
     inFlight.current = true;
     try {
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
+      if (gate?.role === 'BOOTH') {
+        const handed = couponVerdict(result);
+        announce({ ...handed, ledger: ledgerLine(handed.tone === 'repeat' ? '이미 사용' : '전달됨') });
+        return;
+      }
       const seat = result.seat ? ` · ${result.seat}` : '';
       const verdict = HEADLINES[result.outcome as string] ?? HEADLINES.ADMITTED;
       announce({
@@ -209,12 +232,14 @@ export default function GateScanner() {
       // Hold briefly so the operator sees the result before the next read.
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
-  }, [gateId, gateToken, announce, ledgerLine]);
+  }, [gateId, gateToken, gate, announce, ledgerLine]);
 
   // Face runs on the same stream as the QR decoder: the operator never switches modes,
   // and a visitor either holds up a phone or simply walks up.
   useEffect(() => {
-    if (!gate || !scanning || !faceMode) return;
+    // A stand hands something over against a code the holder chose to show; walking past
+    // a camera is not that choice, so a booth terminal reads codes only.
+    if (!gate || !scanning || !faceMode || gate.role === 'BOOTH') return;
     let stopped = false;
     const timer = window.setInterval(async () => {
       if (stopped || inFlight.current || Date.now() < restUntil.current) return;
@@ -379,7 +404,9 @@ export default function GateScanner() {
         ) : (
           <>
             <span className="result-dot result-dot-idle" aria-hidden="true" />
-            <span className="result-detail">입장권을 비춰 주세요</span>
+            <span className="result-detail">
+              {gate.role === 'BOOTH' ? '입장 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
+            </span>
           </>
         )}
         {handled > 0 && <span className="result-count">이 단말 {handled}건</span>}
@@ -415,12 +442,16 @@ export default function GateScanner() {
       </div>
 
       <footer className="gate-controls">
-        <span className={`gate-direction gate-${gate.direction.toLowerCase()}`}>
-          {gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
+        <span className={`gate-direction ${gate.role === 'BOOTH' ? 'gate-booth'
+          : `gate-${gate.direction.toLowerCase()}`}`}>
+          {gate.role === 'BOOTH' ? '부스'
+            : gate.direction === 'IN' ? '입장' : gate.direction === 'OUT' ? '퇴장' : '입·퇴장'}
         </span>
         <span className="gate-label">
-          <b>{gate.label || gate.gateId}</b>
-          <small>{gate.sessionName}</small>
+          <b>{gate.role === 'BOOTH' ? gate.booth ?? gate.gateId : gate.label || gate.gateId}</b>
+          <small>
+            {gate.role === 'BOOTH' ? `${gate.label ?? '부스 단말'} · ${gate.sessionName}` : gate.sessionName}
+          </small>
         </span>
         {queued > 0 && <span className="gate-queued">오프라인 대기 {queued}건</span>}
         {/* Only once it is worth an operator's attention: a date months away is noise. */}
@@ -436,12 +467,14 @@ export default function GateScanner() {
         <button className="btn-ghost" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
-        <button className="btn-ghost" onClick={() => setFaceMode(value => {
-          localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
-          return !value;
-        })}>
-          얼굴 인식 {faceMode ? '끄기' : '켜기'}
-        </button>
+        {gate.role !== 'BOOTH' && (
+          <button className="btn-ghost" onClick={() => setFaceMode(value => {
+            localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
+            return !value;
+          })}>
+            얼굴 인식 {faceMode ? '끄기' : '켜기'}
+          </button>
+        )}
       </footer>
       {error && <p className="gate-error" role="alert">{error}</p>}
     </section>

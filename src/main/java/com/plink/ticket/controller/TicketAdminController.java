@@ -50,12 +50,21 @@ public class TicketAdminController {
     private final TicketFieldRepository fields;
     private final LiveEvents live;
     private final LiveSnapshots snapshots;
+    private final com.plink.ticket.repository.BoothRepository booths;
+    private final com.plink.ticket.repository.CouponRepository couponRepository;
+    private final com.plink.ticket.service.CouponService coupons;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
             AdmissionService admissionService, TextCipher cipher, GateSetupService gateSetup,
             ZoneCapacityRepository zoneCapacities, TicketFieldRepository fields,
-            LiveEvents live, LiveSnapshots snapshots) {
+            LiveEvents live, LiveSnapshots snapshots,
+            com.plink.ticket.repository.BoothRepository booths,
+            com.plink.ticket.repository.CouponRepository couponRepository,
+            com.plink.ticket.service.CouponService coupons) {
+        this.booths = booths;
+        this.couponRepository = couponRepository;
+        this.coupons = coupons;
         this.sessions = sessions;
         this.tickets = tickets;
         this.gates = gates;
@@ -520,6 +529,112 @@ public class TicketAdminController {
         return result;
     }
 
+    /** The stands inside this event that hand something over. */
+    @GetMapping("/sessions/{id}/booths")
+    public List<Map<String, Object>> listBooths(@PathVariable long id) {
+        ticketService.requireSession(id);
+        List<Map<String, Object>> tallies = couponRepository.tallyBySession(id);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (com.plink.ticket.model.Booth booth : booths.findBySession(id)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("boothId", booth.id);
+            row.put("name", booth.name);
+            row.put("note", booth.note);
+            // Grouped by offer, because that is how an organiser thinks about them.
+            row.put("offers", tallies.stream()
+                .filter(tally -> number(tally.get("booth_id")) == booth.id)
+                .map(tally -> {
+                    Map<String, Object> offer = new LinkedHashMap<>();
+                    offer.put("title", tally.get("title"));
+                    offer.put("issued", number(tally.get("issued")));
+                    offer.put("redeemed", number(tally.get("redeemed")));
+                    offer.put("voided", number(tally.get("voided")));
+                    return offer;
+                }).toList());
+            result.add(row);
+        }
+        return result;
+    }
+
+    @PostMapping("/sessions/{id}/booths")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createBooth(@PathVariable long id, @RequestBody Map<String, String> body) {
+        ticketService.requireSession(id);
+        long boothId = booths.insert(id, required(body.get("name"), "부스 이름을 입력해 주세요."),
+            blankToNull(body.get("note")));
+        return Map.of("boothId", boothId, "name", body.get("name"));
+    }
+
+    /** Deleting a booth takes its coupons with it, which the console warns about. */
+    @DeleteMapping("/booths/{boothId}")
+    public Map<String, Object> deleteBooth(@PathVariable long boothId) {
+        com.plink.ticket.model.Booth booth = booths.findById(boothId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));
+        booths.delete(booth.id);
+        return Map.of("deleted", true, "boothId", booth.id);
+    }
+
+    /**
+     * Gives an offer to tickets. With no {@code ticketIds} it goes to every live ticket
+     * in the event, which is the usual case: everybody gets a welcome drink.
+     */
+    @PostMapping("/sessions/{id}/coupons")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> issueCoupons(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        List<Long> ticketIds = new ArrayList<>();
+        if (body.get("ticketIds") instanceof List<?> list) {
+            list.forEach(value -> ticketIds.add(((Number) value).longValue()));
+        }
+        return coupons.issue(id, ((Number) body.get("boothId")).longValue(),
+            text(body.get("title"), null), text(body.get("detail"), null), ticketIds);
+    }
+
+    /** Every coupon in the event, for the console's table. */
+    @GetMapping("/sessions/{id}/coupons")
+    public List<Map<String, Object>> listCoupons(@PathVariable long id) {
+        ticketService.requireSession(id);
+        Map<Long, com.plink.ticket.model.Booth> byId = new LinkedHashMap<>();
+        booths.findBySession(id).forEach(booth -> byId.put(booth.id, booth));
+        Map<Long, Ticket> ticketsById = new LinkedHashMap<>();
+        tickets.findBySession(id).forEach(ticket -> ticketsById.put(ticket.id, ticket));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (com.plink.ticket.model.Coupon coupon : couponRepository.findBySession(id)) {
+            Ticket ticket = ticketsById.get(coupon.ticketId);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("couponId", coupon.id);
+            row.put("booth", byId.containsKey(coupon.boothId) ? byId.get(coupon.boothId).name : null);
+            row.put("title", coupon.title);
+            row.put("detail", coupon.detail);
+            row.put("status", coupon.status);
+            row.put("ticketId", coupon.ticketId);
+            row.put("ticketRef", ticket == null ? null : ticket.ticketRef);
+            row.put("seat", ticket == null ? null : ticket.seat);
+            row.put("issuedToEmail", ticket == null ? null : TicketService.mask(ticket.issuedToEmail));
+            row.put("redeemedAt", coupon.redeemedAt == null ? null : coupon.redeemedAt.toInstant().toString());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /** Takes a coupon back, or puts it back in the holder's hands. */
+    @PostMapping("/coupons/{couponId}/status")
+    public Map<String, Object> setCouponStatus(@PathVariable long couponId,
+            @RequestBody Map<String, String> body) {
+        com.plink.ticket.model.Coupon coupon = couponRepository.findById(couponId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰을 찾을 수 없어요."));
+        String status = String.valueOf(body.get("status")).toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("ISSUED", "REDEEMED", "VOID").contains(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 상태가 올바르지 않아요.");
+        }
+        couponRepository.setStatus(coupon.id, status);
+        return Map.of("couponId", coupon.id, "status", status);
+    }
+
+    private static long number(Object value) {
+        return value instanceof Number n ? n.longValue() : 0;
+    }
+
     /**
      * Registers a gate terminal. The token stays readable here, because it is typed into
      * staff tablets through the day and an unrecoverable one means re-registering
@@ -540,8 +655,17 @@ public class TicketAdminController {
         String token = Secrets.randomToken(24);
         // A terminal without a place cannot answer "how busy is the main hall?".
         String zone = required(body.get("zone"), "게이트가 있는 장소를 입력해 주세요.");
+        boolean booth = "BOOTH".equalsIgnoreCase(body.get("role"));
+        Long boothId = null;
+        if (booth) {
+            if (body.get("boothId") == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "부스 단말은 부스를 지정해야 해요.");
+            }
+            boothId = coupons.requireBooth(id, Long.parseLong(body.get("boothId"))).id;
+        }
         gates.insert(gateId, id, body.get("label"), zone, direction,
-            gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
+            gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry(),
+            booth ? "BOOTH" : "ADMISSION", boothId);
 
         // The terminal is enrolled from a link and a code; nobody types the token.
         Map<String, Object> result = new LinkedHashMap<>(gateSetup.open(gateId));
@@ -623,6 +747,8 @@ public class TicketAdminController {
             row.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
                 : gate.tokenExpiresAt.toInstant().toString());
             row.put("tokenExpired", gate.tokenExpired());
+            row.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
+            row.put("boothId", gate.boothId);
             result.add(row);
         });
         return result;

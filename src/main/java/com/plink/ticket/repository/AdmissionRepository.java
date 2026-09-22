@@ -186,7 +186,9 @@ public class AdmissionRepository {
             + "SUM(CASE WHEN e.result = 'DENIED' THEN 1 ELSE 0 END) AS denied, "
             + "MAX(e.occurred_at) AS last_at "
             + "FROM gate g LEFT JOIN admission_event e ON e.gate_id = g.id "
-            + "WHERE g.session_id = ? "
+            // Booth terminals hand things over rather than move people, so the place
+            // they stand is not a place with a crowd in it.
+            + "WHERE g.session_id = ? AND g.role = 'ADMISSION' "
             + "GROUP BY COALESCE(g.zone, '(미지정)') ORDER BY 1", sessionId);
     }
 
