@@ -1385,6 +1385,15 @@ body:has(.gate-screen) .header-plain { display: none; }
   font-variant-numeric: tabular-nums;
 }
 .result-count { font-size: 11px; color: rgba(255, 255, 255, 0.35); }
+/* What this stand hands out, while it waits for the next code. */
+.booth-shelf { display: flex; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.booth-offer {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px; padding: 5px 13px;
+}
+.booth-offer b { font-size: 11.5px; font-weight: 700; color: #ffcf7a; font-variant-numeric: tabular-nums; }
 .gate-error { margin: 0; font-size: 12px; color: #ff9d95; text-align: center; }
 @media (max-width: 700px) {
   .gate-ledger-line { margin-left: 0; width: 100%; }
@@ -1602,6 +1611,21 @@ body:has(.gate-screen) .header-plain { display: none; }
 .danger-zone h3 { color: #c0392b; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 .panel-head h3 { margin: 0; }
+.head-note { display: block; font-size: 12px; font-weight: 600; color: #9198aa; margin-top: 3px; }
+
+/* Tabs inside a panel: lighter than the page's own tabs, because they divide one
+   screen rather than the console. A booth is a counter of its own, so the coupons
+   read as that counter's list instead of one pile with a column to squint at. */
+.inner-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+.inner-tabs button {
+  background: var(--bg-section); border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 15px; font: inherit; font-size: 13px; font-weight: 700; color: #697590;
+  cursor: pointer; display: inline-flex; align-items: baseline; gap: 7px; max-width: 100%;
+}
+.inner-tabs button:hover { color: var(--blue); border-color: #c8d3ee; }
+.inner-tabs button b { font-size: 11.5px; font-weight: 700; color: #9198aa; font-variant-numeric: tabular-nums; }
+.inner-tabs button.active { background: var(--blue); border-color: var(--blue); color: white; }
+.inner-tabs button.active b { color: rgba(255, 255, 255, 0.75); }
 
 /* Two equal secondary actions share a line instead of stacking full-width. */
 .access-card .button-row { display: flex; gap: 8px; }
@@ -1912,6 +1936,22 @@ body:has(.gate-screen) .header-plain { display: none; }
   border: 1px solid rgba(255, 255, 255, 0.18); font-variant-numeric: tabular-nums;
 }
 .verdict-ledger::after { content: '▌'; animation: caret 1s steps(1) infinite; }
+/* Whether this person still has something coming. It sits between the offer and the
+   seat because that is the order the counter says them in. */
+.verdict-mark {
+  margin-top: 12px; font-size: 15px; font-weight: 700; letter-spacing: -0.2px;
+  padding: 6px 16px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.28);
+}
+.verdict-detail + .verdict-ledger { margin-top: 14px; }
+/* The reader is resting while the verdict is up; the bar empties as it comes back. */
+/* Specific enough to keep its own position: the rule that lifts the verdict's parts
+   above the wash sets every other child to relative. */
+.gate-verdict .verdict-rest {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 4px; transform-origin: left; z-index: 2;
+  background: rgba(255, 255, 255, 0.55); animation: verdict-rest linear forwards;
+}
+@keyframes verdict-rest { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .verdict-deny .verdict-headline { animation: verdict-shake 0.42s ease; }
 @keyframes verdict-wash { from { clip-path: circle(0% at 50% 50%); } to { clip-path: circle(150% at 50% 50%); } }
 @keyframes verdict-shake {
@@ -1925,6 +1965,7 @@ body:has(.gate-screen) .header-plain { display: none; }
   .verdict-headline { font-size: 38px; }
   .gate-verdict .seal-mark { width: 76px; height: 76px; }
   .verdict-detail { font-size: 14px; }
+  .verdict-mark { font-size: 13px; margin-top: 8px; }
 }
 
 /* The holder's code, and the moment it is spent. */
@@ -2011,6 +2052,8 @@ body:has(.gate-screen) .header-plain { display: none; }
     animation: none !important;
   }
   .gate-scanline { display: none; }
+  /* The rest bar still shows how much of the pause is left; it simply jumps. */
+  .verdict-rest { animation: none !important; transform: scaleX(0); }
   /* The ring still says how much of the code's life is left; it just stops sweeping. */
   .life-run { animation-play-state: paused; }
   .seal-mark:not(.seal-working) .seal-lock { opacity: 0; }

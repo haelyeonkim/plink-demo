@@ -603,6 +603,7 @@ public class TicketAdminController {
             Ticket ticket = ticketsById.get(coupon.ticketId);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("couponId", coupon.id);
+            row.put("boothId", coupon.boothId);
             row.put("booth", byId.containsKey(coupon.boothId) ? byId.get(coupon.boothId).name : null);
             row.put("title", coupon.title);
             row.put("detail", coupon.detail);

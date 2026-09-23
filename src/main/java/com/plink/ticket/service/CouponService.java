@@ -176,6 +176,29 @@ public class CouponService {
         return result;
     }
 
+    /**
+     * What a booth terminal is standing there to hand out.
+     *
+     * <p>A stand's screen should say what it gives and how much of it is left, so that
+     * somebody taking over the counter can read the tablet instead of asking.
+     */
+    public List<Map<String, Object>> boothOffers(long sessionId, long boothId) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> row : coupons.tallyByBooth(sessionId, boothId)) {
+            Map<String, Object> offer = new LinkedHashMap<>();
+            offer.put("title", row.get("title"));
+            offer.put("issued", count(row.get("issued")));
+            offer.put("redeemed", count(row.get("redeemed")));
+            offer.put("waiting", count(row.get("waiting")));
+            result.add(offer);
+        }
+        return result;
+    }
+
+    private static int count(Object value) {
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
     public Booth requireBooth(long sessionId, long boothId) {
         Booth booth = booths.findById(boothId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));

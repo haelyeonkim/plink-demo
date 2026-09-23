@@ -154,6 +154,28 @@ class CouponTest {
         assertEquals("REDEEMED", coupons.redeemByCode(stand, code(ticket)).get("outcome"));
     }
 
+    /** The stand's own screen can say what it gives and how much of it is left. */
+    @Test void aBoothTerminalKnowsWhatItHandsOut() {
+        newSession();
+        Ticket first = boundTicket("first@example.com", "A-1");
+        Ticket second = boundTicket("second@example.com", "A-2");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        coupons.issue(sessionId, booth, "웰컴 커피", null, List.of());
+        coupons.issue(sessionId, booth, "리필", null, List.of(first.id));
+        coupons.redeemByCode(boothGate(booth), code(first));
+
+        List<Map<String, Object>> offers = coupons.boothOffers(sessionId, booth);
+        assertEquals(2, offers.size(), "이 부스의 쿠폰 종류만 셉니다");
+        Map<String, Object> coffee = offers.stream()
+            .filter(offer -> "웰컴 커피".equals(offer.get("title"))).findFirst().orElseThrow();
+        assertEquals(2, coffee.get("issued"));
+        assertEquals(1, coffee.get("redeemed"), "한 사람이 받아 갔습니다");
+        assertEquals(1, coffee.get("waiting"));
+        assertEquals(0, coupons.boothOffers(sessionId,
+            booths.insert(sessionId, "굿즈 부스", null)).size(), "다른 부스 것은 세지 않습니다");
+        assertNotNull(second);
+    }
+
     @Test void theHolderSeesWhatTheyHoldAndWhatTheySpent() {
         newSession();
         Ticket ticket = boundTicket("holder@example.com", "A-1");

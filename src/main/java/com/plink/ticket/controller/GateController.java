@@ -78,6 +78,9 @@ public class GateController {
         result.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
         result.put("booth", gate.boothId == null ? null
             : coupons.requireBooth(gate.sessionId, gate.boothId).name);
+        // A booth terminal also says what it is handing out, and how much is left.
+        result.put("offers", gate.boothId == null ? List.of()
+            : coupons.boothOffers(gate.sessionId, gate.boothId));
         result.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
             : gate.tokenExpiresAt.toInstant().toString());
         return result;

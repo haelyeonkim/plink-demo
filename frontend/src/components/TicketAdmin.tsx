@@ -83,7 +83,7 @@ interface BoothRow {
 }
 
 interface CouponRow {
-  couponId: number; booth: string | null; title: string; detail: string | null;
+  couponId: number; boothId: number | null; booth: string | null; title: string; detail: string | null;
   status: string; ticketId: number; ticketRef: string | null; seat: string | null;
   issuedToEmail: string | null; redeemedAt: string | null;
 }
@@ -148,7 +148,8 @@ export default function TicketAdmin() {
   const [gateRole, setGateRole] = useState('ADMISSION');
   // The hand-out sheet: open with a ticket to give to that one person, or with null to
   // choose the recipients inside. `pickTickets` is that choice — everybody, or a few.
-  const [couponSheet, setCouponSheet] = useState<{ only: TicketRow | null } | null>(null);
+  const [couponSheet, setCouponSheet] =
+    useState<{ only: TicketRow | null; boothId?: number } | null>(null);
   const [pickTickets, setPickTickets] = useState(false);
   // The sheet covers the page, so its own complaint has to be on the sheet.
   const [sheetError, setSheetError] = useState('');
@@ -167,6 +168,12 @@ export default function TicketAdmin() {
   }
   function setSettingsTab(next: SettingsTab) {
     setParams({ tab: 'settings', sec: next });
+  }
+  // Which booth the 쿠폰 tab is looking at. It lives in the address like the other
+  // tabs do, so the back button walks back through the stands.
+  const boothTab = params.get('booth') === null ? null : Number(params.get('booth'));
+  function setBoothTab(next: number | null) {
+    setParams(next === null ? { tab: 'coupons' } : { tab: 'coupons', booth: String(next) });
   }
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmField, setConfirmField] = useState<TicketFieldRow | null>(null);
@@ -404,10 +411,10 @@ export default function TicketAdmin() {
   }, [couponSheet]);
 
   /** Opens the sheet, for one named person or for a choice made inside it. */
-  const openCouponSheet = (only: TicketRow | null) => {
+  const openCouponSheet = (only: TicketRow | null, boothId?: number) => {
     setPickTickets(false);
     setSheetError('');
-    setCouponSheet({ only });
+    setCouponSheet({ only, boothId });
   };
 
   const issueCoupons = (form: HTMLFormElement) => {
@@ -1164,7 +1171,8 @@ export default function TicketAdmin() {
                   <div className="form-row">
                     <div className="field">
                       <label htmlFor="give-booth">부스</label>
-                      <select id="give-booth" name="boothId" required>
+                      <select id="give-booth" name="boothId" required
+                        defaultValue={couponSheet.boothId ?? boothTab ?? undefined}>
                         {booths.map(booth => (
                           <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
                         ))}
@@ -1320,73 +1328,120 @@ export default function TicketAdmin() {
           </div>
 
           <div>
-            <h3>부스 ({booths.length})</h3>
-            {booths.map(booth => (
-              <div className="gate-row" key={booth.boothId}>
-                <div>
-                  <b>{booth.name}</b>
-                  {booth.note && <span className="cell-note">{booth.note}</span>}
-                  <div className="gate-meta">
-                    {booth.offers.length === 0 ? '쿠폰 없음' : booth.offers.map(offer => (
-                      <span key={offer.title} className="pill pill-wait">
-                        {offer.title} {offer.redeemed}/{offer.issued}
-                      </span>
-                    ))}
+            {/* One stand at a time: a room full of booths is a room full of separate
+                counters, and the console reads better the same way. */}
+            <div className="inner-tabs" role="tablist">
+              <button role="tab" aria-selected={boothTab === null}
+                className={boothTab === null ? 'active' : ''}
+                onClick={() => setBoothTab(null)}>전체 {coupons.length}</button>
+              {booths.map(booth => {
+                const mine = coupons.filter(row => row.boothId === booth.boothId);
+                return (
+                  <button key={booth.boothId} role="tab" aria-selected={boothTab === booth.boothId}
+                    className={boothTab === booth.boothId ? 'active' : ''}
+                    onClick={() => setBoothTab(booth.boothId)}>
+                    {booth.name} <b>{mine.length}</b>
+                  </button>
+                );
+              })}
+            </div>
+
+            {(() => {
+              const booth = booths.find(row => row.boothId === boothTab) ?? null;
+              const shown = booth ? coupons.filter(row => row.boothId === booth.boothId) : coupons;
+              const redeemed = shown.filter(row => row.status === 'REDEEMED').length;
+              return (<>
+                <div className="panel-head">
+                  <h3>
+                    {booth ? booth.name : '부스 전체'}
+                    <small className="head-note">
+                      {booth?.note ? `${booth.note} · ` : ''}
+                      쿠폰 {shown.length}장 · 사용 {redeemed}장
+                    </small>
+                  </h3>
+                  <div className="gate-actions">
+                    <button className="btn-tiny" disabled={booths.length === 0}
+                      onClick={() => openCouponSheet(null, booth?.boothId)}>쿠폰 발급</button>
+                    {booth && (
+                      <button className="btn-tiny btn-tiny-danger"
+                        onClick={() => setConfirmBooth(booth)}>부스 삭제</button>
+                    )}
                   </div>
                 </div>
-                <div className="gate-actions">
-                  <button className="btn-tiny btn-tiny-danger" onClick={() => setConfirmBooth(booth)}>
-                    삭제
-                  </button>
-                </div>
-              </div>
-            ))}
-            {booths.length === 0 && <p className="hint-text">등록된 부스가 없어요.</p>}
 
-            <div className="panel-head">
-              <h3>발급된 쿠폰 ({coupons.length})</h3>
-              <button className="btn-tiny" disabled={booths.length === 0}
-                onClick={() => openCouponSheet(null)}>쿠폰 발급</button>
-            </div>
-            <div className="table-scroll">
-              <table className="ticket-table">
-                <thead>
-                  <tr><th>부스</th><th>쿠폰</th><th>입장권</th><th>상태</th><th /></tr>
-                </thead>
-                <tbody>
-                  {coupons.map(row => (
-                    <tr key={row.couponId} className={row.status === 'VOID' ? 'row-revoked' : ''}>
-                      <td data-label="부스">{row.booth ?? '-'}</td>
-                      <td data-label="쿠폰">{row.title}</td>
-                      <td data-label="입장권">
-                        {row.ticketRef}{row.seat ? ` · ${row.seat}` : ''}
-                        <small className="cell-note">{row.issuedToEmail}</small>
-                      </td>
-                      <td data-label="상태">
-                        <span className={`pill pill-${row.status === 'REDEEMED' ? 'ok'
-                          : row.status === 'VOID' ? 'off' : 'wait'}`}>
-                          {row.status === 'REDEEMED' ? '사용함' : row.status === 'VOID' ? '무효' : '미사용'}
-                        </span>
-                        {row.redeemedAt && <small className="cell-note">{shortTime(row.redeemedAt)}</small>}
-                      </td>
-                      <td className="cell-buttons">
-                        {row.status === 'VOID' ? (
-                          <button className="btn-tiny" onClick={() => setCouponStatus(row, 'ISSUED')}>
-                            되살리기
-                          </button>
-                        ) : (
-                          <button className="btn-tiny btn-tiny-danger"
-                            onClick={() => setCouponStatus(row, 'VOID')}>무효화</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {coupons.length === 0 && (
-                    <tr><td colSpan={5}><p className="hint-text">발급된 쿠폰이 없어요.</p></td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                {/* What this stand gives, with how much of it has gone. */}
+                {(booth ? [booth] : booths).map(row => (
+                  <div className="gate-row" key={row.boothId}>
+                    <div>
+                      {!booth && <b>{row.name}</b>}
+                      {!booth && row.note && <span className="cell-note">{row.note}</span>}
+                      <div className="gate-meta">
+                        {row.offers.length === 0 ? '쿠폰 없음' : row.offers.map(offer => (
+                          <span key={offer.title} className="pill pill-wait">
+                            {offer.title} {offer.redeemed}/{offer.issued}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    {!booth && (
+                      <div className="gate-actions">
+                        <button className="btn-tiny" onClick={() => setBoothTab(row.boothId)}>열기</button>
+                        <button className="btn-tiny btn-tiny-danger"
+                          onClick={() => setConfirmBooth(row)}>삭제</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {booths.length === 0 && <p className="hint-text">등록된 부스가 없어요.</p>}
+
+                <div className="table-scroll">
+                  <table className="ticket-table">
+                    <thead>
+                      <tr>
+                        {!booth && <th>부스</th>}
+                        <th>쿠폰</th><th>입장권</th><th>상태</th><th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.map(row => (
+                        <tr key={row.couponId} className={row.status === 'VOID' ? 'row-revoked' : ''}>
+                          {!booth && <td data-label="부스">{row.booth ?? '-'}</td>}
+                          <td data-label="쿠폰">{row.title}</td>
+                          <td data-label="입장권">
+                            {row.ticketRef}{row.seat ? ` · ${row.seat}` : ''}
+                            <small className="cell-note">{row.issuedToEmail}</small>
+                          </td>
+                          <td data-label="상태">
+                            <span className={`pill pill-${row.status === 'REDEEMED' ? 'ok'
+                              : row.status === 'VOID' ? 'off' : 'wait'}`}>
+                              {row.status === 'REDEEMED' ? '사용함' : row.status === 'VOID' ? '무효' : '미사용'}
+                            </span>
+                            {row.redeemedAt && <small className="cell-note">{shortTime(row.redeemedAt)}</small>}
+                          </td>
+                          <td className="cell-buttons">
+                            {row.status === 'VOID' ? (
+                              <button className="btn-tiny" onClick={() => setCouponStatus(row, 'ISSUED')}>
+                                되살리기
+                              </button>
+                            ) : (
+                              <button className="btn-tiny btn-tiny-danger"
+                                onClick={() => setCouponStatus(row, 'VOID')}>무효화</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {shown.length === 0 && (
+                        <tr><td colSpan={booth ? 4 : 5}>
+                          <p className="hint-text">
+                            {booth ? `${booth.name}에서 발급한 쿠폰이 없어요.` : '발급된 쿠폰이 없어요.'}
+                          </p>
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>);
+            })()}
           </div>
         </div>
       )}

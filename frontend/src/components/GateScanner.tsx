@@ -17,6 +17,8 @@ interface GateInfo {
   /** ADMISSION moves people through a door; BOOTH hands something over. */
   role: 'ADMISSION' | 'BOOTH';
   booth: string | null;
+  /** What a booth hands out, and how much of it is still waiting to be collected. */
+  offers?: { title: string; issued: number; redeemed: number; waiting: number }[];
   /** Null for a terminal registered before tokens had an end date. */
   tokenExpiresAt: string | null;
 }
@@ -56,13 +58,18 @@ const HEADLINES: Record<string, { tone: SealTone; headline: string }> = {
  */
 function couponVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'ledger'> {
   const title = String(result.title ?? '쿠폰');
-  const ticket = [result.ticketRef, result.seat].filter(Boolean).join(' · ');
+  // Seat first, reference second: at a counter the seat is what gets said out loud.
+  const ticket = [result.seat, result.ticketRef].filter(Boolean).join(' · ');
   if (result.outcome === 'ALREADY') {
-    return { tone: 'repeat', headline: '이미 받아 감', detail: `${title}${ticket ? ` · ${ticket}` : ''}` };
+    return { tone: 'repeat', headline: '이미 받아 감', mark: title, detail: ticket };
   }
-  const left = typeof result.remaining === 'number' && result.remaining > 0
-    ? ` · 남은 쿠폰 ${result.remaining}장` : '';
-  return { tone: 'admit', headline: title, detail: `${ticket}${left}` };
+  // Whether this person still has something coming decides what is said next, so it is
+  // a badge of its own rather than the tail of a line of small print.
+  const remaining = typeof result.remaining === 'number' ? result.remaining : 0;
+  return {
+    tone: 'admit', headline: title, detail: ticket,
+    mark: remaining > 0 ? `이 부스 쿠폰 ${remaining}장 더 있음` : '이 부스 쿠폰은 이게 마지막',
+  };
 }
 
 const STORAGE = 'plink.gate.credentials';
@@ -113,6 +120,9 @@ export default function GateScanner() {
   // What this terminal has handled since it was opened. Staff read it as proof the
   // lane is moving, and it costs nothing to keep.
   const [handled, setHandled] = useState(0);
+  // Of those, the ones that ended in something changing hands. A stand counts stock,
+  // and a refusal is not a cup of coffee.
+  const [handedOut, setHandedOut] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLCanvasElement>(null);
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
@@ -135,6 +145,15 @@ export default function GateScanner() {
       .then(info => setGate(info as GateInfo))
       .catch(err => setError(err instanceof Error ? err.message : '단말을 연결하지 못했어요.'));
   }, [gateId, gateToken, gate]);
+
+  /** Re-reads what the booth still has to hand out, after handing one over. */
+  const refreshOffers = useCallback(() => {
+    if (!gateId || !gateToken) return;
+    gateInfo(gateId, gateToken)
+      .then(info => setGate(current => (current
+        ? { ...current, offers: (info as GateInfo).offers ?? [] } : current)))
+      .catch(() => { /* the counts are a convenience, not the job */ });
+  }, [gateId, gateToken]);
 
   /** Moves this terminal's end date out. The token and the gate binding are untouched. */
   const renew = useCallback(async (quiet: boolean) => {
@@ -169,6 +188,7 @@ export default function GateScanner() {
     const settled = { ...verdict, at: Date.now() };
     restUntil.current = settled.at + hold(settled.tone);
     setHandled(count => count + 1);
+    if (settled.tone === 'admit') setHandedOut(count => count + 1);
     setOutcome(current => {
       // The same answer about the same person, moments apart: somebody has stayed in
       // front of the camera. The line below keeps the newest time, but taking the whole
@@ -200,6 +220,7 @@ export default function GateScanner() {
       if (gate?.role === 'BOOTH') {
         const handed = couponVerdict(result);
         announce({ ...handed, ledger: ledgerLine(handed.tone === 'repeat' ? '이미 사용' : '전달됨') });
+        if (handed.tone === 'admit') refreshOffers();
         return;
       }
       const seat = result.seat ? ` · ${result.seat}` : '';
@@ -232,7 +253,7 @@ export default function GateScanner() {
       // Hold briefly so the operator sees the result before the next read.
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
-  }, [gateId, gateToken, gate, announce, ledgerLine]);
+  }, [gateId, gateToken, gate, announce, ledgerLine, refreshOffers]);
 
   // Face runs on the same stream as the QR decoder: the operator never switches modes,
   // and a visitor either holds up a phone or simply walks up.
@@ -407,9 +428,26 @@ export default function GateScanner() {
             <span className="result-detail">
               {gate.role === 'BOOTH' ? '입장 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
             </span>
+            {/* What this stand gives, on the stand's own screen: somebody taking over
+                the counter reads the tablet instead of asking. */}
+            {gate.role === 'BOOTH' && (gate.offers ?? []).length > 0 && (
+              <span className="booth-shelf">
+                {(gate.offers ?? []).map(offer => (
+                  <span className="booth-offer" key={offer.title}>
+                    {offer.title}
+                    <b>{offer.waiting > 0 ? `${offer.waiting}장 남음` : '모두 전달'}</b>
+                  </span>
+                ))}
+              </span>
+            )}
           </>
         )}
-        {handled > 0 && <span className="result-count">이 단말 {handled}건</span>}
+        {handled > 0 && (
+          <span className="result-count">
+            {gate.role === 'BOOTH'
+              ? `이 단말 ${handled}건 · 전달 ${handedOut}장` : `이 단말 ${handled}건`}
+          </span>
+        )}
       </div>
 
       <div className="gate-viewport">
@@ -422,7 +460,7 @@ export default function GateScanner() {
         {/* A terminal that looks asleep between visitors reads as a terminal that is not
             checking. The sweep runs only while it really is reading. */}
         {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
-        {flash && <GateVerdict key={flash.at} verdict={flash} />}
+        {flash && <GateVerdict key={flash.at} verdict={flash} rest={hold(flash.tone)} />}
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
         {/* On the picture rather than in the bar below: it is the picture it changes. */}
         <button className="gate-flip" onClick={flipCamera}

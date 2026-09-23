@@ -83,6 +83,16 @@ public class CouponRepository {
     }
 
     /** What the console's coupon tab counts: how many of each offer are out and used. */
+    /** One booth's offers and how many of each are still to be handed over. */
+    public List<Map<String, Object>> tallyByBooth(long sessionId, long boothId) {
+        return jdbc.queryForList(
+            "SELECT title, COUNT(*) AS issued, "
+            + "SUM(CASE WHEN status = 'REDEEMED' THEN 1 ELSE 0 END) AS redeemed, "
+            + "SUM(CASE WHEN status = 'ISSUED' THEN 1 ELSE 0 END) AS waiting "
+            + "FROM coupon WHERE session_id = ? AND booth_id = ? GROUP BY title ORDER BY title",
+            sessionId, boothId);
+    }
+
     public List<Map<String, Object>> tallyBySession(long sessionId) {
         return jdbc.queryForList(
             "SELECT booth_id, title, COUNT(*) AS issued, "
