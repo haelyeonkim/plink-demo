@@ -46,6 +46,7 @@ class CouponTest {
     @Autowired CouponService coupons;
     @Autowired CouponRepository couponRepository;
     @Autowired BoothRepository booths;
+    @Autowired com.plink.ticket.repository.CouponOfferRepository offers;
     @Autowired TicketService tickets;
     @Autowired TicketRepository ticketRepository;
     @Autowired EventSessionRepository sessions;
@@ -53,6 +54,7 @@ class CouponTest {
     @Autowired GateRepository gates;
     @Autowired GateAuthService gateAuth;
     @Autowired PresentationService presentations;
+    @Autowired com.plink.ticket.controller.TicketAdminController adminController;
 
     private long sessionId;
 
@@ -70,6 +72,14 @@ class CouponTest {
         return ticketRepository.findById(id).orElseThrow();
     }
 
+    /** Gives a booth's offer, defining it first the way the console would. */
+    private Map<String, Object> give(long boothId, String title, String detail, List<Long> ticketIds) {
+        long offerId = offers.findByBooth(boothId).stream().filter(offer -> offer.title.equals(title))
+            .map(offer -> offer.id).findFirst()
+            .orElseGet(() -> coupons.defineOffer(sessionId, boothId, title, detail).id);
+        return coupons.issue(sessionId, offerId, ticketIds);
+    }
+
     private Gate boothGate(long boothId) {
         String id = "b" + Secrets.randomAlnum(10);
         gates.insert(id, sessionId, "부스 단말", "메인홀", "BIDIRECTIONAL",
@@ -82,18 +92,105 @@ class CouponTest {
         return TicketCodes.code(presentations.issue(ticket, "IN", true), 1);
     }
 
+    /** A booth gives only what it has been set up to give, and only while that is on. */
+    @Test void onlyADefinedOfferThatIsSwitchedOnCanBeGiven() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        com.plink.ticket.model.CouponOffer coffee = coupons.defineOffer(sessionId, booth, "웰컴 커피", "1인 1잔");
+
+        ResponseStatusException twin = assertThrows(ResponseStatusException.class,
+            () -> coupons.defineOffer(sessionId, booth, "웰컴 커피", null));
+        assertEquals(409, twin.getStatusCode().value(), "한 부스에 같은 이름은 하나");
+
+        coupons.setOfferActive(coffee.id, false);
+        ResponseStatusException off = assertThrows(ResponseStatusException.class,
+            () -> coupons.issue(sessionId, coffee.id, List.of(ticket.id)));
+        assertEquals(409, off.getStatusCode().value());
+        assertTrue(String.valueOf(off.getReason()).contains("중지"), off.getReason());
+
+        coupons.setOfferActive(coffee.id, true);
+        assertEquals(1, coupons.issue(sessionId, coffee.id, List.of(ticket.id)).get("given"));
+        assertEquals("1인 1잔", coupons.forTicket(sessionId, ticket.id).get(0).get("detail"),
+            "쿠폰은 정의된 문구를 그대로 가져갑니다");
+
+        // Another event's offer is not this event's to give.
+        long mine = sessionId;
+        newSession();
+        long elsewhere = booths.insert(sessionId, "굿즈 부스", null);
+        long foreign = coupons.defineOffer(sessionId, elsewhere, "스티커", null).id;
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+            () -> coupons.issue(mine, foreign, List.of(ticket.id))).getStatusCode().value());
+    }
+
+    /**
+     * Once given, an offer is switched off rather than deleted, and what was given keeps
+     * working: it was promised. The stand's screen keeps showing it while anyone is owed.
+     */
+    @Test void aGivenOfferIsSwitchedOffNotDeleted() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long coffee = coupons.defineOffer(sessionId, booth, "웰컴 커피", null).id;
+        long unused = coupons.defineOffer(sessionId, booth, "리필", null).id;
+        coupons.issue(sessionId, coffee, List.of(ticket.id));
+
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+            () -> coupons.deleteOffer(coffee)).getStatusCode().value());
+        coupons.deleteOffer(unused);
+        assertTrue(offers.findById(unused).isEmpty(), "아무도 받지 않은 쿠폰은 지울 수 있어요");
+
+        coupons.setOfferActive(coffee, false);
+        assertEquals(1, coupons.boothOffers(sessionId, booth).size(), "받을 사람이 남아 있으면 단말에 보입니다");
+        assertEquals("REDEEMED", coupons.redeemByCode(boothGate(booth), code(ticket)).get("outcome"),
+            "중지해도 이미 준 쿠폰은 쓸 수 있어요");
+        assertEquals(0, coupons.boothOffers(sessionId, booth).size(), "다 건넨 뒤에는 단말에서 빠집니다");
+    }
+
+    /** A revoked ticket is not somebody who is coming to collect anything. */
+    @Test void aRevokedTicketIsNotGivenAnything() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        ticketRepository.updateStatus(ticket.id, "REVOKED");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long coffee = coupons.defineOffer(sessionId, booth, "웰컴 커피", null).id;
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+            () -> coupons.issue(sessionId, coffee, List.of(ticket.id))).getStatusCode().value());
+    }
+
+    /** The coupon table comes a page at a time, and a booth's tab is a filter on it. */
+    @Test void theCouponListComesAPageAtATime() {
+        newSession();
+        long coffee = booths.insert(sessionId, "커피 스탠드", null);
+        long merch = booths.insert(sessionId, "굿즈 부스", null);
+        for (int i = 1; i <= 5; i++) boundTicket("p" + i + "@example.com", "C-" + i);
+        give(coffee, "웰컴 커피", null, List.of());
+        give(merch, "스티커", null, List.of());
+
+        Map<String, Object> first = adminController.listCoupons(sessionId, 0, 4, null, null, null);
+        assertEquals(10L, first.get("total"));
+        assertEquals(4, ((List<?>) first.get("items")).size());
+        assertEquals(2, ((List<?>) adminController.listCoupons(sessionId, 2, 4, null, null, null)
+            .get("items")).size(), "마지막 쪽에는 남은 것만");
+
+        assertEquals(5L, adminController.listCoupons(sessionId, 0, 50, null, merch, null).get("total"));
+        assertEquals(1L, adminController.listCoupons(sessionId, 0, 50, "c-3", coffee, null).get("total"),
+            "좌석으로 찾기");
+        assertEquals(0L, adminController.listCoupons(sessionId, 0, 50, null, null, "REDEEMED").get("total"));
+    }
+
     @Test void anOfferGoesToEveryTicketAndOnlyOnce() {
         newSession();
         Ticket first = boundTicket("one@example.com", "A-1");
         Ticket second = boundTicket("two@example.com", "A-2");
         long booth = booths.insert(sessionId, "커피 스탠드", "로비 왼쪽");
 
-        Map<String, Object> given = coupons.issue(sessionId, booth, "웰컴 커피", "1인 1잔", List.of());
+        Map<String, Object> given = give(booth, "웰컴 커피", "1인 1잔", List.of());
         assertEquals(2, given.get("given"));
 
         // Running it again for the latecomers is not an error, and nobody gets two.
         Ticket third = boundTicket("three@example.com", "A-3");
-        Map<String, Object> again = coupons.issue(sessionId, booth, "웰컴 커피", "1인 1잔", List.of());
+        Map<String, Object> again = give(booth, "웰컴 커피", "1인 1잔", List.of());
         assertEquals(1, again.get("given"));
         assertEquals(2, again.get("already"));
         assertEquals(1, couponRepository.findByTicket(first.id).size());
@@ -105,7 +202,7 @@ class CouponTest {
         newSession();
         Ticket ticket = boundTicket("holder@example.com", "A-1");
         long booth = booths.insert(sessionId, "커피 스탠드", null);
-        coupons.issue(sessionId, booth, "웰컴 커피", "1인 1잔", List.of(ticket.id));
+        give(booth, "웰컴 커피", "1인 1잔", List.of(ticket.id));
         Gate stand = boothGate(booth);
 
         Map<String, Object> first = coupons.redeemByCode(stand, code(ticket));
@@ -127,7 +224,7 @@ class CouponTest {
         Ticket ticket = boundTicket("holder@example.com", "A-1");
         long coffee = booths.insert(sessionId, "커피 스탠드", null);
         long merch = booths.insert(sessionId, "굿즈 부스", null);
-        coupons.issue(sessionId, coffee, "웰컴 커피", null, List.of(ticket.id));
+        give(coffee, "웰컴 커피", null, List.of(ticket.id));
 
         ResponseStatusException refused = assertThrows(ResponseStatusException.class,
             () -> coupons.redeemByCode(boothGate(merch), code(ticket)));
@@ -140,8 +237,8 @@ class CouponTest {
         newSession();
         Ticket ticket = boundTicket("holder@example.com", "A-1");
         long booth = booths.insert(sessionId, "커피 스탠드", null);
-        coupons.issue(sessionId, booth, "웰컴 커피", null, List.of(ticket.id));
-        coupons.issue(sessionId, booth, "리필", null, List.of(ticket.id));
+        give(booth, "웰컴 커피", null, List.of(ticket.id));
+        give(booth, "리필", null, List.of(ticket.id));
         Gate stand = boothGate(booth);
 
         String shown = code(ticket);
@@ -160,8 +257,8 @@ class CouponTest {
         Ticket first = boundTicket("first@example.com", "A-1");
         Ticket second = boundTicket("second@example.com", "A-2");
         long booth = booths.insert(sessionId, "커피 스탠드", null);
-        coupons.issue(sessionId, booth, "웰컴 커피", null, List.of());
-        coupons.issue(sessionId, booth, "리필", null, List.of(first.id));
+        give(booth, "웰컴 커피", null, List.of());
+        give(booth, "리필", null, List.of(first.id));
         coupons.redeemByCode(boothGate(booth), code(first));
 
         List<Map<String, Object>> offers = coupons.boothOffers(sessionId, booth);
@@ -180,8 +277,8 @@ class CouponTest {
         newSession();
         Ticket ticket = boundTicket("holder@example.com", "A-1");
         long booth = booths.insert(sessionId, "커피 스탠드", "로비 왼쪽");
-        coupons.issue(sessionId, booth, "웰컴 커피", "따뜻한 음료 1잔", List.of(ticket.id));
-        coupons.issue(sessionId, booth, "리필", "오후 6시까지", List.of(ticket.id));
+        give(booth, "웰컴 커피", "따뜻한 음료 1잔", List.of(ticket.id));
+        give(booth, "리필", "오후 6시까지", List.of(ticket.id));
         coupons.redeemByCode(boothGate(booth), code(ticket));
 
         List<Map<String, Object>> held = coupons.forTicket(sessionId, ticket.id);

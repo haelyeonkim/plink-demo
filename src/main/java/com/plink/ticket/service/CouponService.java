@@ -2,9 +2,11 @@ package com.plink.ticket.service;
 
 import com.plink.ticket.model.Booth;
 import com.plink.ticket.model.Coupon;
+import com.plink.ticket.model.CouponOffer;
 import com.plink.ticket.model.Gate;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.repository.BoothRepository;
+import com.plink.ticket.repository.CouponOfferRepository;
 import com.plink.ticket.repository.CouponRepository;
 import com.plink.ticket.repository.PresentationRepository;
 import com.plink.ticket.repository.TicketRepository;
@@ -32,16 +34,18 @@ import java.util.Map;
 @Service
 public class CouponService {
     private final CouponRepository coupons;
+    private final CouponOfferRepository offers;
     private final BoothRepository booths;
     private final TicketRepository tickets;
     private final PresentationService presentations;
     private final PresentationRepository grants;
     private final com.plink.ticket.live.LiveEvents live;
 
-    public CouponService(CouponRepository coupons, BoothRepository booths, TicketRepository tickets,
-            PresentationService presentations, PresentationRepository grants,
+    public CouponService(CouponRepository coupons, CouponOfferRepository offers, BoothRepository booths,
+            TicketRepository tickets, PresentationService presentations, PresentationRepository grants,
             com.plink.ticket.live.LiveEvents live) {
         this.coupons = coupons;
+        this.offers = offers;
         this.booths = booths;
         this.tickets = tickets;
         this.presentations = presentations;
@@ -50,38 +54,122 @@ public class CouponService {
     }
 
     /**
-     * Gives an offer to tickets.
-     *
-     * <p>Already having it is not an error: an organiser adding the latecomers to a
-     * batch should not have to work out who was in the last one.
+     * Adds something a booth can give. The name is what the holder and the counter will
+     * both read, so it is unique within the booth: two offers with one name are one
+     * tally split in half.
      */
     @Transactional
-    public Map<String, Object> issue(long sessionId, long boothId, String title, String detail,
-            List<Long> ticketIds) {
+    public CouponOffer defineOffer(long sessionId, long boothId, String title, String detail) {
         Booth booth = requireBooth(sessionId, boothId);
         String name = required(title, "쿠폰 이름을 입력해 주세요.");
-        List<Long> targets = ticketIds == null || ticketIds.isEmpty()
-            ? tickets.findBySession(sessionId).stream().filter(ticket -> !ticket.revoked())
-                .map(ticket -> ticket.id).toList()
-            : ticketIds;
+        if (name.length() > 80) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 이름은 80자까지예요.");
+        }
+        boolean taken = offers.findByBooth(booth.id).stream().anyMatch(offer -> offer.title.equals(name));
+        if (taken) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                booth.name + "에 같은 이름의 쿠폰이 이미 있어요.");
+        }
+        long id = offers.insert(sessionId, booth.id, name, blankToNull(detail));
+        return offers.findById(id).orElseThrow();
+    }
+
+    /**
+     * Switches an offer on or off. Off stops it being given; coupons already given keep
+     * working, because they were promised.
+     */
+    public CouponOffer setOfferActive(long offerId, boolean active) {
+        CouponOffer offer = requireOffer(offerId);
+        offers.setActive(offer.id, active);
+        offer.active = active;
+        return offer;
+    }
+
+    /** Removes an offer nobody has been given. One that has been given is switched off. */
+    public void deleteOffer(long offerId) {
+        CouponOffer offer = requireOffer(offerId);
+        if (coupons.anyForOffer(offer.id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "이미 발급한 쿠폰이라 지울 수 없어요. 더 발급하지 않으려면 중지하세요.");
+        }
+        offers.delete(offer.id);
+    }
+
+    public CouponOffer requireOffer(long offerId) {
+        return offers.findById(offerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰 종류를 찾을 수 없어요."));
+    }
+
+    /**
+     * Gives one of a booth's offers to tickets.
+     *
+     * <p>Only an offer the booth has, and only while it is switched on. Already having it
+     * is not an error: an organiser adding the latecomers to a batch should not have to
+     * work out who was in the last one.
+     */
+    @Transactional
+    public Map<String, Object> issue(long sessionId, long offerId, List<Long> ticketIds) {
+        CouponOffer offer = requireOffer(offerId);
+        if (offer.sessionId != sessionId) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
+        }
+        if (!offer.active) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "'" + offer.title + "' 쿠폰은 발급이 중지되어 있어요.");
+        }
+        Booth booth = requireBooth(sessionId, offer.boothId);
+        List<Long> targets = ticketIds == null || ticketIds.isEmpty() ? tickets.liveIds(sessionId) : ticketIds;
         if (targets.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰을 줄 입장권이 없어요.");
         }
         int given = 0, already = 0;
         for (long ticketId : targets) {
-            Ticket ticket = tickets.findById(ticketId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
-            if (ticket.sessionId != sessionId) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 입장권이에요.");
+            if (ticketIds != null && !ticketIds.isEmpty()) {
+                Ticket ticket = tickets.findById(ticketId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+                if (ticket.sessionId != sessionId) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 입장권이에요.");
+                }
+                if (ticket.revoked()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        ticket.ticketRef + "은(는) 비활성화된 입장권이에요.");
+                }
             }
-            if (coupons.insert(sessionId, booth.id, ticketId, name, blankToNull(detail))) given++;
+            if (coupons.insert(sessionId, booth.id, offer.id, ticketId, offer.title, offer.detail)) given++;
             else already++;
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("boothId", booth.id);
-        result.put("title", name);
+        result.put("offerId", offer.id);
+        result.put("title", offer.title);
         result.put("given", given);
         result.put("already", already);
+        return result;
+    }
+
+    /**
+     * Every booth's offers, with how many of each have been given, used, taken back and
+     * are still waiting. The console's booth tabs and the terminals both read this.
+     */
+    public Map<Long, List<Map<String, Object>>> offersByBooth(long sessionId) {
+        Map<Long, Map<String, Object>> tallies = new LinkedHashMap<>();
+        for (Map<String, Object> row : offers.tallyBySession(sessionId)) {
+            tallies.put(((Number) row.get("offer_id")).longValue(), row);
+        }
+        Map<Long, List<Map<String, Object>>> result = new LinkedHashMap<>();
+        for (CouponOffer offer : offers.findBySession(sessionId)) {
+            Map<String, Object> tally = tallies.getOrDefault(offer.id, Map.of());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("offerId", offer.id);
+            row.put("title", offer.title);
+            row.put("detail", offer.detail);
+            row.put("active", offer.active);
+            row.put("issued", count(tally.get("issued")));
+            row.put("redeemed", count(tally.get("redeemed")));
+            row.put("voided", count(tally.get("voided")));
+            row.put("waiting", count(tally.get("waiting")));
+            result.computeIfAbsent(offer.boothId, key -> new ArrayList<>()).add(row);
+        }
         return result;
     }
 
@@ -180,19 +268,13 @@ public class CouponService {
      * What a booth terminal is standing there to hand out.
      *
      * <p>A stand's screen should say what it gives and how much of it is left, so that
-     * somebody taking over the counter can read the tablet instead of asking.
+     * somebody taking over the counter can read the tablet instead of asking. An offer
+     * that has been switched off still shows while somebody is owed one.
      */
     public List<Map<String, Object>> boothOffers(long sessionId, long boothId) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> row : coupons.tallyByBooth(sessionId, boothId)) {
-            Map<String, Object> offer = new LinkedHashMap<>();
-            offer.put("title", row.get("title"));
-            offer.put("issued", count(row.get("issued")));
-            offer.put("redeemed", count(row.get("redeemed")));
-            offer.put("waiting", count(row.get("waiting")));
-            result.add(offer);
-        }
-        return result;
+        return offersByBooth(sessionId).getOrDefault(boothId, List.of()).stream()
+            .filter(offer -> Boolean.TRUE.equals(offer.get("active")) || count(offer.get("waiting")) > 0)
+            .toList();
     }
 
     private static int count(Object value) {

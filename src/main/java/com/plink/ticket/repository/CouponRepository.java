@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,14 +33,83 @@ public class CouponRepository {
     };
 
     /** @return true when the offer was new to this ticket, false when it already had it. */
-    public boolean insert(long sessionId, long boothId, long ticketId, String title, String detail) {
+    public boolean insert(long sessionId, long boothId, long offerId, long ticketId, String title,
+            String detail) {
         try {
-            jdbc.update("INSERT INTO coupon (session_id, booth_id, ticket_id, title, detail) "
-                + "VALUES (?, ?, ?, ?, ?)", sessionId, boothId, ticketId, title, detail);
+            jdbc.update("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
+                + "VALUES (?, ?, ?, ?, ?, ?)", sessionId, boothId, offerId, ticketId, title, detail);
             return true;
         } catch (org.springframework.dao.DuplicateKeyException already) {
             return false;
         }
+    }
+
+    public boolean anyForOffer(long offerId) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM coupon WHERE offer_id = ?",
+            Integer.class, offerId);
+        return found != null && found > 0;
+    }
+
+    /**
+     * One page of a session's coupons, with the ticket and booth each belongs to.
+     *
+     * <p>Joined in one statement: a page of fifty rows is one query, not fifty-one.
+     */
+    public List<Listed> search(long sessionId, CouponFilter filter, int limit, int offset) {
+        List<Object> args = new ArrayList<>();
+        String from = from(sessionId, filter, args);
+        args.add(limit);
+        args.add(offset);
+        return jdbc.query(
+            "SELECT c.id, c.booth_id, b.name AS booth, c.offer_id, c.title, c.detail, "
+            + "c.status, c.ticket_id, c.redeemed_at, t.ticket_ref, t.seat, t.issued_to_email"
+            + from + " ORDER BY c.booth_id, c.title, c.id LIMIT ? OFFSET ?",
+            (rs, row) -> {
+                long offer = rs.getLong("offer_id");
+                Long offerId = rs.wasNull() ? null : offer;
+                return new Listed(rs.getLong("id"), rs.getLong("booth_id"), rs.getString("booth"), offerId,
+                    rs.getString("title"), rs.getString("detail"), rs.getString("status"),
+                    rs.getLong("ticket_id"), rs.getString("ticket_ref"), rs.getString("seat"),
+                    rs.getString("issued_to_email"), rs.getTimestamp("redeemed_at"));
+            }, args.toArray());
+    }
+
+    /** A coupon as the console's table shows it: with its ticket and its booth's name. */
+    public record Listed(long id, long boothId, String booth, Long offerId, String title, String detail,
+            String status, long ticketId, String ticketRef, String seat, String issuedToEmail,
+            Timestamp redeemedAt) {}
+
+    public long count(long sessionId, CouponFilter filter) {
+        List<Object> args = new ArrayList<>();
+        Long found = jdbc.queryForObject("SELECT COUNT(*)" + from(sessionId, filter, args),
+            Long.class, args.toArray());
+        return found == null ? 0 : found;
+    }
+
+    /** What the console can narrow a session's coupons down by. Nulls mean "any". */
+    public record CouponFilter(Long boothId, String status, String query) {}
+
+    private static String from(long sessionId, CouponFilter filter, List<Object> args) {
+        StringBuilder sql = new StringBuilder(" FROM coupon c JOIN ticket t ON t.id = c.ticket_id "
+            + "LEFT JOIN booth b ON b.id = c.booth_id WHERE c.session_id = ?");
+        args.add(sessionId);
+        if (filter.boothId() != null) {
+            sql.append(" AND c.booth_id = ?");
+            args.add(filter.boothId());
+        }
+        if (filter.status() != null) {
+            sql.append(" AND c.status = ?");
+            args.add(filter.status());
+        }
+        if (filter.query() != null) {
+            String like = Search.like(filter.query());
+            sql.append(" AND (LOWER(c.title) LIKE ? ESCAPE '\\' OR LOWER(t.ticket_ref) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(COALESCE(t.seat, '')) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(t.issued_to_email) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(COALESCE(t.holder_email, '')) LIKE ? ESCAPE '\\')");
+            for (int i = 0; i < 5; i++) args.add(like);
+        }
+        return sql.toString();
     }
 
     public List<Coupon> findByTicket(long ticketId) {
@@ -82,23 +152,4 @@ public class CouponRepository {
         jdbc.update("DELETE FROM coupon WHERE id = ?", id);
     }
 
-    /** What the console's coupon tab counts: how many of each offer are out and used. */
-    /** One booth's offers and how many of each are still to be handed over. */
-    public List<Map<String, Object>> tallyByBooth(long sessionId, long boothId) {
-        return jdbc.queryForList(
-            "SELECT title, COUNT(*) AS issued, "
-            + "SUM(CASE WHEN status = 'REDEEMED' THEN 1 ELSE 0 END) AS redeemed, "
-            + "SUM(CASE WHEN status = 'ISSUED' THEN 1 ELSE 0 END) AS waiting "
-            + "FROM coupon WHERE session_id = ? AND booth_id = ? GROUP BY title ORDER BY title",
-            sessionId, boothId);
-    }
-
-    public List<Map<String, Object>> tallyBySession(long sessionId) {
-        return jdbc.queryForList(
-            "SELECT booth_id, title, COUNT(*) AS issued, "
-            + "SUM(CASE WHEN status = 'REDEEMED' THEN 1 ELSE 0 END) AS redeemed, "
-            + "SUM(CASE WHEN status = 'VOID' THEN 1 ELSE 0 END) AS voided "
-            + "FROM coupon WHERE session_id = ? GROUP BY booth_id, title ORDER BY booth_id, title",
-            sessionId);
-    }
 }

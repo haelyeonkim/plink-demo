@@ -6,6 +6,7 @@ import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.TicketField;
 import com.plink.ticket.repository.AdmissionRepository;
+import com.plink.ticket.repository.CouponRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.TicketFieldRepository;
@@ -495,65 +496,156 @@ public class TicketAdminController {
         return Map.of("deleted", true, "tickets", issued, "admitted", admitted);
     }
 
+    /**
+     * One page of the event's tickets, narrowed by a label and a search.
+     *
+     * <p>The console used to take every ticket at once and ask for each one's presence
+     * separately, which is two thousand and one queries for two thousand tickets. A page
+     * is now two: the tickets, then their presence together.
+     */
     @GetMapping("/sessions/{id}/tickets")
-    public List<Map<String, Object>> listTickets(@PathVariable long id) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Ticket ticket : tickets.findBySession(id)) {
-            Presence presence = admissions.find(ticket.id).orElse(null);
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("ticketId", ticket.id);
-            row.put("ticketRef", ticket.ticketRef);
-            row.put("seat", ticket.seat);
-            row.put("tier", ticket.tier);
-            row.put("attributes", readAttributes(ticket.attributes));
-            row.put("status", ticket.status);
-            row.put("issuedToEmail", TicketService.mask(ticket.issuedToEmail));
-            row.put("holderEmail", TicketService.mask(ticket.holderEmail));
-            row.put("reissueCount", ticket.reissueCount);
-            row.put("transferCount", ticket.transferCount);
-            row.put("phone", ticket.phone);
-            row.put("deliveredVia", ticket.deliveredVia);
-            row.put("inside", presence != null && presence.inside());
-            row.put("entryCount", presence == null ? 0 : presence.entryCount);
-            row.put("reentryCount", presence == null ? 0 : presence.reentryCount);
-            // When the gate last saw this ticket, and which way it went - the two facts
-            // the console is asked for when somebody says "did they come in yet?".
-            row.put("lastEventAt", presence == null || presence.lastEventAt == null
-                ? null : presence.lastEventAt.toInstant().toString());
-            row.put("lastExitAt", presence == null || presence.lastExitAt == null
-                ? null : presence.lastExitAt.toInstant().toString());
-            row.put("insideSince", presence == null || presence.insideSince == null
-                ? null : presence.insideSince.toInstant().toString());
-            result.add(row);
+    public Map<String, Object> listTickets(@PathVariable long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "ALL") String filter) {
+        ticketService.requireSession(id);
+        int limit = pageSize(size);
+        int offset = Math.max(page, 0) * limit;
+        TicketRepository.Filter narrowed = ticketFilter(filter);
+        String query = blankToNull(q);
+        List<Ticket> found = tickets.search(id, narrowed, query, limit, offset);
+        Map<Long, Presence> presence = admissions.findAll(found.stream().map(ticket -> ticket.id).toList());
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Ticket ticket : found) items.add(ticketRow(ticket, presence.get(ticket.id)));
+        return paged(items, tickets.count(id, narrowed, query), page, limit);
+    }
+
+    /**
+     * What the rest of the console needs from the tickets without the tickets: how many
+     * wear each label, and which field values are already taken.
+     */
+    @GetMapping("/sessions/{id}/tickets/summary")
+    public Map<String, Object> ticketSummary(@PathVariable long id) {
+        ticketService.requireSession(id);
+        Map<String, Object> raw = tickets.counts(id);
+        Map<String, Object> counts = new LinkedHashMap<>();
+        counts.put("all", number(raw.get("all_count")));
+        for (String key : List.of("unclaimed", "bound", "inside", "revoked", "live")) {
+            counts.put(key, number(raw.get(key)));
         }
+        java.util.Set<String> seats = new java.util.TreeSet<>();
+        java.util.Set<String> tiers = new java.util.TreeSet<>();
+        Map<String, java.util.Set<String>> attributes = new java.util.TreeMap<>();
+        for (TicketRepository.FieldValues row : tickets.valuesInUse(id)) {
+            if (row.seat() != null) seats.add(row.seat());
+            if (row.tier() != null) tiers.add(row.tier());
+            readAttributes(row.attributes())
+                .forEach((label, value) -> {
+                    if (value != null) {
+                        attributes.computeIfAbsent(label, key -> new java.util.TreeSet<>()).add(String.valueOf(value));
+                    }
+                });
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("counts", counts);
+        result.put("seats", seats);
+        result.put("tiers", tiers);
+        result.put("attributes", attributes);
         return result;
+    }
+
+    private Map<String, Object> ticketRow(Ticket ticket, Presence presence) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("ticketId", ticket.id);
+        row.put("ticketRef", ticket.ticketRef);
+        row.put("seat", ticket.seat);
+        row.put("tier", ticket.tier);
+        row.put("attributes", readAttributes(ticket.attributes));
+        row.put("status", ticket.status);
+        row.put("issuedToEmail", TicketService.mask(ticket.issuedToEmail));
+        row.put("holderEmail", TicketService.mask(ticket.holderEmail));
+        row.put("reissueCount", ticket.reissueCount);
+        row.put("transferCount", ticket.transferCount);
+        row.put("phone", ticket.phone);
+        row.put("deliveredVia", ticket.deliveredVia);
+        row.put("inside", presence != null && presence.inside());
+        row.put("entryCount", presence == null ? 0 : presence.entryCount);
+        row.put("reentryCount", presence == null ? 0 : presence.reentryCount);
+        // When the gate last saw this ticket, and which way it went - the two facts
+        // the console is asked for when somebody says "did they come in yet?".
+        row.put("lastEventAt", presence == null || presence.lastEventAt == null
+            ? null : presence.lastEventAt.toInstant().toString());
+        row.put("lastExitAt", presence == null || presence.lastExitAt == null
+            ? null : presence.lastExitAt.toInstant().toString());
+        row.put("insideSince", presence == null || presence.insideSince == null
+            ? null : presence.insideSince.toInstant().toString());
+        return row;
+    }
+
+    /** Large enough to be worth a page, small enough that a phone can draw it. */
+    private static int pageSize(int requested) {
+        return Math.min(Math.max(requested, 1), 200);
+    }
+
+    private static Map<String, Object> paged(List<Map<String, Object>> items, long total, int page, int size) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", items);
+        result.put("total", total);
+        result.put("page", Math.max(page, 0));
+        result.put("size", size);
+        return result;
+    }
+
+    private static TicketRepository.Filter ticketFilter(String value) {
+        try {
+            return TicketRepository.Filter.valueOf(value.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "알 수 없는 필터예요: " + value);
+        }
     }
 
     /** The stands inside this event that hand something over. */
     @GetMapping("/sessions/{id}/booths")
     public List<Map<String, Object>> listBooths(@PathVariable long id) {
         ticketService.requireSession(id);
-        List<Map<String, Object>> tallies = couponRepository.tallyBySession(id);
+        Map<Long, List<Map<String, Object>>> offers = coupons.offersByBooth(id);
         List<Map<String, Object>> result = new ArrayList<>();
         for (com.plink.ticket.model.Booth booth : booths.findBySession(id)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("boothId", booth.id);
             row.put("name", booth.name);
             row.put("note", booth.note);
-            // Grouped by offer, because that is how an organiser thinks about them.
-            row.put("offers", tallies.stream()
-                .filter(tally -> number(tally.get("booth_id")) == booth.id)
-                .map(tally -> {
-                    Map<String, Object> offer = new LinkedHashMap<>();
-                    offer.put("title", tally.get("title"));
-                    offer.put("issued", number(tally.get("issued")));
-                    offer.put("redeemed", number(tally.get("redeemed")));
-                    offer.put("voided", number(tally.get("voided")));
-                    return offer;
-                }).toList());
+            // What this booth may give, and how each has gone.
+            row.put("offers", offers.getOrDefault(booth.id, List.of()));
             result.add(row);
         }
         return result;
+    }
+
+    /** Adds to what a booth may give. */
+    @PostMapping("/booths/{boothId}/offers")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> defineOffer(@PathVariable long boothId, @RequestBody Map<String, String> body) {
+        com.plink.ticket.model.Booth booth = booths.findById(boothId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));
+        com.plink.ticket.model.CouponOffer offer =
+            coupons.defineOffer(booth.sessionId, booth.id, body.get("title"), body.get("detail"));
+        return Map.of("offerId", offer.id, "title", offer.title, "active", offer.active);
+    }
+
+    /** Switches an offer on or off for giving. What was already given is untouched. */
+    @PostMapping("/offers/{offerId}/active")
+    public Map<String, Object> setOfferActive(@PathVariable long offerId, @RequestBody Map<String, Object> body) {
+        com.plink.ticket.model.CouponOffer offer =
+            coupons.setOfferActive(offerId, Boolean.TRUE.equals(body.get("active")));
+        return Map.of("offerId", offer.id, "active", offer.active);
+    }
+
+    @DeleteMapping("/offers/{offerId}")
+    public Map<String, Object> deleteOffer(@PathVariable long offerId) {
+        coupons.deleteOffer(offerId);
+        return Map.of("deleted", true, "offerId", offerId);
     }
 
     @PostMapping("/sessions/{id}/booths")
@@ -586,36 +678,45 @@ public class TicketAdminController {
         if (body.get("ticketIds") instanceof List<?> list) {
             list.forEach(value -> ticketIds.add(((Number) value).longValue()));
         }
-        return coupons.issue(id, ((Number) body.get("boothId")).longValue(),
-            text(body.get("title"), null), text(body.get("detail"), null), ticketIds);
+        if (!(body.get("offerId") instanceof Number offerId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "발급할 쿠폰을 골라 주세요.");
+        }
+        return coupons.issue(id, offerId.longValue(), ticketIds);
     }
 
-    /** Every coupon in the event, for the console's table. */
+    /** One page of the event's coupons, narrowed by booth, state and a search. */
     @GetMapping("/sessions/{id}/coupons")
-    public List<Map<String, Object>> listCoupons(@PathVariable long id) {
+    public Map<String, Object> listCoupons(@PathVariable long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long boothId,
+            @RequestParam(required = false) String status) {
         ticketService.requireSession(id);
-        Map<Long, com.plink.ticket.model.Booth> byId = new LinkedHashMap<>();
-        booths.findBySession(id).forEach(booth -> byId.put(booth.id, booth));
-        Map<Long, Ticket> ticketsById = new LinkedHashMap<>();
-        tickets.findBySession(id).forEach(ticket -> ticketsById.put(ticket.id, ticket));
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (com.plink.ticket.model.Coupon coupon : couponRepository.findBySession(id)) {
-            Ticket ticket = ticketsById.get(coupon.ticketId);
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("couponId", coupon.id);
-            row.put("boothId", coupon.boothId);
-            row.put("booth", byId.containsKey(coupon.boothId) ? byId.get(coupon.boothId).name : null);
-            row.put("title", coupon.title);
-            row.put("detail", coupon.detail);
-            row.put("status", coupon.status);
-            row.put("ticketId", coupon.ticketId);
-            row.put("ticketRef", ticket == null ? null : ticket.ticketRef);
-            row.put("seat", ticket == null ? null : ticket.seat);
-            row.put("issuedToEmail", ticket == null ? null : TicketService.mask(ticket.issuedToEmail));
-            row.put("redeemedAt", coupon.redeemedAt == null ? null : coupon.redeemedAt.toInstant().toString());
-            result.add(row);
+        int limit = pageSize(size);
+        String state = blankToNull(status) == null ? null : status.toUpperCase(java.util.Locale.ROOT);
+        if (state != null && !List.of("ISSUED", "REDEEMED", "VOID").contains(state)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 상태가 올바르지 않아요.");
         }
-        return result;
+        CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(boothId, state, blankToNull(q));
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (CouponRepository.Listed coupon : couponRepository.search(id, filter, limit, Math.max(page, 0) * limit)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("couponId", coupon.id());
+            row.put("boothId", coupon.boothId());
+            row.put("booth", coupon.booth());
+            row.put("offerId", coupon.offerId());
+            row.put("title", coupon.title());
+            row.put("detail", coupon.detail());
+            row.put("status", coupon.status());
+            row.put("ticketId", coupon.ticketId());
+            row.put("ticketRef", coupon.ticketRef());
+            row.put("seat", coupon.seat());
+            row.put("issuedToEmail", TicketService.mask(coupon.issuedToEmail()));
+            row.put("redeemedAt", coupon.redeemedAt() == null ? null : coupon.redeemedAt().toInstant().toString());
+            items.add(row);
+        }
+        return paged(items, couponRepository.count(id, filter), page, limit);
     }
 
     /** Takes a coupon back, or puts it back in the holder's hands. */

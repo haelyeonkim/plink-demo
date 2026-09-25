@@ -51,6 +51,11 @@ class ConsoleOperationsTest {
             Timestamp.from(Instant.now().plus(5, ChronoUnit.HOURS)), null);
     }
 
+    @SuppressWarnings("unchecked")
+    private static java.util.List<Map<String, Object>> rows(Map<String, Object> page) {
+        return (java.util.List<Map<String, Object>>) page.get("items");
+    }
+
     private long holderFor(String email) {
         return holders.findByEmail(email).map(h -> h.id)
             .orElseGet(() -> holders.create(email, tickets.userHandleFor(email)));
@@ -271,7 +276,7 @@ class ConsoleOperationsTest {
             "values", Map.of("트랙", "디자인", "식사", "채식")));
         long ticketId = ((Number) issued.get("ticketId")).longValue();
 
-        Map<String, Object> row = adminController.listTickets(sessionId).stream()
+        Map<String, Object> row = rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).stream()
             .filter(r -> ((Number) r.get("ticketId")).longValue() == ticketId).findFirst().orElseThrow();
         assertEquals(Map.of("트랙", "디자인", "식사", "채식"), row.get("attributes"));
 
@@ -280,9 +285,44 @@ class ConsoleOperationsTest {
             .filter(f -> "트랙".equals(f.label)).findFirst().orElseThrow().id;
         adminController.deleteField(trackId);
         assertEquals(Map.of("트랙", "디자인", "식사", "채식"),
-            adminController.listTickets(sessionId).stream()
+            rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).stream()
                 .filter(r -> ((Number) r.get("ticketId")).longValue() == ticketId)
                 .findFirst().orElseThrow().get("attributes"));
+    }
+
+    /**
+     * 발급 현황 comes a page at a time: searched, narrowed by the label on the rows, and
+     * counted without reading the tickets themselves.
+     */
+    @Test void theTicketListComesAPageAtATime() {
+        long sessionId = newSession();
+        for (int i = 1; i <= 7; i++) tickets.issue(sessionId, "p" + i + "@example.com", "B-" + i, null, null);
+
+        Map<String, Object> first = adminController.listTickets(sessionId, 0, 3, null, "ALL");
+        assertEquals(7L, first.get("total"));
+        assertEquals(3, rows(first).size());
+        assertEquals(1, rows(adminController.listTickets(sessionId, 2, 3, null, "ALL")).size());
+
+        assertEquals(1L, adminController.listTickets(sessionId, 0, 50, "b-5", "ALL").get("total"), "좌석");
+        assertEquals(1L, adminController.listTickets(sessionId, 0, 50, "P6@Example", "ALL").get("total"),
+            "이메일, 대소문자 무시");
+        assertEquals(0L, adminController.listTickets(sessionId, 0, 50, "%", "ALL").get("total"),
+            "입력한 %는 와일드카드가 아니라 글자예요");
+
+        long revoked = ((Number) rows(first).get(0).get("ticketId")).longValue();
+        ticketRepository.updateStatus(revoked, "REVOKED");
+        assertEquals(1L, adminController.listTickets(sessionId, 0, 50, null, "REVOKED").get("total"));
+        assertEquals(6L, adminController.listTickets(sessionId, 0, 50, null, "LIVE").get("total"));
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+            () -> adminController.listTickets(sessionId, 0, 50, null, "nonsense")).getStatusCode().value());
+
+        Map<String, Object> summary = adminController.ticketSummary(sessionId);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> counts = (Map<String, Object>) summary.get("counts");
+        assertEquals(7L, counts.get("all"));
+        assertEquals(1L, counts.get("revoked"));
+        assertEquals(6L, counts.get("unclaimed"));
+        assertEquals(7, ((java.util.Collection<?>) summary.get("seats")).size(), "비활성 좌석도 점유 중");
     }
 
     @Test void oneSeatCannotBeIssuedTwice() {

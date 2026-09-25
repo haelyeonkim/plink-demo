@@ -9,7 +9,9 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -105,6 +107,86 @@ public class TicketRepository {
     public List<Ticket> findBySession(long sessionId) {
         return jdbc.query("SELECT * FROM ticket WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }
+
+    /** The ids of every ticket in a session that can still be used, and nothing else. */
+    public List<Long> liveIds(long sessionId) {
+        return jdbc.queryForList("SELECT id FROM ticket WHERE session_id = ? AND status <> 'REVOKED' "
+            + "ORDER BY id", Long.class, sessionId);
+    }
+
+    /**
+     * What the console's 발급 현황 can narrow the list down to. They match the labels on
+     * the rows, so choosing one shows exactly the rows wearing that label.
+     */
+    public enum Filter { ALL, UNCLAIMED, BOUND, INSIDE, REVOKED, LIVE }
+
+    /** One page of a session's tickets, oldest first. */
+    public List<Ticket> search(long sessionId, Filter filter, String query, int limit, int offset) {
+        List<Object> args = new ArrayList<>();
+        String where = where(sessionId, filter, query, args);
+        args.add(limit);
+        args.add(offset);
+        return jdbc.query("SELECT t.* FROM ticket t" + where + " ORDER BY t.id LIMIT ? OFFSET ?",
+            MAPPER, args.toArray());
+    }
+
+    public long count(long sessionId, Filter filter, String query) {
+        List<Object> args = new ArrayList<>();
+        Long found = jdbc.queryForObject("SELECT COUNT(*) FROM ticket t" + where(sessionId, filter, query, args),
+            Long.class, args.toArray());
+        return found == null ? 0 : found;
+    }
+
+    private static String where(long sessionId, Filter filter, String query, List<Object> args) {
+        StringBuilder sql = new StringBuilder(" WHERE t.session_id = ?");
+        args.add(sessionId);
+        switch (filter == null ? Filter.ALL : filter) {
+            case UNCLAIMED -> sql.append(" AND t.status = 'ISSUED' AND t.holder_email IS NULL");
+            case BOUND -> sql.append(" AND t.status = 'BOUND'");
+            case REVOKED -> sql.append(" AND t.status = 'REVOKED'");
+            case LIVE -> sql.append(" AND t.status <> 'REVOKED'");
+            case INSIDE -> sql.append(" AND EXISTS (SELECT 1 FROM ticket_presence p "
+                + "WHERE p.ticket_id = t.id AND p.state = 'INSIDE')");
+            case ALL -> { }
+        }
+        if (query != null) {
+            String like = Search.like(query);
+            sql.append(" AND (LOWER(t.ticket_ref) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(COALESCE(t.seat, '')) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(COALESCE(t.tier, '')) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(t.issued_to_email) LIKE ? ESCAPE '\\'"
+                + " OR LOWER(COALESCE(t.holder_email, '')) LIKE ? ESCAPE '\\'"
+                + " OR COALESCE(t.phone, '') LIKE ? ESCAPE '\\')");
+            for (int i = 0; i < 6; i++) args.add(like);
+        }
+        return sql.toString();
+    }
+
+    /** How many tickets wear each label, counted in one pass. */
+    public Map<String, Object> counts(long sessionId) {
+        return jdbc.queryForMap(
+            "SELECT COUNT(*) AS all_count, "
+            + "SUM(CASE WHEN status = 'ISSUED' AND holder_email IS NULL THEN 1 ELSE 0 END) AS unclaimed, "
+            + "SUM(CASE WHEN status = 'BOUND' THEN 1 ELSE 0 END) AS bound, "
+            + "SUM(CASE WHEN status = 'REVOKED' THEN 1 ELSE 0 END) AS revoked, "
+            + "SUM(CASE WHEN status <> 'REVOKED' THEN 1 ELSE 0 END) AS live, "
+            + "(SELECT COUNT(*) FROM ticket_presence p WHERE p.session_id = ? AND p.state = 'INSIDE') AS inside "
+            + "FROM ticket WHERE session_id = ?", sessionId, sessionId);
+    }
+
+    /**
+     * The field values already on tickets, without the tickets. The issue form needs to
+     * know a seat is taken; it does not need the other two thousand rows to find out.
+     */
+    public List<FieldValues> valuesInUse(long sessionId) {
+        // Read as strings: attributes is a TEXT column, which some drivers hand back as a
+        // large-object handle rather than the text in it.
+        return jdbc.query("SELECT seat, tier, attributes FROM ticket WHERE session_id = ?",
+            (rs, row) -> new FieldValues(rs.getString("seat"), rs.getString("tier"), rs.getString("attributes")),
+            sessionId);
+    }
+
+    public record FieldValues(String seat, String tier, String attributes) {}
 
     public void bind(long id, long holderId, String holderEmail) {
         jdbc.update("UPDATE ticket SET status = 'BOUND', holder_id = ?, holder_email = ?, "

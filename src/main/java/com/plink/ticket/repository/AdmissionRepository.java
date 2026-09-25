@@ -96,6 +96,16 @@ public class AdmissionRepository {
             .stream().findFirst();
     }
 
+    /** Presence for a page of tickets in one query, keyed by ticket. */
+    public Map<Long, Presence> findAll(java.util.Collection<Long> ticketIds) {
+        Map<Long, Presence> result = new LinkedHashMap<>();
+        if (ticketIds.isEmpty()) return result;
+        String marks = String.join(", ", java.util.Collections.nCopies(ticketIds.size(), "?"));
+        jdbc.query("SELECT * FROM ticket_presence WHERE ticket_id IN (" + marks + ")", PRESENCE,
+            ticketIds.toArray()).forEach(presence -> result.put(presence.ticketId, presence));
+        return result;
+    }
+
     public void create(long ticketId, long sessionId) {
         jdbc.update("INSERT INTO ticket_presence (ticket_id, session_id) VALUES (?, ?)", ticketId, sessionId);
     }
