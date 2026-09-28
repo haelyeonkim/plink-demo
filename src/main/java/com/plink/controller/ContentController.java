@@ -109,17 +109,25 @@ public class ContentController {
         return result;
     }
 
-    /** Imports are drafts: the browser opens them in the same editor before saving. */
+    /** Persist imported drafts on the signed-in account before opening the editor. */
     @PostMapping("/import/url")
+    @Transactional
     public Map<String, Object> importUrl(@RequestBody Map<String, Object> request, Authentication user) {
         owner(user);
-        return importer.fromUrl(request.get("url") == null ? "" : request.get("url").toString());
+        return saveImport(importer.fromUrl(request.get("url") == null ? "" : request.get("url").toString()), user);
     }
 
     @PostMapping(value = "/import/pdf", consumes = "multipart/form-data")
+    @Transactional
     public Map<String, Object> importPdf(@RequestPart("file") MultipartFile file, Authentication user) {
         owner(user);
-        return importer.fromPdf(file);
+        return saveImport(importer.fromPdf(file), user);
+    }
+
+    private Map<String, Object> saveImport(Map<String, Object> imported, Authentication user) {
+        Map<String, Object> result = new LinkedHashMap<>(imported);
+        result.putAll(create(imported, user));
+        return result;
     }
 
     @PutMapping("/{id}")

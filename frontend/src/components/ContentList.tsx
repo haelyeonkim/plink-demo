@@ -31,7 +31,7 @@ export default function ContentList() {
         <span className="count">{contents.length}</span>
       </h2>
       <div className="picked-bar">
-        <span className="picked-meta">보호 링크가 열 작품 자료를 관리합니다.</span>
+        <span className="picked-meta">내 계정에 저장한 컨텐츠입니다. 이전에 가져온 자료를 선택해 다시 열고 수정할 수 있습니다.</span>
         <span className="picked-actions">
           <Link className="btn-secondary" to="/links">링크 목록</Link>
           <Link className="btn-primary" to="/contents/new">새 컨텐츠 만들기</Link>
@@ -53,6 +53,8 @@ export default function ContentList() {
                 <div className="entity-main">
                   <span className="entity-title">{row.title}</span>
                   <span className="entity-meta">
+                    <span>{row.sourceType === 'URL' ? '웹페이지' : row.sourceType === 'PDF' ? 'PDF' : '직접 작성'}</span>
+                    {row.sourceType === 'PDF' && row.sourceRef && <span>{row.sourceRef}</span>}
                     <span>연결된 링크 {row.linkCount}개</span>
                     {row.updatedAt && <span>{new Date(row.updatedAt).toLocaleString('ko-KR')}</span>}
                   </span>

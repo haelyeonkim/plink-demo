@@ -73,7 +73,7 @@ public class ContentImportService {
                 "이 페이지에서 작품을 구분하지 못했어요. 직접 작성하거나 PDF를 사용해 주세요.");
         }
         return result(title, intro, works, List.of(
-            "웹페이지 구조에 따라 일부 항목이 빠질 수 있어요. 저장 전에 작품 정보를 확인해 주세요."));
+            "웹페이지 구조에 따라 일부 항목이 빠질 수 있어요. 가져온 작품 정보를 확인해 주세요."));
     }
 
     public Map<String, Object> fromPdf(MultipartFile file) {
@@ -91,7 +91,7 @@ public class ContentImportService {
             String text = new PDFTextStripper().getText(pdf).replace("\r", "").trim();
             if (text.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "텍스트를 읽을 수 없는 PDF예요. 스캔 문서는 OCR 처리 후 다시 시도해 주세요.");
+                    "이 PDF에서 텍스트를 읽을 수 없습니다. 스캔본이나 이미지로 구성된 PDF일 수 있습니다. 텍스트를 선택할 수 있는 PDF로 다시 업로드하거나 관리자에게 문의해 주세요.");
             }
             List<Map<String, String>> works = parsePdfText(text);
             if (works.isEmpty()) {

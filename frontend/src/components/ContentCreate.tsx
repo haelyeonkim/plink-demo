@@ -88,7 +88,8 @@ export default function ContentCreate() {
       setSourceType(result.sourceType);
       setSourceRef(result.sourceRef);
       setImported(true);
-      setNotice(`${result.artworkCount}개 작품을 가져왔어요. 저장 전에 내용을 확인해 주세요.`);
+      setNotice(`${result.artworkCount}개 작품을 내 컨텐츠에 저장했어요. 내용을 확인하고 수정할 수 있습니다.`);
+      navigate(`/contents/${result.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '작품을 가져오지 못했어요.');
     } finally { setBusy(false); }
@@ -102,7 +103,7 @@ export default function ContentCreate() {
       <section className="page-section page-wide">
         <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">새 컨텐츠 만들기</span></h2>
         <div className="picked-bar">
-          <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 저장 전에 수정할 수 있습니다.</span>
+          <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 내 계정에 자동 저장되며, 나중에 다시 열어 수정할 수 있습니다.</span>
           <span className="picked-actions"><Link className="btn-secondary" to="/contents">목록으로</Link></span>
         </div>
         <div className="content-source-grid">
