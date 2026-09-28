@@ -208,29 +208,31 @@ export default function LinkAdmin() {
 
   return (
     <section className="page-section page-wide">
-      <h2>
-        링크 관리
-        {detail ? (
-          <>
-            <span className="crumb-sep">/</span>
-            <span className="crumb">{detail.title || detail.originalUrl}</span>
-          </>
-        ) : <span className="count">{links.length}</span>}
-      </h2>
-
-      <div className="picked-bar">
-        {detail && (
-          <span className="picked-meta">발급 {detail.recipients.length}개 · 등록 {claimed}개</span>
-        )}
+      <div className="page-head">
+        <h2>
+          링크 관리
+          {detail ? (
+            <>
+              <span className="crumb-sep">/</span>
+              <span className="crumb">{detail.title || detail.originalUrl}</span>
+            </>
+          ) : <span className="count">{links.length}</span>}
+        </h2>
         {!detail && (
-          <span className="picked-actions">
+          <span className="page-actions">
             {/* Content is what a link points at, so it is made from here rather than
                 from a menu of its own. */}
             <Link className="btn-secondary" to="/contents">컨텐츠</Link>
-            <Link className="btn-secondary" to="/links/new">링크 추가</Link>
+            <Link className="btn-primary" to="/links/new">링크 추가</Link>
           </span>
         )}
       </div>
+
+      {detail && (
+        <div className="picked-bar">
+          <span className="picked-meta">발급 {detail.recipients.length}개 · 등록 {claimed}개</span>
+        </div>
+      )}
 
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}

@@ -108,6 +108,14 @@ public class TicketRepository {
         return jdbc.query("SELECT * FROM ticket WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }
 
+    /** Tickets per event, for the list of events. */
+    public Map<Long, Long> countBySession() {
+        Map<Long, Long> result = new java.util.HashMap<>();
+        jdbc.query("SELECT session_id, COUNT(*) AS issued FROM ticket GROUP BY session_id",
+            rs -> { result.put(rs.getLong("session_id"), rs.getLong("issued")); });
+        return result;
+    }
+
     /** The ids of every ticket in a session that can still be used, and nothing else. */
     public List<Long> liveIds(long sessionId) {
         return jdbc.queryForList("SELECT id FROM ticket WHERE session_id = ? AND status <> 'REVOKED' "

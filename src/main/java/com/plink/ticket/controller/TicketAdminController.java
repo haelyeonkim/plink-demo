@@ -83,8 +83,14 @@ public class TicketAdminController {
 
     @GetMapping("/sessions")
     public List<Map<String, Object>> listSessions() {
+        // How many tickets each event has, counted together rather than one event at a time.
+        Map<Long, Long> issued = tickets.countBySession();
         List<Map<String, Object>> result = new ArrayList<>();
-        for (EventSession session : sessions.findAll()) result.add(describe(session));
+        for (EventSession session : sessions.findAll()) {
+            Map<String, Object> row = describe(session);
+            row.put("ticketCount", issued.getOrDefault(session.id, 0L));
+            result.add(row);
+        }
         return result;
     }
 
@@ -746,14 +752,20 @@ public class TicketAdminController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createGate(@PathVariable long id, @RequestBody Map<String, String> body) {
         ticketService.requireSession(id);
-        String gateId = required(body.get("gateId"), "게이트 ID를 입력해 주세요.");
-        if (!gateId.matches("[A-Za-z0-9_-]{1,32}")) {
+        // An ID is a name for the log, not something an organiser should have to invent:
+        // left blank, one is made.
+        String gateId = blankToNull(body.get("gateId"));
+        if (gateId == null) {
+            do { gateId = "g-" + Secrets.randomAlnum(8).toLowerCase(java.util.Locale.ROOT); }
+            while (gates.findById(gateId).isPresent());
+        } else if (!gateId.matches("[A-Za-z0-9_-]{1,32}")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "게이트 ID는 영문·숫자 32자 이내여야 해요.");
-        }
-        if (gates.findById(gateId).isPresent()) {
+        } else if (gates.findById(gateId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록된 게이트 ID예요.");
         }
-        String direction = GateAuthService.direction(body.get("direction"));
+        // A booth hands things over; it has no way in or out, so it takes both.
+        String direction = "BOOTH".equalsIgnoreCase(body.get("role"))
+            ? "BIDIRECTIONAL" : GateAuthService.direction(body.get("direction"));
         String token = Secrets.randomToken(24);
         // A terminal without a place cannot answer "how busy is the main hall?".
         String zone = required(body.get("zone"), "게이트가 있는 장소를 입력해 주세요.");

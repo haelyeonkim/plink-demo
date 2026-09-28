@@ -43,7 +43,12 @@ export default function Crowding({ sessionId, token }: { sessionId: string; toke
 
   return (
     <div className="access-card crowding-card">
-      <p className="eyebrow center"><span></span> 지금 붐비는 정도</p>
+      {/* One line of heading, not a heading and a paragraph: this card shares the screen
+          with the ticket, and the ticket has to fit without scrolling. */}
+      <div className="crowding-top">
+        <b>지금 붐비는 정도</b>
+        <span className="crowding-live" title="게이트를 지날 때마다 갱신됩니다">실시간</span>
+      </div>
       <ul className="crowding-list">
         {data.zones.map(zone => (
           <li key={zone.zone}>
@@ -65,11 +70,10 @@ export default function Crowding({ sessionId, token }: { sessionId: string; toke
           </li>
         ))}
       </ul>
-      <p className="hint-text center">
-        게이트를 지날 때마다 실시간으로 갱신됩니다.
+      <p className="crowding-basis">
         {data.zones.some(zone => zone.basis === 'CAPACITY')
-          ? ' 정원이 정해진 곳은 정원 대비, 그 밖은 가장 붐비는 곳 기준입니다.'
-          : ' 막대는 가장 붐비는 곳 기준입니다.'}
+          ? '정원이 정해진 곳은 정원 대비, 그 밖은 가장 붐비는 곳 기준'
+          : '막대는 가장 붐비는 곳 기준'}
       </p>
     </div>
   );

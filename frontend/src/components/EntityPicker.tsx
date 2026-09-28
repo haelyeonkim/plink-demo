@@ -13,6 +13,8 @@ export interface PickerItem {
   title: string;
   meta?: ReactNode;
   badge?: ReactNode;
+  /** Shown quieter: still there to open, but not what the list is about today. */
+  muted?: boolean;
 }
 
 export default function EntityPicker({ items, onOpen, empty, page = 8 }: {
@@ -30,7 +32,7 @@ export default function EntityPicker({ items, onOpen, empty, page = 8 }: {
     <div className="tab-panel">
       <ul className="entity-list">
         {visible.map(item => (
-          <li key={item.id} className="openable" tabIndex={0} role="button"
+          <li key={item.id} className={`openable${item.muted ? ' muted' : ''}`} tabIndex={0} role="button"
             onClick={() => onOpen(item.id)}
             onKeyDown={event => {
               if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(item.id); }

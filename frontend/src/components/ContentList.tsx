@@ -27,15 +27,17 @@ export default function ContentList() {
 
   return (
     <section className="page-section page-wide">
-      <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
-        <span className="count">{contents.length}</span>
-      </h2>
-      <div className="picked-bar">
-        <span className="picked-meta">보호 링크가 열 작품 자료를 관리합니다.</span>
-        <span className="picked-actions">
+      <div className="page-head">
+        <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
+          <span className="count">{contents.length}</span>
+        </h2>
+        <span className="page-actions">
           <Link className="btn-secondary" to="/links">링크 목록</Link>
           <Link className="btn-primary" to="/contents/new">새 컨텐츠 만들기</Link>
         </span>
+      </div>
+      <div className="picked-bar">
+        <span className="picked-meta">보호 링크가 열 작품 자료를 관리합니다.</span>
       </div>
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="tab-panel">

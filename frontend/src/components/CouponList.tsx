@@ -32,6 +32,8 @@ export default function CouponList({ coupons, onOpen }: {
               <span className={`pill pill-${coupon.status === 'REDEEMED' ? 'off' : 'ok'}`}>
                 {coupon.status === 'REDEEMED' ? '사용함' : '사용 가능'}
               </span>
+              {/* It opens: the row says so the way every other list on a phone does. */}
+              <span className="coupon-chevron" aria-hidden="true">›</span>
             </button>
           </li>
         ))}

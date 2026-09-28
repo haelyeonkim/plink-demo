@@ -29,6 +29,7 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
   onSubmit: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
 }) {
   const [text, setText] = useState('');
+  const [fileName, setFileName] = useState('');
   const [notify, setNotify] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -56,6 +57,7 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
   async function read(files: FileList | null) {
     const chosen = files?.[0];
     if (!chosen) return;
+    setFileName(chosen.name);
     setError(''); setResult(null);
     try { setText(await chosen.text()); }
     catch { setError('파일을 읽지 못했어요.'); }
@@ -95,8 +97,14 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
       </p>
 
       <div className="bulk-actions">
-        <input ref={file} type="file" accept=".csv,.tsv,.txt,text/csv" disabled={busy}
-          onChange={event => void read(event.target.files)} />
+        {/* The browser's own file button speaks the browser's language ("Choose File");
+            this one speaks the page's, and says which file was taken. */}
+        <label className={`btn-tiny file-pick${busy ? ' is-disabled' : ''}`}>
+          <input ref={file} type="file" accept=".csv,.tsv,.txt,text/csv" disabled={busy}
+            onChange={event => void read(event.target.files)} />
+          CSV 파일 선택
+        </label>
+        <span className="file-name">{fileName || '선택한 파일 없음'}</span>
         <button type="button" className="btn-tiny" onClick={downloadSample}>양식 내려받기</button>
       </div>
 

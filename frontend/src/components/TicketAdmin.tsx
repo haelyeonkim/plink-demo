@@ -8,6 +8,7 @@ import BulkImport from './BulkImport';
 import EntityPicker from './EntityPicker';
 import { openLive } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
+import RowMenu from './RowMenu';
 
 interface SessionRow {
   id: number; name: string; venue: string | null; startsAt: string; gateOpensAt: string | null;
@@ -15,6 +16,8 @@ interface SessionRow {
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
   claimRequiresOtp: boolean;
   seats: string[]; tiers: string[];
+  /** Issued so far; the list of events says it without opening each one. */
+  ticketCount?: number;
   crowdBusyPercent: number; crowdSteadyPercent: number;
   /** What a ticket in this event carries, as the organiser defined it. */
   fields: TicketFieldRow[];
@@ -31,6 +34,14 @@ interface TicketRow {
   lastEventAt: string | null; lastExitAt: string | null; insideSince: string | null;
   phone: string | null; deliveredVia: string | null;
   attributes: Record<string, string>;
+}
+
+/** Whether an event is still ahead, is today, or has been, by the calendar day. */
+function eventWhen(startsAt: string): 'upcoming' | 'today' | 'past' {
+  const start = new Date(startsAt);
+  const day = (d: Date) => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+  const today = day(new Date());
+  return day(start) === today ? 'today' : day(start) < today ? 'past' : 'upcoming';
 }
 
 /** What the ticket itself is: issued, claimed by a person, or switched off. */
@@ -96,6 +107,14 @@ interface TicketSummary {
 }
 
 type TicketFilter = 'ALL' | 'UNCLAIMED' | 'BOUND' | 'INSIDE' | 'REVOKED';
+/** What happens to somebody who left without scanning out. */
+const UNMATCHED_LABEL: Record<string, string> = {
+  STRICT: '안내 데스크에서만 정리',
+  LENIENT: '다시 들어올 때 자동 보정',
+  AUTO_EXIT: '시간이 지나면 자동 퇴장',
+};
+/** What a gate does, in the words on the screen rather than the ones in the database. */
+const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
 type CouponFilter = 'ALL' | 'ISSUED' | 'REDEEMED' | 'VOID';
 const PAGE_SIZE = 50;
 
@@ -675,26 +694,28 @@ export default function TicketAdmin() {
   ])].sort((a, b) => a.localeCompare(b, 'ko'));
   return (
     <section className="page-section page-wide">
-      <h2>
-        입장권 관리
-        {session
-          ? <><span className="crumb-sep">/</span><span className="crumb">{session.name}</span></>
-          : <span className="count">{sessions.length}</span>}
-      </h2>
+      <div className="page-head">
+        <h2>
+          입장권 관리
+          {session
+            ? <><span className="crumb-sep">/</span><span className="crumb">{session.name}</span></>
+            : <span className="count">{sessions.length}</span>}
+        </h2>
+        {!session && (
+          <span className="page-actions">
+            <Link className="btn-primary" to="/tickets/sessions/new">행사 추가</Link>
+          </span>
+        )}
+      </div>
 
-      <div className="picked-bar">
-        {session && (
+      {session && (
+        <div className="picked-bar">
           <span className="picked-meta">
             {shortTime(session.startsAt)}{session.venue ? ` · ${session.venue}` : ''}
             {` · 발급 ${counts.all.toLocaleString()}장`}
           </span>
-        )}
-        {!session && (
-          <span className="picked-actions">
-            <Link className="btn-secondary" to="/tickets/sessions/new">행사 추가</Link>
-          </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {notice && <p className="notice-text" role="status">{notice}</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
@@ -712,15 +733,32 @@ export default function TicketAdmin() {
 
       {!session && (
         <EntityPicker
-          items={sessions.map(row => ({
-            id: row.id,
-            title: row.name,
-            meta: <>
-              <span>{shortTime(row.startsAt)}</span>
-              {row.venue && <span>{row.venue}</span>}
-              {row.gateOpensAt && <span>입장 {shortTime(row.gateOpensAt)}</span>}
-            </>,
-          }))}
+          items={[...sessions]
+            // What is coming up reads first, soonest at the top; what has already run
+            // follows, most recent first, quieter.
+            .sort((a, b) => {
+              const pa = eventWhen(a.startsAt) === 'past', pb = eventWhen(b.startsAt) === 'past';
+              if (pa !== pb) return pa ? 1 : -1;
+              const ta = new Date(a.startsAt).getTime(), tb = new Date(b.startsAt).getTime();
+              return pa ? tb - ta : ta - tb;
+            })
+            .map(row => {
+              const when = eventWhen(row.startsAt);
+              return {
+                id: row.id,
+                title: row.name,
+                muted: when === 'past',
+                meta: <>
+                  <span>{shortTime(row.startsAt)}</span>
+                  {row.venue && <span>{row.venue}</span>}
+                  {row.gateOpensAt && <span>입장 {shortTime(row.gateOpensAt)}</span>}
+                  {row.ticketCount !== undefined && <span>발급 {row.ticketCount.toLocaleString()}장</span>}
+                </>,
+                badge: <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'off' : 'in'}`}>
+                  {when === 'today' ? '오늘' : when === 'past' ? '지난 행사' : '예정'}
+                </span>,
+              };
+            })}
           onOpen={id => navigate(`/tickets/admin/${id}?tab=issue`)}
           empty="등록된 행사가 없어요. 행사 추가로 먼저 만들어 주세요." />
       )}
@@ -760,7 +798,7 @@ export default function TicketAdmin() {
               </div>
             )}
             {fieldList.length === 0 && (
-              <p className="hint-text">
+              <p className="hint-text form-note">
                 발급 항목이 없습니다. 설정 → 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
                 여기에서 고를 수 있어요.
               </p>
@@ -865,22 +903,19 @@ export default function TicketAdmin() {
                     <td data-label="전달">{row.deliveredVia ?? '-'}</td>
                     <td className="cell-buttons">
                       <button className="btn-tiny" onClick={() => showLink(row.ticketId)}>링크 보기</button>
-                      <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: false })}>
-                        재발급
-                      </button>
                       <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: true })}>
                         재발송
                       </button>
-                      {row.status === 'REVOKED' ? (
-                        <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, false)}>다시 사용</button>
-                      ) : (
-                        <button className="btn-tiny" onClick={() => setRevoked(row.ticketId, true)}>비활성화</button>
-                      )}
-                      {booths.length > 0 && (
-                        <button className="btn-tiny" onClick={() => openCouponSheet(row)}>쿠폰 주기</button>
-                      )}
-                      <button className="btn-tiny btn-tiny-danger"
-                        onClick={() => setConfirmTicket(row)}>삭제</button>
+                      <RowMenu label={`${row.ticketRef} 작업`} items={[
+                        ...(givingBooths.length > 0 && row.status !== 'REVOKED'
+                          ? [{ label: '쿠폰 주기', onSelect: () => openCouponSheet(row) }] : []),
+                        { label: '새 링크로 재발급', onSelect: () => setConfirmReissue({ row, notify: false }) },
+                        row.status === 'REVOKED'
+                          ? { label: '다시 사용하기', onSelect: () => setRevoked(row.ticketId, false) }
+                          : { label: '비활성화', onSelect: () => setRevoked(row.ticketId, true) },
+                        'separator',
+                        { label: '삭제', onSelect: () => setConfirmTicket(row), danger: true },
+                      ]} />
                     </td>
                   </tr>
                   {issued?.from === 'row' && issued.ticketId === row.ticketId && (
@@ -919,10 +954,6 @@ export default function TicketAdmin() {
         <div className="tab-panel tab-split">
           <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
             <h3>단말 등록</h3>
-            <div className="field">
-              <label htmlFor="gate-new-id">게이트 ID</label>
-              <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}" required />
-            </div>
             <div className="form-row">
               <div className="field">
                 <label htmlFor="gate-new-label">이름</label>
@@ -932,14 +963,6 @@ export default function TicketAdmin() {
                 <label htmlFor="gate-new-zone">장소</label>
                 <input id="gate-new-zone" name="zone" required placeholder="예: 메인홀" />
               </div>
-            </div>
-            <div className="field">
-              <label htmlFor="gate-new-direction">방향</label>
-              <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
-                <option value="IN">IN · 입장 전용</option>
-                <option value="OUT">OUT · 퇴장 전용</option>
-                <option value="BIDIRECTIONAL">BIDIRECTIONAL · 겸용</option>
-              </select>
             </div>
             {/* A booth terminal reads the same code, but to hand something over. */}
             <div className="form-row">
@@ -953,6 +976,17 @@ export default function TicketAdmin() {
                   </option>
                 </select>
               </div>
+              {/* A door has a way in and a way out; a booth has neither. */}
+              {gateRole !== 'BOOTH' && (
+                <div className="field">
+                  <label htmlFor="gate-new-direction">방향</label>
+                  <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
+                    <option value="BIDIRECTIONAL">입장·퇴장 겸용</option>
+                    <option value="IN">입장 전용</option>
+                    <option value="OUT">퇴장 전용</option>
+                  </select>
+                </div>
+              )}
               {gateRole === 'BOOTH' && (
                 <div className="field">
                   <label htmlFor="gate-new-booth">부스</label>
@@ -964,6 +998,14 @@ export default function TicketAdmin() {
                 </div>
               )}
             </div>
+            <details className="more-fields">
+              <summary>게이트 ID 직접 정하기</summary>
+              <div className="field">
+                <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
+                <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
+                  placeholder="예: main-door-1" />
+              </div>
+            </details>
             <button className="btn-primary" type="submit">단말 등록</button>
             {gateSetup && (
               <div className="issued-link">
@@ -985,7 +1027,7 @@ export default function TicketAdmin() {
             {gates.map(gate => (
               <div className="gate-row" key={gate.gateId}>
                 <div>
-                  <b>{gate.label || gate.gateId}</b> · {gate.role === 'BOOTH' ? '부스 단말' : gate.direction}
+                  <b>{gate.label || gate.gateId}</b> · {gate.role === 'BOOTH' ? '부스 단말' : DIRECTION_LABEL[gate.direction] ?? gate.direction}
                   {gate.role === 'BOOTH'
                     ? ` · ${booths.find(booth => booth.boothId === gate.boothId)?.name ?? '부스 없음'}`
                     : gate.zone && ` · ${gate.zone}`}
@@ -1004,17 +1046,19 @@ export default function TicketAdmin() {
                   </div>
                 </div>
                 <div className="gate-actions">
-                  <button className="btn-tiny" onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>
+                  <button className="btn-tiny" disabled={!gate.setupUrl}
+                    onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>
                     링크 복사
                   </button>
-                  <button className="btn-tiny" onClick={() => reopenSetup(gate.gateId)}>설정 링크 재발급</button>
-                  <button className="btn-tiny" onClick={() => renewGate(gate.gateId)}>유효기간 갱신</button>
-                  {gate.tokenExpiresAt !== null && (
-                    <button className="btn-tiny" onClick={() => renewGate(gate.gateId, 0)}>무제한</button>
-                  )}
-                  <button className="btn-tiny" onClick={() => releaseGate(gate.gateId)}
-                    disabled={!gate.boundDevice}>연결 해제</button>
-                  <button className="btn-tiny" onClick={() => rotateGateToken(gate.gateId)}>토큰 폐기</button>
+                  <RowMenu label={`${gate.label || gate.gateId} 단말 작업`} items={[
+                    { label: '설정 링크 재발급', onSelect: () => reopenSetup(gate.gateId) },
+                    { label: '유효기간 갱신', onSelect: () => renewGate(gate.gateId) },
+                    ...(gate.tokenExpiresAt !== null
+                      ? [{ label: '유효기간 무제한으로', onSelect: () => renewGate(gate.gateId, 0) }] : []),
+                    { label: '단말 연결 해제', onSelect: () => releaseGate(gate.gateId), disabled: !gate.boundDevice },
+                    'separator',
+                    { label: '토큰 폐기', onSelect: () => rotateGateToken(gate.gateId), danger: true },
+                  ]} />
                 </div>
               </div>
             ))}
@@ -1033,35 +1077,6 @@ export default function TicketAdmin() {
 
       {session && tab === 'settings' && (
         <div className="tab-panel settings-panel">
-          {/* What is actually in force, before any of the forms that change it. */}
-          <div className="settings-now">
-            <h3>지금 적용 중</h3>
-            <div className="table-scroll">
-              <table className="summary-table">
-                <tbody>
-                  {([
-                    ['행사 시각', shortTime(session.startsAt) || '-'],
-                    ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
-                    ['재입장', session.reentryMode === 'DISABLED' ? '불가'
-                      : session.reentryMode === 'LIMITED' ? `최대 ${session.reentryMax}회` : '무제한'],
-                    ['퇴장 후 유효', `${session.reentryGraceMinutes}분`],
-                    ['중복 스캔 무시', `${session.reentryCooldownSeconds}초`],
-                    ['퇴장', `${session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · ${session.unmatchedExit}`],
-                    ['자동 보정', `${session.autoExitAfterMinutes}분 경과 후`],
-                    ['등록 인증', session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'],
-                    ['혼잡도 기준', `혼잡 ${session.crowdBusyPercent}% · 보통 ${session.crowdSteadyPercent}%`],
-                    ['정원 지정', zoneNames.length === 0 ? '장소 없음'
-                      : `${zoneNames.length}곳 중 ${Object.keys(session.zoneCapacity ?? {}).length}곳`],
-                    ['발급 항목', fieldList.length === 0 ? '없음'
-                      : fieldList.map(f => `${f.label}(${f.values.length || '자유'})`).join(' · ')],
-                  ] as Array<[string, string]>).map(([label, value]) => (
-                    <tr key={label}><th scope="row">{label}</th><td>{value}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           <div className="tabs tabs-inner" role="tablist">
             {SETTINGS_TABS.map(([key, label]) => (
               <button key={key} role="tab" aria-selected={settingsTab === key}
@@ -1069,6 +1084,39 @@ export default function TicketAdmin() {
                 onClick={() => setSettingsTab(key)}>{label}</button>
             ))}
           </div>
+
+          {/* What is in force for this section, right above the form that changes it.
+              The whole list at the top of every section said everything twice and
+              made each page twice as long. */}
+          <dl className="settings-now">
+            {(({
+              event: [
+                ['행사 시각', shortTime(session.startsAt) || '-'],
+                ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
+              ],
+              policy: [
+                ['재입장', session.reentryMode === 'DISABLED' ? '불가'
+                  : session.reentryMode === 'LIMITED' ? `최대 ${session.reentryMax}회` : '무제한'],
+                ['퇴장 후 유효', `${session.reentryGraceMinutes}분`],
+                ['중복 스캔 무시', `${session.reentryCooldownSeconds}초`],
+                ['퇴장', `${session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · `
+                  + (UNMATCHED_LABEL[session.unmatchedExit] ?? session.unmatchedExit)],
+                ['자동 보정', `${session.autoExitAfterMinutes}분 경과 후`],
+                ['등록 인증', session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'],
+              ],
+              crowd: [
+                ['혼잡도 기준', `혼잡 ${session.crowdBusyPercent}% · 보통 ${session.crowdSteadyPercent}%`],
+                ['정원 지정', zoneNames.length === 0 ? '장소 없음'
+                  : `${zoneNames.length}곳 중 ${Object.keys(session.zoneCapacity ?? {}).length}곳`],
+              ],
+              fields: [
+                ['발급 항목', fieldList.length === 0 ? '없음'
+                  : fieldList.map(f => `${f.label}(${f.values.length || '자유'})`).join(' · ')],
+              ],
+            } as Record<SettingsTab, Array<[string, string]>>)[settingsTab]).map(([label, value]) => (
+              <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+            ))}
+          </dl>
 
           {settingsTab === 'event' && (
             <form key={`details-${session.id}`} className="settings-form"
@@ -1143,9 +1191,9 @@ export default function TicketAdmin() {
               <div className="field">
                 <label htmlFor="policy-unmatched">퇴장 미스캔</label>
                 <select id="policy-unmatched" name="unmatchedExit" defaultValue={session.unmatchedExit}>
-                  <option value="STRICT">STRICT · 안내 데스크만</option>
-                  <option value="LENIENT">LENIENT · 장시간 후 자동 보정</option>
-                  <option value="AUTO_EXIT">AUTO_EXIT · 자동 정리까지</option>
+                  {Object.entries(UNMATCHED_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </div>
               <label className="field-inline">

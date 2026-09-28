@@ -597,7 +597,7 @@ function RotatingCode({ grant, ticket, movement, used, onDone, onRefresh }: {
   }, [movement, used]);
 
   return (
-    <div className="access-card">
+    <div className="access-card code-panel">
       {/* Laid over the whole card: the code burns underneath, and what is left is the
           row the gate wrote about this ticket. */}
       {movement && <ScanFlash movement={movement} spent inside={ticket.presence.inside} />}

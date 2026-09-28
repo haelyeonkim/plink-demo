@@ -325,6 +325,26 @@ class ConsoleOperationsTest {
         assertEquals(7, ((java.util.Collection<?>) summary.get("seats")).size(), "비활성 좌석도 점유 중");
     }
 
+    /** An organiser should not have to invent a name for the log: a blank ID is made. */
+    @Test void aGateWithoutAnIdGetsOne() {
+        long sessionId = newSession();
+        Map<String, Object> made = adminController.createGate(sessionId,
+            Map.of("label", "정문", "zone", "로비", "direction", "IN"));
+        String gateId = String.valueOf(made.get("gateId"));
+        assertTrue(gateId.matches("g-[a-z0-9]{8}"), gateId);
+        assertEquals("IN", gates.findById(gateId).orElseThrow().direction);
+    }
+
+    /** The list of events says how many tickets each has, without opening them. */
+    @Test void theEventListCountsItsTickets() {
+        long sessionId = newSession();
+        tickets.issue(sessionId, "one@example.com", null, null, null);
+        tickets.issue(sessionId, "two@example.com", null, null, null);
+        Map<String, Object> row = adminController.listSessions().stream()
+            .filter(r -> ((Number) r.get("id")).longValue() == sessionId).findFirst().orElseThrow();
+        assertEquals(2L, row.get("ticketCount"));
+    }
+
     @Test void oneSeatCannotBeIssuedTwice() {
         long sessionId = newSession();
         fields.insert(sessionId, "좌석", "SEAT", "A-1");
