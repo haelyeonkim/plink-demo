@@ -21,6 +21,9 @@
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Where a build goes. The stage copy builds into its own directory, so building
+             it never rewrites the jar production is running from. -->
+        <build.dir>${project.basedir}/target</build.dir>
     </properties>
 
     <dependencyManagement>
@@ -120,6 +123,7 @@
     </dependencies>
 
     <build>
+        <directory>${build.dir}</directory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

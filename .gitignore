@@ -4,6 +4,8 @@ target/
 *.log
 .pids/
 logs/
+# The stage copy's build, env and logs (scripts/run-stage.sh).
+.stage/
 
 frontend/node_modules/
 frontend/dist/

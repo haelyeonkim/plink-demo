@@ -20,6 +20,12 @@ spring:
     url: ${DB_URL:jdbc:h2:mem:plink;DB_CLOSE_DELAY=-1}
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
+    # The Supabase session pooler admits 15 clients for the whole project, and every
+    # running copy of this app holds a pool of them. Five is plenty for the traffic a
+    # gate sees; a second copy (stage) runs with fewer.
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+      minimum-idle: ${DB_POOL_MIN_IDLE:1}
   h2:
     console:
       enabled: ${H2_CONSOLE_ENABLED:true}
