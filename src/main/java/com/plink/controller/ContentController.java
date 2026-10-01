@@ -31,13 +31,15 @@ public class ContentController {
     private final ContentRepository contents;
     private final ArtworkRepository artworks;
     private final ContentImportService importer;
+    private final com.plink.service.ContentImageService images;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ContentController(ContentRepository contents, ArtworkRepository artworks,
-            ContentImportService importer) {
+            ContentImportService importer, com.plink.service.ContentImageService images) {
         this.contents = contents;
         this.artworks = artworks;
         this.importer = importer;
+        this.images = images;
     }
 
     private String owner(Authentication user) {
@@ -80,6 +82,7 @@ public class ContentController {
         String sourceType = sourceType(request.get("sourceType"));
         String sourceRef = sourceRef(sourceType, request.get("sourceRef"));
         long id = contents.insert(owner(user), title, "EXHIBITION", body, sourceType, sourceRef);
+        images.sync(id, owner(user), requestedBody);
         artworks.replace(id, owner(user), artworkRows(requestedBody));
         return read(id, user);
     }
@@ -141,6 +144,7 @@ public class ContentController {
         String sourceRef = request.containsKey("sourceRef")
             ? sourceRef(sourceType, request.get("sourceRef")) : content.sourceRef;
         contents.update(content.id, title(request.get("title")), body(requestedBody), sourceType, sourceRef);
+        images.sync(content.id, content.ownerSub, requestedBody);
         artworks.replace(content.id, content.ownerSub, artworkRows(requestedBody));
         return read(id, user);
     }

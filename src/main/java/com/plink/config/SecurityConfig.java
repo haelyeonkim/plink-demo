@@ -78,7 +78,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/contents", "/api/contents/**").access(scope(AdminPrincipal.LINKS, true))
                 .requestMatchers("/h2-console/**").denyAll()
                 .anyRequest().permitAll())
-            .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, error) -> response.sendError(401)))
+            .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, error) -> {
+                response.setStatus(401);
+                response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"error\":\"로그인이 만료됐어요. 다시 로그인해 주세요.\"}");
+            }))
             .cors(Customizer.withDefaults())
             .requestCache(RequestCacheConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)

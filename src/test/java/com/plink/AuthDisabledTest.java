@@ -19,6 +19,14 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 class AuthDisabledTest {
     @Autowired MockMvc mvc;
 
+    @Test void unauthenticatedPdfImportExplainsLoginRequirement() throws Exception {
+        mvc.perform(multipart("/api/contents/import/pdf")
+                .file("file", new byte[]{1}).with(csrf()))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().contentTypeCompatibleWith("application/json"))
+            .andExpect(jsonPath("$.error").value("로그인이 만료됐어요. 다시 로그인해 주세요."));
+    }
+
     @Test void deploymentOriginCanUseTheApi() throws Exception {
         mvc.perform(options("/api/auth/logout")
                 .header("Origin", "https://lyuni.ddak.app")

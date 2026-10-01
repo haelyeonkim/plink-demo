@@ -25,14 +25,16 @@ public class ArtworkDeliveryService {
     private final ContentRepository contents;
     private final LinkService links;
     private final LinkAddresses addresses;
+    private final ContentImageService images;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ArtworkDeliveryService(ArtworkRepository artworks, ContentRepository contents,
-            LinkService links, LinkAddresses addresses) {
+            LinkService links, LinkAddresses addresses, ContentImageService images) {
         this.artworks = artworks;
         this.contents = contents;
         this.links = links;
         this.addresses = addresses;
+        this.images = images;
     }
 
     @Transactional
@@ -61,6 +63,7 @@ public class ArtworkDeliveryService {
         body.put("columns", "2");
         body.put("artworks", selected.stream().map(ArtworkRepository.Artwork::body).toList());
         long contentId = contents.insert(ownerSub, title, "SELECTION", mapper.writeValueAsString(body));
+        images.sync(contentId, ownerSub, body);
         ProtectedLink link = links.createLink(null, contentId, title, password, expiresAt, null,
             Math.max(0, maxViews), ownerSub);
         LinkRecipient recipient = links.issue(link.getId(), email, label);

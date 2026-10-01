@@ -2,7 +2,6 @@ package com.plink.service;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -36,7 +35,7 @@ import java.util.regex.Pattern;
 @Service
 public class ContentImportService {
     private static final int MAX_DOWNLOAD = 8 * 1024 * 1024;
-    private static final int MAX_PDF = 20 * 1024 * 1024;
+    private static final int MAX_PDF = 100 * 1024 * 1024;
     private static final int MAX_WORKS = 60;
     private static final Pattern YEAR = Pattern.compile("\\b(18|19|20)\\d{2}\\b");
     private static final Pattern SIZE = Pattern.compile(
@@ -81,27 +80,31 @@ public class ContentImportService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PDF 파일을 선택해 주세요.");
         }
         if (file.getSize() > MAX_PDF) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "PDF는 20MB까지 올릴 수 있어요.");
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "PDF는 100MB까지 올릴 수 있어요.");
         }
         String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         if (!name.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PDF 파일만 가져올 수 있어요.");
         }
         try (PDDocument pdf = Loader.loadPDF(file.getBytes())) {
-            String text = new PDFTextStripper().getText(pdf).replace("\r", "").trim();
-            if (text.isBlank()) {
+            PdfTextDocument document = PdfTextDocument.extract(pdf);
+            if (document.text().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "이 PDF에서 텍스트를 읽을 수 없습니다. 스캔본이나 이미지로 구성된 PDF일 수 있습니다. 텍스트를 선택할 수 있는 PDF로 다시 업로드하거나 관리자에게 문의해 주세요.");
             }
-            List<Map<String, String>> works = parsePdfText(text);
+            List<Map<String, String>> parsed = new PdfArtworkParser().parse(document);
+            List<Map<String, String>> works = parsed.stream().limit(MAX_WORKS).toList();
             if (works.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "PDF에서 작품 단위를 구분하지 못했어요.");
             }
             String title = name.replaceFirst("(?i)\\.pdf$", "").replace('_', ' ').trim();
-            Map<String, Object> result = result(title, "", works, List.of(
-                "PDF에서는 텍스트만 가져옵니다. 이미지와 누락된 정보를 검토해 주세요.",
-                "스캔 PDF는 먼저 OCR 처리가 필요합니다."));
+            List<String> warnings = new ArrayList<>(List.of(
+                "PDF에서는 텍스트만 가져옵니다. 이미지와 누락된 작품·정보를 검토해 주세요.",
+                "규격은 세로 × 가로 × 깊이 순서로 해석합니다. 원본의 표기 순서를 확인해 주세요.",
+                "가변크기·프레임·에디션 정보는 설명에 보관합니다. 작가 약력은 자동 배정하지 않습니다."));
+            if (parsed.size() > MAX_WORKS) warnings.add("작품은 60점까지 가져옵니다. 나머지는 나누어 등록해 주세요.");
+            Map<String, Object> result = result(title, "", works, warnings);
             result.put("sourceType", "PDF");
             result.put("sourceRef", safeFilename(name));
             return result;
@@ -277,25 +280,6 @@ public class ContentImportService {
             fillDetails(work, all);
             addUnique(works, work);
         }
-    }
-
-    private List<Map<String, String>> parsePdfText(String text) {
-        List<Map<String, String>> works = new ArrayList<>();
-        String[] blocks = text.split("\\n\\s*\\n+");
-        for (String block : blocks) {
-            List<String> lines = block.lines().map(String::trim).filter(line -> !line.isBlank()).toList();
-            if (lines.size() < 2 || block.length() < 12) continue;
-            boolean looksLikeWork = YEAR.matcher(block).find() || SIZE.matcher(block).find();
-            if (!looksLikeWork) continue;
-            Map<String, String> work = emptyWork();
-            work.put("artist", lines.get(0));
-            work.put("title", lines.size() > 1 ? lines.get(1) : "");
-            fillDetails(work, clean(block));
-            if (lines.size() > 2) work.put("description", String.join("\n", lines.subList(2, lines.size())));
-            addUnique(works, work);
-            if (works.size() >= MAX_WORKS) break;
-        }
-        return works;
     }
 
     private void fillDetails(Map<String, String> work, String value) {

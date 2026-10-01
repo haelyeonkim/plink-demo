@@ -1,0 +1,11 @@
+-- How long a terminal's token is good for.
+--
+-- A tablet in a venue keeps the same token for the run of an event, which is convenient
+-- and is also how a token walks out of the building inside a tablet that is never
+-- collected. Giving it an end date bounds that, and renewing is a button rather than a
+-- re-registration: the terminal keeps working through it.
+--
+-- Left NULL for terminals registered before this, because expiring a live gate on the
+-- morning of a migration would be the wrong way to introduce the idea. The console's
+-- renewal gives them a date from then on.
+ALTER TABLE gate ADD COLUMN token_expires_at TIMESTAMP;

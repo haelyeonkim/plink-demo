@@ -23,7 +23,7 @@
 
 1. 직접 작품 정보를 작성합니다.
 2. 공개 뷰잉룸 URL을 입력해 Artlogic raw HTML, JSON-LD 또는 일반 작품 카드 구조를 분석합니다.
-3. 20MB 이하의 텍스트 PDF에서 작품 정보를 가져옵니다. 스캔 PDF는 먼저 OCR이 필요합니다.
+3. 100MB 이하의 텍스트 PDF에서 작품 정보를 가져옵니다. 스캔 PDF는 먼저 OCR이 필요합니다.
 
 가져온 결과는 자동 발송되지 않습니다. 공통 편집 화면에서 내용을 검토하고 **컨텐츠 저장**을 누르면 원본 JSON과 작품별 `artwork` 행이 함께 저장됩니다. 기존 컨텐츠는 작품 목록을 처음 열 때 자동으로 인덱싱됩니다.
 
@@ -36,7 +36,7 @@
 - `POST /api/contents/import/url`: 공개 URL 분석
 - `POST /api/contents/import/pdf`: PDF 분석
 
-작품 테이블은 Flyway `V24__artwork_library.sql`에서 생성됩니다. URL 가져오기는 내부망 접근을 차단하고, 웹페이지 8MB·PDF 20MB·한 번에 전달할 작품 60점으로 제한합니다.
+작품 테이블은 Flyway `V24__artwork_library.sql`에서 생성됩니다. URL 가져오기는 내부망 접근을 차단하고, 웹페이지 8MB·PDF 100MB·한 번에 전달할 작품 60점으로 제한합니다.
 
 ## 요구사항
 

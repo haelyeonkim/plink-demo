@@ -2,8 +2,11 @@ target/
 *.class
 *.jar
 *.log
+/test_file_1.pdf
+/test_file_2.pdf
 .pids/
 logs/
+data/content-images/
 
 frontend/node_modules/
 frontend/dist/
