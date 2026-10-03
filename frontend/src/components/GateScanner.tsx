@@ -284,6 +284,9 @@ export default function GateScanner() {
         // An empty lane, or somebody this event has never seen: the camera looks at
         // that all day and it is not a verdict about anybody. The screen stays as it is.
         if (status === 404) { faceFailures.current = 0; return; }
+        // A frame the server could not use - too large, or unreadable - is about this
+        // capture, not about the service. The next tick takes another one.
+        if (status === 400 || status === 413) return;
         if (status === 403) {
           // A face that was seen and refused - a photograph held up, or two holders too
           // alike to tell apart. That one the operator has to see.
@@ -296,9 +299,11 @@ export default function GateScanner() {
         // called out once.
         faceFailures.current += 1;
         if (faceFailures.current >= 3) {
+          // Off for now, not for good: this is not the operator's choice, so it is not
+          // remembered, and reopening the terminal tries again.
           setFaceMode(false);
-          localStorage.setItem(FACE_MODE, 'off');
-          setError('얼굴 인식을 사용할 수 없어 껐어요. QR은 그대로 동작합니다.');
+          setError('얼굴 인식 서비스에 연결하지 못해 잠시 껐어요. QR은 그대로 동작합니다. '
+            + '아래 "얼굴 인식 켜기"로 다시 켤 수 있어요.');
         }
       } finally {
         window.setTimeout(() => { inFlight.current = false; }, 1200);
@@ -506,10 +511,13 @@ export default function GateScanner() {
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
         {gate.role !== 'BOOTH' && (
-          <button className="btn-ghost" onClick={() => setFaceMode(value => {
-            localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
-            return !value;
-          })}>
+          <button className="btn-ghost" onClick={() => {
+            if (!faceMode) { faceFailures.current = 0; setError(''); }
+            setFaceMode(value => {
+              localStorage.setItem(FACE_MODE, value ? 'off' : 'on');
+              return !value;
+            });
+          }}>
             얼굴 인식 {faceMode ? '끄기' : '켜기'}
           </button>
         )}
