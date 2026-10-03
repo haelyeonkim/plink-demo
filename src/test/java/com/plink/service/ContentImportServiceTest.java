@@ -92,6 +92,91 @@ class ContentImportServiceTest {
         });
     }
 
+    @Test
+    void extractsRealPdfBytesIntoSeparateFieldsAndWarnsAboutDimensionOrder() throws Exception {
+        var result = importer.fromPdf(pdfWithLines("Jane Artist", "Landscape", "2026",
+            "Oil on canvas", "100 x 70 cm", "USD 500"));
+        var works = castWorks(castMap(result.get("body")).get("artworks"));
+        assertThat(works).singleElement().satisfies(work -> assertThat(work)
+            .containsEntry("artist", "Jane Artist").containsEntry("title", "Landscape")
+            .containsEntry("medium", "Oil on canvas").containsEntry("year", "2026")
+            .containsEntry("width", "70").containsEntry("height", "100")
+            .containsEntry("price", "USD 500"));
+        assertThat(result.get("warnings").toString()).contains("세로 × 가로");
+    }
+
+    @Test
+    void rejectsPdfWithoutTextInsteadOfInventingArtwork() throws Exception {
+        var file = pdfWithLines();
+        assertThatThrownBy(() -> importer.fromPdf(file))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+    }
+
+    @Test
+    void rejectsEmptyWrongExtensionAndCorruptUploads() {
+        assertThatThrownBy(() -> importer.fromPdf(null))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        for (String name : List.of("wrong.txt", "broken.pdf")) {
+            var file = new org.springframework.mock.web.MockMultipartFile("file", name,
+                "application/pdf", new byte[]{1, 2, 3});
+            assertThatThrownBy(() -> importer.fromPdf(file))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                    e -> assertThat(e.getStatusCode()).isEqualTo(name.endsWith(".pdf")
+                        ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.BAD_REQUEST));
+        }
+    }
+
+    @Test
+    void acceptsPdfAtHundredMegabyteLimit() throws Exception {
+        var original = pdfWithLines("Artist: Test Artist", "Title: Test Work", "Year: 2026", "Medium: Oil on canvas", "Size: 30 x 40 cm");
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "large.pdf",
+                "application/pdf", original.getBytes()) {
+            @Override public long getSize() { return 100L * 1024 * 1024; }
+        };
+        assertThat(importer.fromPdf(file)).containsKey("body");
+    }
+
+    @Test
+    void refusesOversizedPdfBeforeReadingBytes() {
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "large.pdf",
+                "application/pdf", new byte[]{1}) {
+            @Override public long getSize() { return 100L * 1024 * 1024 + 1; }
+        };
+        assertThatThrownBy(() -> importer.fromPdf(file))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
+    }
+
+    @Test
+    void rejectsTextPdfWithoutRecognizableCaptions() throws Exception {
+        var file = pdfWithLines("Exhibition 2026", "A catalogue introduction without artworks.");
+        assertThatThrownBy(() -> importer.fromPdf(file))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+    }
+
+    private org.springframework.mock.web.MockMultipartFile pdfWithLines(String... lines) throws Exception {
+        try (var pdf = new org.apache.pdfbox.pdmodel.PDDocument();
+                var bytes = new java.io.ByteArrayOutputStream()) {
+            var page = new org.apache.pdfbox.pdmodel.PDPage();
+            pdf.addPage(page);
+            try (var content = new org.apache.pdfbox.pdmodel.PDPageContentStream(pdf, page)) {
+                content.beginText();
+                content.setFont(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                    org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(50, 750);
+                content.setLeading(18);
+                for (String line : lines) { content.showText(line); content.newLine(); }
+                content.endText();
+            }
+            pdf.save(bytes);
+            return new org.springframework.mock.web.MockMultipartFile("file", "catalogue.pdf",
+                "application/pdf", bytes.toByteArray());
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> castMap(Object value) {
         return (Map<String, Object>) value;

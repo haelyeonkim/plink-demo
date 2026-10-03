@@ -116,11 +116,25 @@ export async function importContentUrl(url: string): Promise<ContentImportResult
 }
 
 export async function importContentPdf(file: File): Promise<ContentImportResult> {
+  if (file.size > 100 * 1024 * 1024) {
+    throw new Error('PDF는 100MB 이하로 줄여서 다시 올려 주세요.');
+  }
   const body = new FormData();
   body.append('file', file);
   const res = await mutate('/api/contents/import/pdf', { method: 'POST', body });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) throw new Error('로그인이 만료됐어요. 다시 로그인해 주세요.');
+  if (res.status === 413) throw new Error('파일 업로드 용량을 초과했어요. PDF는 100MB 이하로 줄여서 다시 올려 주세요.');
   if (!res.ok) throw new Error(data.error || 'PDF에서 작품을 가져오지 못했어요.');
+  return data;
+}
+
+export async function uploadContentImage(file: File): Promise<{ url: string; name: string }> {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await mutate('/api/contents/images', { method: 'POST', body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || '이미지를 업로드하지 못했어요.');
   return data;
 }
 

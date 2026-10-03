@@ -34,6 +34,7 @@ public class PasskeyService {
     private final LinkRecipientRepository recipients;
     private final HolderRepository holders;
     private final com.plink.repository.ContentRepository contents;
+    private final ContentImageService images;
     private final LinkService linkService;
     private final TicketService ticketService;
     private final RelyingParty rp;
@@ -42,12 +43,13 @@ public class PasskeyService {
     public PasskeyService(LinkRepository links, LinkViewRepository views,
             LinkRecipientRepository recipients, HolderRepository holders, LinkService linkService,
             TicketService ticketService, RelyingParty ticketRelyingParty, ObjectMapper mapper,
-            com.plink.repository.ContentRepository contents) {
+            com.plink.repository.ContentRepository contents, ContentImageService images) {
         this.links = links;
         this.views = views;
         this.recipients = recipients;
         this.holders = holders;
         this.contents = contents;
+        this.images = images;
         this.linkService = linkService;
         this.ticketService = ticketService;
         this.rp = ticketRelyingParty;
@@ -207,6 +209,7 @@ public class PasskeyService {
         if (link.getContentId() != null) {
             contents.findById(link.getContentId()).ifPresent(content -> {
                 opened.put("contentTitle", content.title);
+                images.grant(session, link, recipient);
                 try { opened.put("content", mapper.readTree(content.body)); }
                 catch (RuntimeException unreadable) { opened.put("content", java.util.Map.of()); }
             });

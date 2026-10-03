@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { fetchContent, importContentPdf, importContentUrl, saveContent } from '../api';
+import { fetchContent, importContentPdf, importContentUrl, saveContent, uploadContentImage } from '../api';
 
 interface Artwork {
   image: string; artist: string; title: string; year: string; medium: string;
@@ -33,7 +33,11 @@ export default function ContentCreate() {
   const [intro, setIntro] = useState('');
   const [columns, setColumns] = useState<'1' | '2'>('2');
   const [artworks, setArtworks] = useState<Artwork[]>([empty()]);
+  const [expandedArtwork, setExpandedArtwork] = useState<number | null>(0);
+  const [pendingFocus, setPendingFocus] = useState<number | null>(null);
+  const artworkListRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [url, setUrl] = useState('');
@@ -42,6 +46,29 @@ export default function ContentCreate() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [sourceType, setSourceType] = useState<'MANUAL' | 'URL' | 'PDF'>('MANUAL');
   const [sourceRef, setSourceRef] = useState<string | null>(null);
+  const importedContent = sourceType === 'URL' || sourceType === 'PDF';
+
+  useEffect(() => {
+    if (pendingFocus === null) return;
+    const editor = artworkListRef.current?.querySelector<HTMLElement>(`[data-artwork-index="${pendingFocus}"]`);
+    editor?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+    editor?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    setPendingFocus(null);
+  }, [pendingFocus]);
+
+  function addArtwork() {
+    const index = artworks.length;
+    setArtworks(items => [...items, empty()]);
+    setExpandedArtwork(index);
+    setPendingFocus(index);
+  }
+
+  function removeArtwork(index: number) {
+    setArtworks(items => items.filter((_, i) => i !== index));
+    setExpandedArtwork(current => current === null ? null
+      : current === index ? Math.min(index, artworks.length - 2)
+      : current > index ? current - 1 : current);
+  }
 
   useEffect(() => {
     if (!editing) return;
@@ -61,6 +88,7 @@ export default function ContentCreate() {
   }, [editing]);
 
   async function save() {
+    if (busy || uploading !== null) return;
     setError(''); setNotice(''); setBusy(true);
     try {
       const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
@@ -88,7 +116,8 @@ export default function ContentCreate() {
       setSourceType(result.sourceType);
       setSourceRef(result.sourceRef);
       setImported(true);
-      setNotice(`${result.artworkCount}개 작품을 가져왔어요. 저장 전에 내용을 확인해 주세요.`);
+      setNotice(`${result.artworkCount}개 작품을 내 컨텐츠에 저장했어요. 내용을 확인하고 수정할 수 있습니다.`);
+      navigate(`/contents/${result.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '작품을 가져오지 못했어요.');
     } finally { setBusy(false); }
@@ -97,12 +126,29 @@ export default function ContentCreate() {
   const update = (index: number, key: keyof Artwork, value: string) =>
     setArtworks(items => items.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
 
+  async function uploadImage(index: number, image: File) {
+    if (uploading !== null) return;
+    setError(''); setNotice('');
+    if (!['image/jpeg', 'image/png'].includes(image.type) || image.size > 10 * 1024 * 1024) {
+      setError('이미지는 10MB 이하의 JPEG 또는 PNG 파일을 선택해 주세요.');
+      return;
+    }
+    setUploading(index);
+    try {
+      const result = await uploadContentImage(image);
+      update(index, 'image', result.url);
+      setNotice('이미지를 업로드했어요. 컨텐츠를 저장하면 작품에 반영됩니다.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '이미지를 업로드하지 못했어요.');
+    } finally { setUploading(null); }
+  }
+
   if (!editing && !source) {
     return (
       <section className="page-section page-wide">
         <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">새 컨텐츠 만들기</span></h2>
         <div className="picked-bar">
-          <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 저장 전에 수정할 수 있습니다.</span>
+          <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 내 계정에 자동 저장되며, 나중에 다시 열어 수정할 수 있습니다.</span>
           <span className="picked-actions"><Link className="btn-secondary" to="/contents">목록으로</Link></span>
         </div>
         <div className="content-source-grid">
@@ -130,7 +176,7 @@ export default function ContentCreate() {
           <span className="crumb">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
         </h2>
         <div className="picked-bar">
-          <span className="picked-meta">가져온 결과는 자동 저장되지 않습니다.</span>
+          <span className="picked-meta">가져온 작품은 내 컨텐츠에 자동 저장되며, 이후 수정할 수 있습니다.</span>
           <span className="picked-actions"><Link className="btn-secondary" to="/contents/new">다른 방식 선택</Link></span>
         </div>
         {error && <p className="error-text" role="alert">{error}</p>}
@@ -147,7 +193,7 @@ export default function ContentCreate() {
               <label htmlFor="import-pdf">작품 목록 PDF</label>
               <input id="import-pdf" type="file" accept="application/pdf,.pdf" disabled={busy}
                 onChange={event => setFile(event.target.files?.[0] ?? null)} />
-              <p className="hint-text">20MB 이하의 텍스트 PDF를 지원합니다. 스캔 문서는 OCR이 필요해요.</p>
+              <p className="hint-text">100MB 이하의 텍스트 PDF를 지원합니다. 스캔 문서는 OCR이 필요해요.</p>
             </div>
           )}
           <button className="btn-primary" disabled={busy || (source === 'url' ? !url.trim() : !file)}
@@ -169,7 +215,7 @@ export default function ContentCreate() {
           {editing ? '저장된 컨텐츠를 편집하고 있어요.' : '새 컨텐츠를 작성하고 있어요.'}
         </span>
         <span className="picked-actions">
-          <button className="btn-secondary" onClick={save} disabled={busy}>
+          <button className="btn-secondary" onClick={save} disabled={busy || uploading !== null}>
             {busy ? '저장 중…' : editing ? '저장' : '컨텐츠 저장'}
           </button>
           <Link className="btn-secondary" to="/contents">목록으로</Link>
@@ -184,49 +230,73 @@ export default function ContentCreate() {
       </div>}
 
       <div className="tab-panel tab-split content-split">
-        <div>
-          <h3>전시 정보</h3>
-          <div className="field">
-            <label htmlFor="content-title">전시 제목</label>
-            <input id="content-title" value={exhibition} maxLength={100} placeholder="예: KIAF 2026"
-              onChange={event => setExhibition(event.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="content-intro">소개글</label>
-            <textarea id="content-intro" rows={5} value={intro} maxLength={2000}
-              placeholder="전시와 작품을 소개해 주세요."
-              onChange={event => setIntro(event.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="content-columns">나열 방식</label>
-            <select id="content-columns" value={columns}
-              onChange={event => setColumns(event.target.value as '1' | '2')}>
-              <option value="1">1열</option>
-              <option value="2">2열</option>
-            </select>
-          </div>
+        <div ref={artworkListRef}>
+          {!importedContent && <>
+            <h3>전시 정보</h3>
+            <div className="field">
+              <label htmlFor="content-title">전시 제목</label>
+              <input id="content-title" value={exhibition} maxLength={100} placeholder="예: KIAF 2026"
+                onChange={event => setExhibition(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="content-intro">소개글</label>
+              <textarea id="content-intro" rows={5} value={intro} maxLength={2000}
+                placeholder="전시와 작품을 소개해 주세요."
+                onChange={event => setIntro(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="content-columns">나열 방식</label>
+              <select id="content-columns" value={columns}
+                onChange={event => setColumns(event.target.value as '1' | '2')}>
+                <option value="1">1열</option>
+                <option value="2">2열</option>
+              </select>
+            </div>
+          </>}
 
           <div className="panel-head">
             <h3>작품 {artworks.length}점</h3>
             <button type="button" className="btn-tiny"
-              onClick={() => setArtworks(items => [...items, empty()])}>작품 추가</button>
+              disabled={busy || uploading !== null} onClick={addArtwork}>작품 추가</button>
           </div>
 
           {artworks.map((artwork, index) => (
-            <div className="artwork-editor" key={index}>
+            <div className="artwork-editor" key={index} data-artwork-index={index}>
               <div className="panel-head">
-                <h3>작품 {index + 1}</h3>
+                <button type="button" className="artwork-summary"
+                  aria-expanded={expandedArtwork === index} aria-controls={`artwork-fields-${index}`}
+                  onClick={() => setExpandedArtwork(current => current === index ? null : index)}>
+                  {artwork.image && <img src={artwork.image} alt="" />}
+                  <span className="artwork-summary-text">
+                    <b>작품 {index + 1} · {artwork.title || '제목 없음'}</b>
+                    <small>{artwork.artist || '작가 미입력'}</small>
+                  </span>
+                  <span className="artwork-summary-action">{expandedArtwork === index ? '접기' : '편집'}</span>
+                </button>
                 <button type="button" className="btn-delete" title="작품 삭제"
-                  disabled={artworks.length === 1}
-                  onClick={() => setArtworks(items => items.filter((_, i) => i !== index))}>
+                  disabled={artworks.length === 1 || uploading !== null}
+                  onClick={() => removeArtwork(index)}>
                   &times;
                 </button>
               </div>
+              <div id={`artwork-fields-${index}`} hidden={expandedArtwork !== index}>
               <div className="field">
                 <label htmlFor={`art-image-${index}`}>이미지 주소</label>
-                <input id={`art-image-${index}`} type="url" value={artwork.image}
+                <input id={`art-image-${index}`} type="text" value={artwork.image}
+                  disabled={uploading !== null}
                   placeholder="https://…/artwork.jpg"
                   onChange={event => update(index, 'image', event.target.value)} />
+                <label htmlFor={`art-upload-${index}`}>또는 이미지 파일 업로드</label>
+                <input id={`art-upload-${index}`} type="file" accept="image/jpeg,image/png"
+                  disabled={busy || uploading !== null}
+                  onChange={event => {
+                    const selected = event.target.files?.[0];
+                    event.target.value = '';
+                    if (selected) void uploadImage(index, selected);
+                  }} />
+                <p className="hint-text" role="status">
+                  {uploading === index ? '이미지를 업로드하는 중…' : 'JPEG·PNG, 최대 10MB. 업로드 후 컨텐츠를 저장해 주세요.'}
+                </p>
               </div>
               <div className="form-row">
                 <div className="field">
@@ -287,14 +357,17 @@ export default function ContentCreate() {
                 <input id={`art-price-${index}`} value={artwork.price} placeholder="가격 문의"
                   onChange={event => update(index, 'price', event.target.value)} />
               </div>
+              </div>
             </div>
           ))}
+          <button type="button" className="btn-secondary artwork-add-bottom"
+            disabled={busy || uploading !== null} onClick={addArtwork}>+ 작품 추가</button>
         </div>
 
         <div className="content-preview">
           <p className="eyebrow"><span></span> PREVIEW · {columns === '1' ? '1열' : '2열'}</p>
-          <h3>{exhibition || '전시 제목'}</h3>
-          <p className="section-desc">{intro || '전시 소개가 여기에 표시됩니다.'}</p>
+          <h3>{exhibition || (importedContent ? '작품 목록' : '전시 제목')}</h3>
+          {(intro || !importedContent) && <p className="section-desc">{intro || '전시 소개가 여기에 표시됩니다.'}</p>}
           <div className={`artwork-grid artwork-grid-${columns}`}>
             {artworks.map((artwork, index) => {
               const size = [artwork.width, artwork.height, artwork.depth].filter(Boolean).join(' × ');

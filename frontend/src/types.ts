@@ -102,6 +102,7 @@ export interface ExhibitionBody {
 
 /** A parsed draft is deliberately not persisted until the operator reviews it. */
 export interface ContentImportResult {
+  id: number;
   title: string;
   body: ExhibitionBody;
   artworkCount: number;

@@ -12,8 +12,8 @@ spring:
     import: optional:file:./.env[.properties]
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      max-file-size: 100MB
+      max-request-size: 101MB
   datasource:
     # Default is in-memory H2. Point DB_URL at Supabase to switch; the driver is
     # inferred from the URL, so no code or driver-class change is needed.
