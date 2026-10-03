@@ -15,6 +15,8 @@ public class TicketProperties {
 
     /** How long a gate terminal's token is valid for, and what renewing it grants. */
     private int gateTokenDays = 30;
+    /** How long a gate's setup link and code stay usable once issued. */
+    private int gateSetupHours = 24;
     /** Lifetime of a presentation grant, i.e. how long the QR keeps rotating after one passkey tap. */
     private int presentationTtlSeconds = 90;
     /** Rotation period of the on-screen code. */
@@ -79,6 +81,8 @@ public class TicketProperties {
 
     public int getGateTokenDays() { return gateTokenDays; }
     public void setGateTokenDays(int v) { this.gateTokenDays = v; }
+    public int getGateSetupHours() { return gateSetupHours; }
+    public void setGateSetupHours(int v) { this.gateSetupHours = v; }
     public int getPresentationTtlSeconds() { return presentationTtlSeconds; }
     public void setPresentationTtlSeconds(int v) { this.presentationTtlSeconds = v; }
     public int getCodePeriodSeconds() { return codePeriodSeconds; }

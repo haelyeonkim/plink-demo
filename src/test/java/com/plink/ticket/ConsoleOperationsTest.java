@@ -333,6 +333,10 @@ class ConsoleOperationsTest {
         String gateId = String.valueOf(made.get("gateId"));
         assertTrue(gateId.matches("g-[a-z0-9]{8}"), gateId);
         assertEquals("IN", gates.findById(gateId).orElseThrow().direction);
+        // The setup link lasts the configured window, a day unless an environment says otherwise.
+        long hours = java.time.Duration.between(Instant.now(),
+            Instant.parse(String.valueOf(made.get("expiresAt")))).toHours();
+        assertTrue(hours >= 23 && hours <= 24, "setup window " + hours + "h");
     }
 
     /** The list of events says how many tickets each has, without opening them. */

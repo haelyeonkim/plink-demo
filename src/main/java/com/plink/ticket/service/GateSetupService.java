@@ -27,7 +27,6 @@ import java.util.Map;
  */
 @Service
 public class GateSetupService {
-    static final Duration SETUP_TTL = Duration.ofHours(24);
     static final int MAX_ATTEMPTS = 5;
 
     private final GateRepository gates;
@@ -65,7 +64,7 @@ public class GateSetupService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
         String token = Secrets.randomToken(16);
         String code = String.format("%06d", random.nextInt(1_000_000));
-        Timestamp expiresAt = Timestamp.from(Instant.now().plus(SETUP_TTL));
+        Timestamp expiresAt = Timestamp.from(Instant.now().plus(Duration.ofHours(properties.getGateSetupHours())));
         gates.saveSetup(gate.id, hashToken(token), cipher.seal(token),
             hashCode(gate.id, code), cipher.seal(code), expiresAt);
 
@@ -85,6 +84,8 @@ public class GateSetupService {
         result.put("label", gate.label);
         result.put("zone", gate.zone);
         result.put("direction", gate.direction);
+        // A booth terminal has no way in or out; the setup screen says what it is for.
+        result.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
         result.put("expiresAt", gate.setupExpiresAt.toInstant().toString());
         result.put("deviceBound", gate.boundDevice != null);
         return result;

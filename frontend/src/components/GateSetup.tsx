@@ -7,11 +7,14 @@ interface SetupInfo {
   label: string | null;
   zone: string | null;
   direction: string;
+  role?: 'ADMISSION' | 'BOOTH';
   expiresAt: string;
   deviceBound: boolean;
 }
 
 const STORAGE = 'plink.gate.credentials';
+/** The gate's direction in the words on the console, not the ones in the database. */
+const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
 
 /**
  * Enrols this tablet as a gate terminal from a setup link and a code.
@@ -85,7 +88,9 @@ export default function GateSetup() {
         <h2>{info.label || info.gateId}</h2>
         <dl className="ticket-meta">
           <dt>게이트</dt><dd>{info.gateId}</dd>
-          <dt>방향</dt><dd>{info.direction}</dd>
+          {info.role === 'BOOTH'
+            ? <><dt>역할</dt><dd>부스 단말 · 쿠폰 확인</dd></>
+            : <><dt>방향</dt><dd>{DIRECTION_LABEL[info.direction] ?? info.direction}</dd></>}
           {info.zone && <><dt>구역</dt><dd>{info.zone}</dd></>}
         </dl>
 
