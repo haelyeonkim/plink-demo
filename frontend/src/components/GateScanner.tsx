@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { gateFaceChallenge, gateFaceScan, gateInfo, gateScan, gateSync } from '../ticket/api';
@@ -281,7 +282,7 @@ export default function GateScanner() {
           {faceMode ? '얼굴 인식 끄기' : '얼굴 인식 켜기'}
         </button>
         <button className="btn-tiny" onClick={flipCamera} title="앞뒤 카메라 전환">
-          카메라 {facing === 'user' ? '전면' : '후면'} ⟳
+          카메라 {facing === 'user' ? '전면' : '후면'} <Icon name="refresh" />
         </button>
       </header>
 

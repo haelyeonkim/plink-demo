@@ -84,13 +84,17 @@ export default function Header() {
         <nav>
           {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
         </nav>
-        <div className="header-account">
+        <div className={`header-account${session?.user ? '' : ' header-account-guest'}`}>
           {account}
           {error && <span className="account-error" role="alert">{error}</span>}
         </div>
         <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
           aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
-          {open ? '✕' : '☰'}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+            aria-hidden="true" focusable="false">
+            <path d={open ? 'M6 6l12 12M6 18L18 6' : 'M4 6h16M4 12h16M4 18h16'} />
+          </svg>
         </button>
       </header>
 
@@ -99,7 +103,7 @@ export default function Header() {
           <nav>
             {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
           </nav>
-          <div className="mobile-account">{account}</div>
+          {session?.user && <div className="mobile-account">{account}</div>}
         </div>
       )}
     </>

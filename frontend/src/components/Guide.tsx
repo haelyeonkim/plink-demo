@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { Link } from 'react-router-dom';
 
 /**
@@ -26,7 +27,7 @@ export default function Guide() {
             원본 주소와 제목, 필요하면 비밀번호·만료 일시·최대 열람 수를 정합니다. 이 단계에서는
             아직 아무에게도 열리지 않습니다.
           </p>
-          <Link to="/links/new">링크 추가 →</Link>
+          <Link to="/links/new">링크 추가 <Icon name="arrow-right" /></Link>
         </article>
         <article className="guide-card">
           <b>02 · 수신자마다 발급</b>
@@ -35,7 +36,7 @@ export default function Guide() {
             받는 사람의 이메일로 개인 주소를 발급합니다. 메일로 바로 보내거나 주소만 복사해 직접
             전달할 수 있고, 명단이 있으면 CSV로 한 번에 올릴 수 있어요.
           </p>
-          <Link to="/links">링크 관리로 이동 →</Link>
+          <Link to="/links">링크 관리로 이동 <Icon name="arrow-right" /></Link>
         </article>
         <article className="guide-card">
           <b>03 · 확인하고 끊기</b>
@@ -76,7 +77,7 @@ export default function Guide() {
             행사를 만들고 좌석·등급 목록을 추가한 뒤 이메일로 입장권을 발급합니다. 명단은 CSV로
             한 번에 올릴 수 있어요.
           </p>
-          <Link to="/tickets/admin">입장권 관리로 이동 →</Link>
+          <Link to="/tickets/admin">입장권 관리로 이동 <Icon name="arrow-right" /></Link>
         </article>
         <article className="guide-card">
           <b>02 · 입장</b>

@@ -39,9 +39,11 @@ export default function SessionCreate() {
 
   return (
     <section className="page-section">
-      <Link className="btn-back" to="/tickets/admin">← 입장권 관리</Link>
-      <p className="eyebrow"><span></span> NEW SESSION</p>
-      <h2>행사 추가</h2>
+      <h2>
+        <Link className="crumb-link" to="/tickets/admin">입장권 관리</Link>
+        <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+        <span className="crumb" aria-current="page">행사 추가</span>
+      </h2>
 
       <form className="create-form" onSubmit={submit}>
         <div className="field">

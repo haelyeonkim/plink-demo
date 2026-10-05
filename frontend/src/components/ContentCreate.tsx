@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchContent, importContentPdf, importContentUrl, saveContent, uploadContentImage } from '../api';
@@ -146,22 +147,25 @@ export default function ContentCreate() {
   if (!editing && !source) {
     return (
       <section className="page-section page-wide">
-        <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">새 컨텐츠 만들기</span></h2>
+        <h2>
+          <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <span className="crumb" aria-current="page">새 컨텐츠 만들기</span>
+        </h2>
         <div className="picked-bar">
           <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 내 계정에 자동 저장되며, 나중에 다시 열어 수정할 수 있습니다.</span>
-          <span className="picked-actions"><Link className="btn-secondary" to="/contents">목록으로</Link></span>
         </div>
         <div className="content-source-grid">
           <Link to="/contents/new?source=manual" className="content-source-card">
-            <span className="source-icon">✎</span><h3>직접 작성</h3>
+            <span className="source-icon"><Icon name="edit" /></span><h3>직접 작성</h3>
             <p>전시와 작품 정보를 하나씩 입력하고 바로 미리봅니다.</p><b>작성 시작</b>
           </Link>
           <Link to="/contents/new?source=url" className="content-source-card">
-            <span className="source-icon">↗</span><h3>웹페이지에서 가져오기</h3>
+            <span className="source-icon"><Icon name="external" /></span><h3>웹페이지에서 가져오기</h3>
             <p>공개 뷰잉룸 URL을 분석해 작품 정보 초안을 만듭니다.</p><b>URL 입력</b>
           </Link>
           <Link to="/contents/new?source=pdf" className="content-source-card">
-            <span className="source-icon">PDF</span><h3>PDF에서 가져오기</h3>
+            <span className="source-icon"><Icon name="document" /></span><h3>PDF에서 가져오기</h3>
             <p>작품 목록 PDF의 텍스트를 분석해 편집 가능한 초안을 만듭니다.</p><b>파일 선택</b>
           </Link>
         </div>
@@ -172,12 +176,13 @@ export default function ContentCreate() {
   if (!editing && source !== 'manual' && !imported) {
     return (
       <section className="page-section page-wide">
-        <h2>링크 관리<span className="crumb-sep">/</span>
-          <span className="crumb">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
+        <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/contents/new">새 컨텐츠 만들기</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <span className="crumb" aria-current="page">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
         </h2>
         <div className="picked-bar">
           <span className="picked-meta">가져온 작품은 내 컨텐츠에 자동 저장되며, 이후 수정할 수 있습니다.</span>
-          <span className="picked-actions"><Link className="btn-secondary" to="/contents/new">다른 방식 선택</Link></span>
         </div>
         {error && <p className="error-text" role="alert">{error}</p>}
         <div className="tab-panel import-panel">
@@ -206,8 +211,13 @@ export default function ContentCreate() {
   return (
     <section className="page-section page-wide">
       <h2>
-        링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
-        {editing && <><span className="crumb-sep">/</span><span className="crumb">{exhibition || '제목 없음'}</span></>}
+        <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><Link className="crumb crumb-link" to="/contents">컨텐츠</Link>
+        <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+        {editing ? <span className="crumb" aria-current="page">{exhibition || '제목 없음'}</span> : <>
+          <Link className="crumb crumb-link" to="/contents/new">새 컨텐츠 만들기</Link>
+          <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <span className="crumb" aria-current="page">직접 작성</span>
+        </>}
       </h2>
 
       <div className="picked-bar">
@@ -218,7 +228,6 @@ export default function ContentCreate() {
           <button className="btn-secondary" onClick={save} disabled={busy || uploading !== null}>
             {busy ? '저장 중…' : editing ? '저장' : '컨텐츠 저장'}
           </button>
-          <Link className="btn-secondary" to="/contents">목록으로</Link>
         </span>
       </div>
 
@@ -276,7 +285,7 @@ export default function ContentCreate() {
                 <button type="button" className="btn-delete" title="작품 삭제"
                   disabled={artworks.length === 1 || uploading !== null}
                   onClick={() => removeArtwork(index)}>
-                  &times;
+                  <Icon name="close" />
                 </button>
               </div>
               <div id={`artwork-fields-${index}`} hidden={expandedArtwork !== index}>

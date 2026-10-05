@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useState } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -60,7 +61,7 @@ export default function CatalogEditor({ label, placeholder, items, inUse, busy, 
               <span>{entry}</span>
               {inUse.has(entry) && <em title="이미 발급된 입장권이 쓰고 있어요">발급됨</em>}
               <button type="button" aria-label={`${entry} 삭제`} disabled={busy}
-                onClick={() => (inUse.has(entry) ? setPending(entry) : remove(entry))}>×</button>
+                onClick={() => (inUse.has(entry) ? setPending(entry) : remove(entry))}><Icon name="close" /></button>
             </li>
           ))}
         </ul>

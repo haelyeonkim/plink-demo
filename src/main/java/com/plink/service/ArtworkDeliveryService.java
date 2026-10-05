@@ -66,6 +66,9 @@ public class ArtworkDeliveryService {
         images.sync(contentId, ownerSub, body);
         ProtectedLink link = links.createLink(null, contentId, title, password, expiresAt, null,
             Math.max(0, maxViews), ownerSub);
+        if (email == null || email.isBlank()) {
+            return new Delivery(link, null, null, false);
+        }
         LinkRecipient recipient = links.issue(link.getId(), email, label);
         String url = addresses.url(link, recipient);
         boolean delivered = notify && links.notifyRecipient(link, recipient, url);

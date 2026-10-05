@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '../auth';
@@ -209,11 +210,11 @@ export default function LinkAdmin() {
   return (
     <section className="page-section page-wide">
       <h2>
-        링크 관리
+        {detail ? <Link className="crumb-link" to="/links">링크 관리</Link> : <span aria-current="page">링크 관리</span>}
         {detail ? (
           <>
-            <span className="crumb-sep">/</span>
-            <span className="crumb">{detail.title || detail.originalUrl}</span>
+            <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+            <span className="crumb" aria-current="page">{detail.title || detail.originalUrl}</span>
           </>
         ) : <span className="count">{links.length}</span>}
       </h2>
@@ -366,7 +367,7 @@ export default function LinkAdmin() {
                       {recipient.revoked ? '다시 사용' : '비활성화'}
                     </button>
                     <button className="btn-delete" title="삭제" disabled={busy}
-                      onClick={() => setPending(recipient)}>&times;</button>
+                      onClick={() => setPending(recipient)}><Icon name="close" /></button>
                   </div>
                 </li>
               ))}
@@ -455,7 +456,7 @@ export default function LinkAdmin() {
                   ))}
                 </select>
                 <p className="hint-text">
-                  <Link to="/contents">컨텐츠 만들기·편집 →</Link>
+                  <Link to="/contents">컨텐츠 만들기·편집 <Icon name="arrow-right" /></Link>
                 </p>
               </div>
             )}

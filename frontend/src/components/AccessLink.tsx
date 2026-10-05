@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { accessLink } from '../api';
@@ -58,11 +59,11 @@ export default function AccessLink() {
   );
   if (opened) return (
     <section className="page-section"><div className="access-card">
-      <div className="access-icon success-icon">✓</div><h2>패스키 확인이 완료됐어요</h2>
+      <div className="access-icon success-icon"><Icon name="check" /></div><h2>패스키 확인이 완료됐어요</h2>
       <p>다음에도 같은 패스키로 이 공유 링크를 열어 주세요.</p>
       {opened.originalUrl && (
         <a className="btn-primary" href={opened.originalUrl} target="_blank" rel="noopener noreferrer">
-          원본 링크 열기 →
+          원본 링크 열기 <Icon name="arrow-right" />
         </a>
       )}
     </div></section>

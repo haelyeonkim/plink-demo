@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '../auth';
@@ -400,9 +401,9 @@ export default function TicketAdmin() {
   return (
     <section className="page-section page-wide">
       <h2>
-        입장권 관리
+        {session ? <Link className="crumb-link" to="/tickets/admin">입장권 관리</Link> : <span aria-current="page">입장권 관리</span>}
         {session
-          ? <><span className="crumb-sep">/</span><span className="crumb">{session.name}</span></>
+          ? <><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">{session.name}</span></>
           : <span className="count">{sessions.length}</span>}
       </h2>
 
@@ -485,7 +486,7 @@ export default function TicketAdmin() {
             )}
             {fieldList.length === 0 && (
               <p className="hint-text">
-                발급 항목이 없습니다. 설정 → 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
+                발급 항목이 없습니다. 설정 <Icon name="arrow-right" /> 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
                 여기에서 고를 수 있어요.
               </p>
             )}

@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useCallback, useEffect, useState } from 'react';
 import { mutate } from '../auth';
 import ConfirmDialog from './ConfirmDialog';
@@ -194,7 +195,7 @@ export default function AdminConsole() {
                     소유자
                   </label>
                   <button className="btn-delete" title="계정 삭제" disabled={busy || self}
-                    onClick={() => setPending(row)}>&times;</button>
+                    onClick={() => setPending(row)}><Icon name="close" /></button>
                 </div>
               </li>
             );

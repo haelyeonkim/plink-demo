@@ -27,13 +27,12 @@ export default function ContentList() {
 
   return (
     <section className="page-section page-wide">
-      <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
+      <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">컨텐츠</span>
         <span className="count">{contents.length}</span>
       </h2>
       <div className="picked-bar">
         <span className="picked-meta">내 계정에 저장한 컨텐츠입니다. 이전에 가져온 자료를 선택해 다시 열고 수정할 수 있습니다.</span>
         <span className="picked-actions">
-          <Link className="btn-secondary" to="/links">링크 목록</Link>
           <Link className="btn-primary" to="/contents/new">새 컨텐츠 만들기</Link>
         </span>
       </div>
