@@ -671,6 +671,22 @@ a { color: inherit; text-decoration: none; }
    touch the label below. */
 .hint-text.form-note { margin: -6px 0 18px; }
 .quantity-field input { max-width: 140px; }
+/* A terminal's coupon list, booth by booth: an offer, and beside it whether the door
+   gives it by itself. */
+.grant-group { border: none; padding: 0; margin: 0 0 18px; }
+.sheet-inner > .hint-text + .grant-group { margin-top: 20px; }
+.grant-group legend { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; padding: 0; }
+.grant-offer {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--line);
+}
+.grant-offer .check-line { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; min-width: 0; }
+.grant-offer .check-line > span { display: grid; gap: 2px; min-width: 0; }
+.grant-offer .check-line small { color: var(--muted); font-size: 12px; }
+.grant-offer .check-line .pill { justify-self: start; }
+.grant-offer.offer-off b { color: var(--muted); }
+.grant-auto { flex: none; font-size: 13px; align-items: center !important; }
+.grant-auto input:disabled + span { color: var(--muted); }
 .quantity-field .hint-text { margin-top: 6px; }
 /* The file picker in the page's own words. The real input is kept for the keyboard
    and the file dialog, just not drawn. */
@@ -1446,6 +1462,16 @@ body:has(.gate-screen) .header-plain { display: none; }
 }
 .booth-offer b { font-size: 11.5px; font-weight: 700; color: #ffcf7a; font-variant-numeric: tabular-nums; }
 .gate-error { margin: 0; font-size: 12px; color: #ff9d95; text-align: center; }
+/* Giving mode: the picture is framed in the coupon colour and says so, so neither the
+   counter nor the visitor mistakes it for the terminal's usual job. */
+.gate-viewport-giving { box-shadow: 0 0 0 3px #ffcf7a, 0 24px 60px rgba(0, 0, 0, 0.45); }
+.gate-mode-banner {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2;
+  padding: 7px 16px; border-radius: 999px; background: #ffcf7a; color: #3a2500;
+  font-size: 14px; font-weight: 800; letter-spacing: -0.2px; pointer-events: none;
+}
+.btn-ghost.btn-mode-on { background: #ffcf7a; border-color: #ffcf7a; color: #3a2500; font-weight: 700; }
+.btn-ghost.btn-mode-on:hover { background: #ffd98f; color: #3a2500; }
 /* Several coupons waiting at a stand: the counter chooses over the camera picture,
    which stays faintly visible so it is plain the terminal is paused, not gone. */
 .coupon-pick {

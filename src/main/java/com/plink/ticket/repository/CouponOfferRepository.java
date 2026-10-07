@@ -81,4 +81,29 @@ public class CouponOfferRepository {
             + "FROM coupon WHERE session_id = ? AND offer_id IS NOT NULL GROUP BY offer_id",
             sessionId);
     }
+
+    /** An offer a terminal may give, and whether it gives it by itself on entry. */
+    public record GateOffer(String gateId, long offerId, boolean autoOnEntry) {}
+
+    public List<GateOffer> grantsForGate(String gateId) {
+        return jdbc.query("SELECT gate_id, offer_id, auto_on_entry FROM gate_offer WHERE gate_id = ? ORDER BY offer_id",
+            (rs, row) -> new GateOffer(rs.getString("gate_id"), rs.getLong("offer_id"), rs.getBoolean("auto_on_entry")),
+            gateId);
+    }
+
+    /** Every terminal's offers in one event, for the console's gate list. */
+    public List<GateOffer> grantsBySession(long sessionId) {
+        return jdbc.query("SELECT g.gate_id, g.offer_id, g.auto_on_entry FROM gate_offer g "
+            + "JOIN coupon_offer o ON o.id = g.offer_id WHERE o.session_id = ? ORDER BY g.gate_id, g.offer_id",
+            (rs, row) -> new GateOffer(rs.getString("gate_id"), rs.getLong("offer_id"), rs.getBoolean("auto_on_entry")),
+            sessionId);
+    }
+
+    public void replaceGrants(String gateId, List<GateOffer> grants) {
+        jdbc.update("DELETE FROM gate_offer WHERE gate_id = ?", gateId);
+        for (GateOffer grant : grants) {
+            jdbc.update("INSERT INTO gate_offer (gate_id, offer_id, auto_on_entry) VALUES (?, ?, ?)",
+                gateId, grant.offerId(), grant.autoOnEntry());
+        }
+    }
 }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import {
-  ApiError, gateFaceChallenge, gateFaceScan, gateInfo, gateRedeemCoupons, gateRenew, gateScan,
-  gateSync,
+  ApiError, gateFaceChallenge, gateFaceScan, gateGrantConfirm, gateGrantScan, gateInfo,
+  gateRedeemCoupons, gateRenew, gateScan, gateSync,
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import GateVerdict, { type Verdict } from './GateVerdict';
@@ -20,6 +20,8 @@ interface GateInfo {
   booth: string | null;
   /** What a booth hands out, and how much of it is still waiting to be collected. */
   offers?: { title: string; issued: number; redeemed: number; waiting: number }[];
+  /** What this terminal may give in giving mode; empty means the mode is not offered. */
+  grants?: { offerId: number; title: string; booth: string | null; auto: boolean }[];
   /** Null for a terminal registered before tokens had an end date. */
   tokenExpiresAt: string | null;
 }
@@ -67,7 +69,7 @@ function couponVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'l
   // Whether this person still has something coming decides what is said next, so it is
   // a badge of its own rather than the tail of a line of small print.
   const remaining = typeof result.remaining === 'number' ? result.remaining : 0;
-  const left = (result.left as Choice[] | undefined) ?? [];
+  const left = (result.left as { title: string; available: number }[] | undefined) ?? [];
   return {
     tone: 'admit', headline: title, detail: ticket,
     mark: remaining === 0 ? '이 부스 쿠폰은 이게 마지막'
@@ -76,14 +78,34 @@ function couponVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'l
   };
 }
 
-/** One kind of coupon a ticket still holds at this booth. */
-interface Choice { title: string; detail: string | null; available: number }
+/**
+ * One row of the counter's choice: a kind of coupon the ticket can use up here, or an
+ * offer this terminal can give it.
+ */
+interface Choice {
+  key: string;
+  title: string;
+  detail: string | null;
+  note: string;
+  max: number;
+  offerId?: number;
+}
+
+/** What a giving-mode answer says, in the words the counter reads out. */
+function grantVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'ledger'> {
+  return {
+    tone: 'admit', headline: String(result.title ?? '쿠폰'), mark: '쿠폰 부여',
+    detail: [result.seat, result.ticketRef].filter(Boolean).join(' · '),
+  };
+}
 
 /**
  * A read that found more than one coupon, waiting for the counter to say what goes
  * over the table. The pick is the server's handle on that read and lapses on its own.
  */
 interface Picking {
+  /** USE spends what the ticket holds here; GRANT adds to it. */
+  kind: 'USE' | 'GRANT';
   pick: string;
   ticket: string;
   choices: Choice[];
@@ -147,6 +169,10 @@ export default function GateScanner() {
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const inFlight = useRef(false);
   const [picking, setPicking] = useState<Picking | null>(null);
+  // Giving mode: the next code read gets coupons rather than an entry or a handover.
+  // Not remembered across reloads, so a tablet never wakes up quietly handing things out.
+  const [giving, setGiving] = useState(false);
+  const [givenOut, setGivenOut] = useState(0);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -172,7 +198,8 @@ export default function GateScanner() {
     if (!gateId || !gateToken) return;
     gateInfo(gateId, gateToken)
       .then(info => setGate(current => (current
-        ? { ...current, offers: (info as GateInfo).offers ?? [] } : current)))
+        ? { ...current, offers: (info as GateInfo).offers ?? [], grants: (info as GateInfo).grants ?? [] }
+        : current)))
       .catch(() => { /* the counts are a convenience, not the job */ });
   }, [gateId, gateToken]);
 
@@ -236,21 +263,39 @@ export default function GateScanner() {
   const submit = useCallback(async (code: string) => {
     if (inFlight.current || Date.now() < restUntil.current) return;
     inFlight.current = true;
+    const choose = (kind: Picking['kind'], result: Record<string, unknown>, choices: Choice[]) => {
+      // The camera stops reading until the counter has said what goes over the table.
+      restUntil.current = Number.POSITIVE_INFINITY;
+      setPicking({
+        kind,
+        pick: String(result.pick),
+        ticket: [result.seat, result.ticketRef].filter(Boolean).join(' · '),
+        choices,
+        // With one thing on offer, one of it is nearly always the answer.
+        counts: Object.fromEntries(choices.map(choice => [choice.key,
+          choices.length === 1 && choice.max > 0 ? 1 : 0])),
+        expiresAt: new Date(String(result.expiresAt)).getTime(),
+      });
+    };
     try {
+      if (giving) {
+        const result = await gateGrantScan(gateId.trim(), gateToken.trim(), code);
+        const rows = (result.choices as { offerId: number; title: string; detail: string | null;
+          booth: string | null; held: number; max: number }[]) ?? [];
+        choose('GRANT', result, rows.map(row => ({
+          key: String(row.offerId), offerId: row.offerId, title: row.title, detail: row.detail,
+          note: `${row.booth ? `${row.booth} · ` : ''}지금 보유 ${row.held}장`, max: row.max,
+        })));
+        return;
+      }
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
       if (gate?.role === 'BOOTH') {
         if (result.outcome === 'CHOOSE') {
-          // Several things are waiting: the camera stops reading until the counter has
-          // said which of them go over the table.
-          restUntil.current = Number.POSITIVE_INFINITY;
-          const choices = (result.choices as Choice[]) ?? [];
-          setPicking({
-            pick: String(result.pick),
-            ticket: [result.seat, result.ticketRef].filter(Boolean).join(' · '),
-            choices,
-            counts: Object.fromEntries(choices.map(choice => [choice.title, 0])),
-            expiresAt: new Date(String(result.expiresAt)).getTime(),
-          });
+          const rows = (result.choices as { title: string; detail: string | null; available: number }[]) ?? [];
+          choose('USE', result, rows.map(row => ({
+            key: row.title, title: row.title, detail: row.detail,
+            note: `보유 ${row.available}장`, max: row.available,
+          })));
           return;
         }
         const handed = couponVerdict(result);
@@ -261,15 +306,25 @@ export default function GateScanner() {
       }
       const seat = result.seat ? ` · ${result.seat}` : '';
       const verdict = HEADLINES[result.outcome as string] ?? HEADLINES.ADMITTED;
+      const granted = (result.granted as string[] | undefined) ?? [];
       announce({
         ...verdict,
+        // What the door gave on the way in, so staff can say it out loud.
+        ...(granted.length > 0 ? { mark: `쿠폰 지급 · ${granted.join(', ')}` } : {}),
         detail: `${result.ticketRef}${seat}${result.message ? ` · ${result.message}` : ''}`,
         ledger: ledgerLine(verdict.tone === 'deny' ? '거부됨' : '기록됨', result.entryCount),
       });
     } catch (err) {
       // A transport failure is not a refusal: the visitor is in front of us and the
-      // read was real, so it is queued and replayed when the network returns.
-      if (err instanceof TypeError) {
+      // read was real, so it is queued and replayed when the network returns. Only an
+      // entry can be replayed later; giving or using a coupon needs the counter's choice.
+      if (err instanceof TypeError && (giving || gate?.role === 'BOOTH')) {
+        announce({
+          tone: 'deny', headline: '연결 안 됨',
+          detail: '서버에 연결되지 않아 쿠폰을 처리하지 못했어요. 연결을 확인하고 다시 비춰 주세요.',
+          ledger: ledgerLine('보류 안 함'),
+        });
+      } else if (err instanceof TypeError) {
         const events = [...readQueue(), { code, method: 'QR', capturedAt: new Date().toISOString() }];
         writeQueue(events);
         setQueued(events.length);
@@ -289,26 +344,36 @@ export default function GateScanner() {
       // Hold briefly so the operator sees the result before the next read.
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
-  }, [gateId, gateToken, gate, announce, ledgerLine, refreshOffers]);
+  }, [gateId, gateToken, gate, giving, announce, ledgerLine, refreshOffers]);
 
   /** Hands over what the counter chose, or says why it could not. */
   const confirmPick = useCallback(async () => {
     if (!picking || sending) return;
-    const items = picking.choices
-      .map(choice => ({ title: choice.title, count: picking.counts[choice.title] ?? 0 }))
+    const chosen = picking.choices
+      .map(choice => ({ choice, count: picking.counts[choice.key] ?? 0 }))
       .filter(item => item.count > 0);
-    if (items.length === 0) return;
+    if (chosen.length === 0) return;
+    const grant = picking.kind === 'GRANT';
     setSending(true);
     try {
-      const result = await gateRedeemCoupons(gateId.trim(), gateToken.trim(), picking.pick, items);
-      const handed = couponVerdict(result);
-      announce({ ...handed, ledger: ledgerLine('사용됨') },
-        typeof result.count === 'number' ? result.count : 1);
+      if (grant) {
+        const result = await gateGrantConfirm(gateId.trim(), gateToken.trim(), picking.pick,
+          chosen.map(({ choice, count }) => ({ offerId: choice.offerId!, count })));
+        // Giving is not handing over stock, so it has its own count.
+        announce({ ...grantVerdict(result), ledger: ledgerLine('부여됨') }, 0);
+        setGivenOut(count => count + (typeof result.count === 'number' ? result.count : 1));
+      } else {
+        const result = await gateRedeemCoupons(gateId.trim(), gateToken.trim(), picking.pick,
+          chosen.map(({ choice, count }) => ({ title: choice.title, count })));
+        announce({ ...couponVerdict(result), ledger: ledgerLine('사용됨') },
+          typeof result.count === 'number' ? result.count : 1);
+      }
       refreshOffers();
     } catch (err) {
       announce({
-        tone: 'deny', headline: '사용 못 함',
-        detail: err instanceof Error ? err.message : '쿠폰을 사용 처리하지 못했어요.',
+        tone: 'deny', headline: grant ? '부여 못 함' : '사용 못 함',
+        detail: err instanceof Error ? err.message
+          : grant ? '쿠폰을 부여하지 못했어요.' : '쿠폰을 사용 처리하지 못했어요.',
         ledger: ledgerLine('거부됨'),
       });
     } finally {
@@ -330,15 +395,17 @@ export default function GateScanner() {
       setPicking(null);
       announce({
         tone: 'repeat', headline: '선택 시간 지남',
-        detail: '사용한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.',
+        detail: picking.kind === 'GRANT'
+          ? '부여한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.'
+          : '사용한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.',
         ledger: ledgerLine('취소됨'),
       });
     }, Math.max(0, picking.expiresAt - Date.now() - 1000));
     return () => window.clearTimeout(timer);
   }, [picking, announce, ledgerLine]);
 
-  function setCount(title: string, count: number) {
-    setPicking(current => (current ? { ...current, counts: { ...current.counts, [title]: count } } : current));
+  function setCount(key: string, count: number) {
+    setPicking(current => (current ? { ...current, counts: { ...current.counts, [key]: count } } : current));
   }
 
   // Face runs on the same stream as the QR decoder: the operator never switches modes,
@@ -346,7 +413,8 @@ export default function GateScanner() {
   useEffect(() => {
     // A stand hands something over against a code the holder chose to show; walking past
     // a camera is not that choice, so a booth terminal reads codes only.
-    if (!gate || !scanning || !faceMode || gate.role === 'BOOTH') return;
+    // Giving mode reads codes only too: a face walking past is not a request for coupons.
+    if (!gate || !scanning || !faceMode || gate.role === 'BOOTH' || giving) return;
     let stopped = false;
     const timer = window.setInterval(async () => {
       if (stopped || inFlight.current || Date.now() < restUntil.current) return;
@@ -396,7 +464,7 @@ export default function GateScanner() {
       }
     }, 2000);
     return () => { stopped = true; window.clearInterval(timer); };
-  }, [gate, scanning, faceMode, gateId, gateToken, announce, ledgerLine]);
+  }, [gate, scanning, faceMode, giving, gateId, gateToken, announce, ledgerLine]);
 
   useEffect(() => {
     if (!gate || !scanning) return;
@@ -517,11 +585,22 @@ export default function GateScanner() {
           <>
             <span className="result-dot result-dot-idle" aria-hidden="true" />
             <span className="result-detail">
-              {gate.role === 'BOOTH' ? '입장 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
+              {giving ? '쿠폰을 줄 입장 QR을 비춰 주세요'
+                : gate.role === 'BOOTH' ? '입장 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
             </span>
+            {giving && (
+              <span className="booth-shelf">
+                {(gate.grants ?? []).map(offer => (
+                  <span className="booth-offer" key={offer.offerId}>
+                    {offer.title}
+                    {offer.booth && <b>{offer.booth}</b>}
+                  </span>
+                ))}
+              </span>
+            )}
             {/* What this stand gives, on the stand's own screen: somebody taking over
                 the counter reads the tablet instead of asking. */}
-            {gate.role === 'BOOTH' && (gate.offers ?? []).length > 0 && (
+            {!giving && gate.role === 'BOOTH' && (gate.offers ?? []).length > 0 && (
               <span className="booth-shelf">
                 {(gate.offers ?? []).map(offer => (
                   <span className="booth-offer" key={offer.title}>
@@ -535,13 +614,16 @@ export default function GateScanner() {
         )}
         {handled > 0 && (
           <span className="result-count">
-            {gate.role === 'BOOTH'
-              ? `이 단말 ${handled}건 · 사용 ${handedOut}장` : `이 단말 ${handled}건`}
+            {[`이 단말 ${handled}건`,
+              gate.role === 'BOOTH' ? `사용 ${handedOut}장` : null,
+              givenOut > 0 ? `부여 ${givenOut}장` : null].filter(Boolean).join(' · ')}
           </span>
         )}
       </div>
 
-      <div className="gate-viewport">
+      <div className={`gate-viewport${giving ? ' gate-viewport-giving' : ''}`}>
+        {/* Which job the camera is doing has to be visible from the visitor's side too. */}
+        {giving && !picking && !flash && <span className="gate-mode-banner">쿠폰 부여 모드</span>}
         <video ref={video} muted playsInline className={facing === 'user' ? 'mirrored' : undefined} />
         <canvas ref={frame} hidden />
         {/* Corners, not a box: the same camera reads a code and a face, so a guide
@@ -554,11 +636,12 @@ export default function GateScanner() {
         {flash && !picking && <GateVerdict key={flash.at} verdict={flash} rest={hold(flash.tone)} />}
         {picking && (() => {
           const total = Object.values(picking.counts).reduce((sum, count) => sum + count, 0);
-          const everything = picking.choices.reduce((sum, choice) => sum + choice.available, 0);
+          const everything = picking.choices.reduce((sum, choice) => sum + choice.max, 0);
+          const verb = picking.kind === 'GRANT' ? '부여' : '사용';
           return (
             <div className="coupon-pick" role="dialog" aria-modal="true" aria-labelledby="coupon-pick-title">
               <header>
-                <strong id="coupon-pick-title">사용할 쿠폰</strong>
+                <strong id="coupon-pick-title">{verb}할 쿠폰</strong>
                 <span>{picking.ticket}</span>
                 {/* The time the server will hold this read for, draining. */}
                 <span className="coupon-pick-clock" aria-hidden="true"
@@ -566,37 +649,38 @@ export default function GateScanner() {
               </header>
               <ul>
                 {picking.choices.map(choice => {
-                  const count = picking.counts[choice.title] ?? 0;
+                  const count = picking.counts[choice.key] ?? 0;
                   return (
-                    <li key={choice.title} className={count > 0 ? 'picked' : undefined}>
+                    <li key={choice.key} className={count > 0 ? 'picked' : undefined}>
                       <span className="coupon-pick-name">
                         <b>{choice.title}</b>
                         {choice.detail && <small>{choice.detail}</small>}
-                        <small className="coupon-pick-held">보유 {choice.available}장</small>
+                        <small className="coupon-pick-held">{choice.note}</small>
                       </span>
                       <span className="stepper" role="group" aria-label={`${choice.title} 개수`}>
-                        <button type="button" onClick={() => setCount(choice.title, count - 1)}
+                        <button type="button" onClick={() => setCount(choice.key, count - 1)}
                           disabled={count === 0} aria-label={`${choice.title} 하나 빼기`}>−</button>
                         <output aria-live="polite">{count}</output>
-                        <button type="button" onClick={() => setCount(choice.title, count + 1)}
-                          disabled={count >= choice.available} aria-label={`${choice.title} 하나 더`}>+</button>
+                        <button type="button" onClick={() => setCount(choice.key, count + 1)}
+                          disabled={count >= choice.max} aria-label={`${choice.title} 하나 더`}>+</button>
                       </span>
                     </li>
                   );
                 })}
               </ul>
               <footer>
-                <button type="button" className="btn-ghost" onClick={cancelPick}>사용 안 함</button>
-                <button type="button" className="btn-ghost" disabled={total === everything}
+                <button type="button" className="btn-ghost" onClick={cancelPick}>{verb} 안 함</button>
+                {/* Giving has no natural "all": it would be twenty of everything. */}
+                {picking.kind === 'USE' && <button type="button" className="btn-ghost" disabled={total === everything}
                   onClick={() => setPicking(current => (current ? {
                     ...current,
-                    counts: Object.fromEntries(current.choices.map(choice => [choice.title, choice.available])),
+                    counts: Object.fromEntries(current.choices.map(choice => [choice.key, choice.max])),
                   } : current))}>
                   전부 선택
-                </button>
+                </button>}
                 <button type="button" className="btn-primary" disabled={total === 0 || sending}
                   onClick={() => { void confirmPick(); }}>
-                  {sending ? '처리 중…' : total === 0 ? '쿠폰을 골라 주세요' : `${total}장 사용`}
+                  {sending ? '처리 중…' : total === 0 ? '쿠폰을 골라 주세요' : `${total}장 ${verb}`}
                 </button>
               </footer>
             </div>
@@ -646,7 +730,13 @@ export default function GateScanner() {
         <button className="btn-ghost" onClick={() => setScanning(value => !value)}>
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
-        {gate.role !== 'BOOTH' && (
+        {((gate.grants ?? []).length > 0 || giving) && (
+          <button className={`btn-ghost${giving ? ' btn-mode-on' : ''}`} aria-pressed={giving}
+            onClick={() => { setGiving(value => !value); setPicking(null); restUntil.current = 0; }}>
+            {giving ? '쿠폰 부여 끝내기' : '쿠폰 부여'}
+          </button>
+        )}
+        {gate.role !== 'BOOTH' && !giving && (
           <button className="btn-ghost" onClick={() => {
             if (!faceMode) { faceFailures.current = 0; setError(''); }
             setFaceMode(value => {

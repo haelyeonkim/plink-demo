@@ -80,7 +80,12 @@ interface GateRow {
   setupUrl: string | null; setupCode: string | null; setupExpiresAt: string | null;
   /** Null for a terminal registered before tokens had an end date. */
   tokenExpiresAt: string | null; tokenExpired: boolean;
+  /** Offers this terminal may give, and whether it gives them by itself on entry. */
+  grants: { offerId: number; auto: boolean }[];
 }
+
+/** Whether a terminal admits anybody, which is what giving on entry hangs on. */
+const admitsPeople = (gate: GateRow) => gate.role !== 'BOOTH' && gate.direction !== 'OUT';
 
 /** How a terminal's remaining time reads: the number of days, and how alarming it is. */
 function validity(gate: GateRow): { label: string; tone: string } {
@@ -210,6 +215,9 @@ export default function TicketAdmin() {
   const [sheetQuantity, setSheetQuantity] = useState(1);
   // The sheet covers the page, so its own complaint has to be on the sheet.
   const [sheetError, setSheetError] = useState('');
+  // The terminal whose coupon list is being edited, and the draft: offer -> gives on entry.
+  const [grantGate, setGrantGate] = useState<GateRow | null>(null);
+  const [grantDraft, setGrantDraft] = useState<Map<number, boolean>>(new Map());
   const [couponPage, setCouponPage] = useState<Paged<CouponRow>>(EMPTY_PAGE);
   const [couponQuery, setCouponQuery] = useState('');
   const [couponFilter, setCouponFilter] = useState<CouponFilter>('ALL');
@@ -437,6 +445,40 @@ export default function TicketAdmin() {
     setNotice(`${gateId}의 설정 링크를 새로 발급했어요.`);
     await loadSession(selected!);
   });
+
+  const openGrantSheet = (gate: GateRow) => {
+    setGrantDraft(new Map((gate.grants ?? []).map(grant => [grant.offerId, grant.auto])));
+    setGrantGate(gate);
+  };
+
+  const saveGrants = () => {
+    const gate = grantGate;
+    if (!gate) return;
+    const items = [...grantDraft.entries()].map(([offerId, auto]) => ({ offerId, auto }));
+    setGrantGate(null);
+    void act(async () => {
+      await read(await mutate(`/api/admin/gates/${gate.gateId}/grants`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      }));
+      setNotice(items.length === 0
+        ? `${gate.label || gate.gateId} 단말은 이제 쿠폰을 부여하지 않아요.`
+        : `${gate.label || gate.gateId} 단말이 쿠폰 ${items.length}종을 부여할 수 있어요.`);
+      await loadSession(selected!);
+    });
+  };
+
+  useEffect(() => {
+    if (!grantGate) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setGrantGate(null); };
+    window.addEventListener('keydown', onKey);
+    const kept = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = kept;
+    };
+  }, [grantGate]);
 
   const rotateGateToken = (gateId: string) => act(async () => {
     await read(await mutate(`/api/admin/gates/${gateId}/token`, { method: 'POST' }));
@@ -1057,6 +1099,13 @@ export default function TicketAdmin() {
                       ? `단말 ${gate.boundDevice}… 연결됨${gate.lastSeenAt ? ` · 최근 ${new Date(gate.lastSeenAt).toLocaleTimeString('ko-KR')}` : ''}`
                       : '연결된 단말 없음'}
                   </div>
+                  {(gate.grants ?? []).length > 0 && (
+                    <div className="gate-meta">
+                      쿠폰 부여 {gate.grants.length}종
+                      {gate.grants.some(grant => grant.auto)
+                        && ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}종`}
+                    </div>
+                  )}
                 </div>
                 <div className="gate-actions">
                   <button className="btn-tiny" disabled={!gate.setupUrl}
@@ -1064,6 +1113,8 @@ export default function TicketAdmin() {
                     링크 복사
                   </button>
                   <RowMenu label={`${gate.label || gate.gateId} 단말 작업`} items={[
+                    { label: '쿠폰 부여 설정', onSelect: () => openGrantSheet(gate) },
+                    'separator',
                     { label: '설정 링크 재발급', onSelect: () => reopenSetup(gate.gateId) },
                     { label: '유효기간 갱신', onSelect: () => renewGate(gate.gateId) },
                     ...(gate.tokenExpiresAt !== null
@@ -1314,6 +1365,80 @@ export default function TicketAdmin() {
               </form>
             </div>
           )}
+        </div>
+      )}
+
+      {grantGate && (
+        <div className="modal-backdrop sheet-backdrop" role="presentation" onClick={() => setGrantGate(null)}>
+          <div className="modal modal-sheet" role="dialog" aria-modal="true" aria-labelledby="grant-sheet"
+            onClick={event => event.stopPropagation()}>
+            <form onSubmit={e => { e.preventDefault(); saveGrants(); }}>
+              <header className="sheet-head">
+                <div className="sheet-title">
+                  <h3 id="grant-sheet">쿠폰 부여 설정</h3>
+                  <p>
+                    {grantGate.label || grantGate.gateId} ·{' '}
+                    {grantGate.role === 'BOOTH' ? '부스 단말' : DIRECTION_LABEL[grantGate.direction] ?? grantGate.direction}
+                  </p>
+                </div>
+                <button type="button" className="sheet-close" aria-label="닫기"
+                  onClick={() => setGrantGate(null)}>✕</button>
+              </header>
+              <div className="sheet-body">
+                <div className="sheet-inner">
+                  <p className="hint-text">
+                    고른 쿠폰은 단말의 <b>쿠폰 부여</b> 모드에서 QR을 찍어 종류와 장수를 정해 줄 수 있어요.
+                    {admitsPeople(grantGate)
+                      ? <> <b>입장 시 자동</b>을 켜면 이 단말로 입장할 때마다 1장이 되도록 채워 줍니다. 다시 들어와도 더 주지 않아요.</>
+                      : ' 입장 시 자동 지급은 입장을 처리하는 단말에서만 쓸 수 있어요.'}
+                  </p>
+                  {booths.every(booth => booth.offers.length === 0) ? (
+                    <div className="sheet-empty">
+                      <b>정해 둔 쿠폰이 없어요.</b>
+                      <p className="hint-text">쿠폰 탭에서 부스를 열고 <b>쿠폰 종류</b>를 먼저 추가하세요.</p>
+                    </div>
+                  ) : booths.filter(booth => booth.offers.length > 0).map(booth => (
+                    <fieldset className="grant-group" key={booth.boothId}>
+                      <legend>{booth.name}</legend>
+                      {booth.offers.map(offer => {
+                        const on = grantDraft.has(offer.offerId);
+                        const auto = grantDraft.get(offer.offerId) === true;
+                        const toggle = (next: boolean, nextAuto: boolean) => setGrantDraft(current => {
+                          const copy = new Map(current);
+                          if (next) copy.set(offer.offerId, nextAuto); else copy.delete(offer.offerId);
+                          return copy;
+                        });
+                        return (
+                          <div className={`grant-offer${offer.active ? '' : ' offer-off'}`} key={offer.offerId}>
+                            <label className="check-line">
+                              <input type="checkbox" checked={on} onChange={e => toggle(e.target.checked, false)} />
+                              <span>
+                                <b>{offer.title}</b>
+                                {!offer.active && <span className="pill pill-off">발급 중지</span>}
+                                {offer.detail && <small>{offer.detail}</small>}
+                              </span>
+                            </label>
+                            {admitsPeople(grantGate) && (
+                              <label className="check-line grant-auto">
+                                <input type="checkbox" checked={auto} disabled={!on}
+                                  onChange={e => toggle(true, e.target.checked)} />
+                                <span>입장 시 자동</span>
+                              </label>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </fieldset>
+                  ))}
+                  <p className="hint-text">발급을 중지한 쿠폰은 골라 두어도 단말에 보이지 않아요.</p>
+                </div>
+              </div>
+              <footer className="sheet-foot">
+                <button type="button" className="btn-secondary" onClick={() => setGrantGate(null)}>취소</button>
+                <button type="submit" className="btn-primary">저장</button>
+              </footer>
+            </form>
+          </div>
         </div>
       )}
 

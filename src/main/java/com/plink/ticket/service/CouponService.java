@@ -201,8 +201,28 @@ public class CouponService {
     /** How long a terminal has to say what it is handing over, once a code is read. */
     static final Duration PICK_WINDOW = Duration.ofSeconds(90);
 
-    /** A read that is waiting for the counter to choose: which ticket, at which stand. */
-    private record Pick(String gateId, long ticketId, long boothId, Instant expires) {}
+    /**
+     * A read that is waiting for the counter to choose: which ticket, at which terminal,
+     * and whether the choice is what to use up or what to give.
+     */
+    private record Pick(String kind, String gateId, long ticketId, Long boothId, Instant expires) {}
+
+    private String newPick(String kind, Gate gate, long ticketId, Long boothId, Instant now) {
+        picks.values().removeIf(pick -> pick.expires.isBefore(now));
+        String id = Secrets.randomAlnum(24);
+        picks.put(id, new Pick(kind, gate.id, ticketId, boothId, now.plus(PICK_WINDOW)));
+        return id;
+    }
+
+    /** Takes a pick for its own terminal only; another terminal naming it does not spend it. */
+    private Pick takePick(Gate gate, String pickId, String kind) {
+        Pick pick = pickId == null ? null : picks.get(pickId);
+        if (pick == null || !pick.gateId.equals(gate.id) || !pick.kind.equals(kind)
+                || !picks.remove(pickId, pick) || pick.expires.isBefore(Instant.now())) {
+            throw deny("선택 시간이 지났어요. 입장 QR을 다시 비춰 주세요.");
+        }
+        return pick;
+    }
 
     private final Map<String, Pick> picks = new ConcurrentHashMap<>();
 
@@ -248,9 +268,7 @@ public class CouponService {
         if (live.size() == 1) return handOver(gate, booth, ticket, live, Map.of(live.get(0).title, 1));
 
         Instant now = Instant.now();
-        picks.values().removeIf(pick -> pick.expires.isBefore(now));
-        String id = Secrets.randomAlnum(24);
-        picks.put(id, new Pick(gate.id, ticket.id, booth.id, now.plus(PICK_WINDOW)));
+        String id = newPick("REDEEM", gate, ticket.id, booth.id, now);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("outcome", "CHOOSE");
@@ -269,12 +287,7 @@ public class CouponService {
      */
     @Transactional
     public Map<String, Object> redeemPicked(Gate gate, String pickId, Map<String, Integer> wanted) {
-        // Another terminal naming this pick does not spend it; only its own terminal can.
-        Pick pick = pickId == null ? null : picks.get(pickId);
-        if (pick == null || !pick.gateId.equals(gate.id) || !picks.remove(pickId, pick)
-                || pick.expires.isBefore(Instant.now())) {
-            throw deny("선택 시간이 지났어요. 입장 QR을 다시 비춰 주세요.");
-        }
+        Pick pick = takePick(gate, pickId, "REDEEM");
         Booth booth = requireBooth(gate.sessionId, pick.boothId);
         Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
@@ -293,6 +306,154 @@ public class CouponService {
             }
         }
         return handOver(gate, booth, ticket, live, chosen);
+    }
+
+    /**
+     * What this terminal may give, switched-on offers only, with the booth each belongs
+     * to: the console decides the list, and a stopped offer drops out of it by itself.
+     */
+    public List<Map<String, Object>> gateGrants(Gate gate) {
+        Map<Long, Booth> boothsById = new LinkedHashMap<>();
+        booths.findBySession(gate.sessionId).forEach(booth -> boothsById.put(booth.id, booth));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (CouponOfferRepository.GateOffer grant : offers.grantsForGate(gate.id)) {
+            CouponOffer offer = offers.findById(grant.offerId()).orElse(null);
+            if (offer == null || !offer.active || offer.sessionId != gate.sessionId) continue;
+            Booth booth = boothsById.get(offer.boothId);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("offerId", offer.id);
+            row.put("title", offer.title);
+            row.put("detail", offer.detail);
+            row.put("booth", booth == null ? null : booth.name);
+            row.put("auto", grant.autoOnEntry());
+            result.add(row);
+        }
+        return result;
+    }
+
+    public List<CouponOfferRepository.GateOffer> grantsBySession(long sessionId) {
+        return offers.grantsBySession(sessionId);
+    }
+
+    /**
+     * Sets which offers a terminal may give. Giving by itself on entry is for a terminal
+     * that admits people; a booth or an exit-only door has no entry to hang it on.
+     */
+    @Transactional
+    public List<CouponOfferRepository.GateOffer> setGateGrants(Gate gate, Map<Long, Boolean> wanted) {
+        boolean admits = !gate.booth() && gate.supports("IN");
+        List<CouponOfferRepository.GateOffer> grants = new ArrayList<>();
+        for (Map.Entry<Long, Boolean> entry : wanted.entrySet()) {
+            CouponOffer offer = requireOffer(entry.getKey());
+            if (offer.sessionId != gate.sessionId) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
+            }
+            grants.add(new CouponOfferRepository.GateOffer(gate.id, offer.id,
+                admits && Boolean.TRUE.equals(entry.getValue())));
+        }
+        offers.replaceGrants(gate.id, grants);
+        return grants;
+    }
+
+    /**
+     * A terminal in giving mode reads a code: proves it, spends it, and asks the counter
+     * what to give. Spending it keeps a screenshot from collecting twice.
+     */
+    @Transactional
+    public Map<String, Object> grantByCode(Gate gate, String code) {
+        List<Map<String, Object>> grantable = gateGrants(gate);
+        if (grantable.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이 단말에서 줄 수 있는 쿠폰이 없어요.");
+        }
+        PresentationService.Verified verified = presentations.verify(code);
+        Ticket ticket = tickets.lockById(verified.grant.ticketId)
+            .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
+        if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        presentations.consume(verified.grant, verified.counter);
+
+        List<Map<String, Object>> choices = new ArrayList<>();
+        for (Map<String, Object> offer : grantable) {
+            int held = coupons.heldBy((Long) offer.get("offerId"), ticket.id);
+            Map<String, Object> row = new LinkedHashMap<>(offer);
+            row.remove("auto");
+            row.put("held", held);
+            row.put("max", Math.max(0, MAX_PER_TICKET - held));
+            choices.add(row);
+        }
+        Instant now = Instant.now();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("outcome", "CHOOSE");
+        result.put("pick", newPick("GRANT", gate, ticket.id, null, now));
+        result.put("expiresAt", now.plus(PICK_WINDOW).toString());
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("seat", ticket.seat);
+        result.put("choices", choices);
+        return result;
+    }
+
+    /** The counter's answer in giving mode: how many of each offer to add to the ticket. */
+    @Transactional
+    public Map<String, Object> grantPicked(Gate gate, String pickId, Map<Long, Integer> wanted) {
+        Pick pick = takePick(gate, pickId, "GRANT");
+        Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
+        if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        Map<Long, Integer> chosen = new LinkedHashMap<>();
+        wanted.forEach((offerId, count) -> { if (count != null && count > 0) chosen.put(offerId, count); });
+        if (chosen.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "부여할 쿠폰을 골라 주세요.");
+        }
+        java.util.Set<Long> allowed = new java.util.HashSet<>();
+        gateGrants(gate).forEach(row -> allowed.add((Long) row.get("offerId")));
+        List<Map<String, Object>> given = new ArrayList<>();
+        int total = 0;
+        for (Map.Entry<Long, Integer> entry : chosen.entrySet()) {
+            if (!allowed.contains(entry.getKey())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "이 단말에서 줄 수 없는 쿠폰이에요.");
+            }
+            CouponOffer offer = offers.lockById(entry.getKey()).orElseThrow();
+            int held = coupons.heldBy(offer.id, ticket.id);
+            if (held + entry.getValue() > MAX_PER_TICKET) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "'" + offer.title + "'은(는) 한 사람에게 " + MAX_PER_TICKET + "장까지 줄 수 있어요.");
+            }
+            coupons.insert(gate.sessionId, offer.boothId, offer.id, ticket.id, offer.title, offer.detail,
+                entry.getValue());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("title", offer.title);
+            row.put("count", entry.getValue());
+            given.add(row);
+            total += entry.getValue();
+        }
+        String summary = summary(given);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("outcome", "GRANTED");
+        result.put("title", summary);
+        result.put("granted", given);
+        result.put("count", total);
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("seat", ticket.seat);
+        live.publishForTicket(ticket.sessionId, ticket.id, "COUPON", handover("GRANTED", null, summary));
+        return result;
+    }
+
+    /**
+     * What an admission gate gives by itself: each offer it is set to give on entry,
+     * topped up to one, so coming back in does not collect a second.
+     *
+     * @return the titles given this time, empty when the ticket already had them
+     */
+    public List<String> autoGrantOnEntry(Gate gate, Ticket ticket) {
+        List<String> given = new ArrayList<>();
+        for (CouponOfferRepository.GateOffer grant : offers.grantsForGate(gate.id)) {
+            if (!grant.autoOnEntry()) continue;
+            CouponOffer offer = offers.lockById(grant.offerId()).orElse(null);
+            if (offer == null || !offer.active || offer.sessionId != ticket.sessionId) continue;
+            if (coupons.heldBy(offer.id, ticket.id) > 0) continue;
+            coupons.insert(ticket.sessionId, offer.boothId, offer.id, ticket.id, offer.title, offer.detail, 1);
+            given.add(offer.title);
+        }
+        return given;
     }
 
     /** Spends the chosen coupons, oldest of each kind first, and says what is left. */
@@ -361,12 +522,16 @@ public class CouponService {
 
     /** Tells the holder's screen, so the phone shows what was handed over. */
     private void announce(Ticket ticket, Booth booth, String title, String outcome) {
+        live.publishForTicket(ticket.sessionId, ticket.id, "COUPON", handover(outcome, booth.name, title));
+    }
+
+    private static Map<String, Object> handover(String outcome, String booth, String title) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("outcome", outcome);
-        message.put("booth", booth.name);
+        message.put("booth", booth);
         message.put("title", title);
         message.put("at", Instant.now().toString());
-        live.publishForTicket(ticket.sessionId, ticket.id, "COUPON", message);
+        return message;
     }
 
     private Map<String, Object> describe(Coupon coupon, Booth booth, Ticket ticket) {

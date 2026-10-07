@@ -55,6 +55,7 @@ class CouponTest {
     @Autowired GateAuthService gateAuth;
     @Autowired PresentationService presentations;
     @Autowired com.plink.ticket.controller.TicketAdminController adminController;
+    @Autowired com.plink.ticket.service.AdmissionService admissions;
 
     private long sessionId;
 
@@ -367,6 +368,76 @@ class CouponTest {
         Map<String, Object> rest = coupons.redeemPicked(stand, pick(stand, ticket), Map.of("웰컴 커피", 1, "리필", 1));
         assertEquals(0, rest.get("remaining"));
         assertEquals("ALREADY", coupons.redeemByCode(stand, code(ticket)).get("outcome"));
+    }
+
+    private Gate entrance() {
+        String id = "e" + Secrets.randomAlnum(10);
+        gates.insert(id, sessionId, "정문", "로비", "IN", gateAuth.hash("t-" + id), null, null, "ADMISSION", null);
+        return gates.findById(id).orElseThrow();
+    }
+
+    /** A terminal gives only what the console put on its list, and only while it is on. */
+    @Test void aTerminalGivesWhatItWasToldToAndHowMany() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long coffee = coupons.defineOffer(sessionId, booth, "웰컴 커피", null).id;
+        long refill = coupons.defineOffer(sessionId, booth, "리필", null).id;
+        Gate stand = boothGate(booth);
+
+        ResponseStatusException none = assertThrows(ResponseStatusException.class,
+            () -> coupons.grantByCode(stand, code(ticket)));
+        assertEquals(409, none.getStatusCode().value(), "줄 쿠폰이 지정되지 않은 단말");
+
+        // A booth cannot give on entry: it admits nobody.
+        var set = coupons.setGateGrants(stand, Map.of(refill, true));
+        assertFalse(set.get(0).autoOnEntry());
+
+        Map<String, Object> read = coupons.grantByCode(stand, code(ticket));
+        assertEquals("CHOOSE", read.get("outcome"));
+        List<?> choices = (List<?>) read.get("choices");
+        assertEquals(1, choices.size(), "지정한 리필만");
+        String pick = String.valueOf(read.get("pick"));
+
+        ResponseStatusException notListed = assertThrows(ResponseStatusException.class,
+            () -> coupons.grantPicked(stand, pick, Map.of(coffee, 1)));
+        assertEquals(409, notListed.getStatusCode().value());
+        // A refused answer still spent the pick.
+        assertThrows(ResponseStatusException.class, () -> coupons.grantPicked(stand, pick, Map.of(refill, 1)));
+
+        Map<String, Object> given = coupons.grantPicked(stand,
+            String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick")), Map.of(refill, 2));
+        assertEquals("GRANTED", given.get("outcome"));
+        assertEquals("리필 ×2", given.get("title"));
+        assertEquals(2, couponRepository.findByTicket(ticket.id).size());
+
+        String tooMany = String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick"));
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+            () -> coupons.grantPicked(stand, tooMany, Map.of(refill, CouponService.MAX_PER_TICKET - 1)))
+            .getStatusCode().value(), "한 사람에게 최대 장수까지만");
+
+        // Stopping the offer takes it off every terminal's list.
+        coupons.setOfferActive(refill, false);
+        assertTrue(coupons.gateGrants(stand).isEmpty());
+    }
+
+    /** An entrance set to give on entry gives one, once, however many times they come in. */
+    @Test void anEntranceGivesItsCouponOnceOnEntry() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long coffee = coupons.defineOffer(sessionId, booth, "웰컴 커피", null).id;
+        Gate door = entrance();
+        assertTrue(coupons.setGateGrants(door, Map.of(coffee, true)).get(0).autoOnEntry());
+
+        Map<String, Object> admitted = admissions.admit(door, code(ticket), "QR");
+        assertEquals("ADMITTED", admitted.get("outcome"));
+        assertEquals(List.of("웰컴 커피"), admitted.get("granted"));
+        assertEquals(1, couponRepository.findByTicket(ticket.id).size());
+
+        assertTrue(coupons.autoGrantOnEntry(door, ticketRepository.findById(ticket.id).orElseThrow()).isEmpty(),
+            "다시 들어와도 한 장");
+        assertEquals(1, couponRepository.findByTicket(ticket.id).size());
     }
 
     /** Resolving needs the token, which only the issue call returns; re-issue to get one. */

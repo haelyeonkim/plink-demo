@@ -54,6 +54,13 @@ public class CouponRepository {
         return held;
     }
 
+    /** How many of an offer one ticket holds, used or not, leaving out what was taken back. */
+    public int heldBy(long offerId, long ticketId) {
+        Integer held = jdbc.queryForObject("SELECT COUNT(*) FROM coupon WHERE offer_id = ? AND ticket_id = ? "
+            + "AND status <> 'VOID'", Integer.class, offerId, ticketId);
+        return held == null ? 0 : held;
+    }
+
     public boolean anyForOffer(long offerId) {
         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM coupon WHERE offer_id = ?",
             Integer.class, offerId);

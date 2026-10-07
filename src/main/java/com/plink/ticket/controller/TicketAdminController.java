@@ -834,6 +834,40 @@ public class TicketAdminController {
         return result;
     }
 
+    /**
+     * Which offers this terminal may give, and for an entrance, which it gives by itself
+     * to everybody it admits. The list replaces the old one.
+     */
+    @PutMapping("/gates/{gateId}/grants")
+    public Map<String, Object> setGateGrants(@PathVariable String gateId, @RequestBody Map<String, Object> body) {
+        Gate gate = gates.findById(gateId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
+        Map<Long, Boolean> wanted = new LinkedHashMap<>();
+        if (body.get("items") instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> row && row.get("offerId") instanceof Number offerId) {
+                    wanted.put(offerId.longValue(), Boolean.TRUE.equals(row.get("auto")));
+                }
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("gateId", gate.id);
+        result.put("grants", grantRows(coupons.setGateGrants(gate, wanted)));
+        return result;
+    }
+
+    private static List<Map<String, Object>> grantRows(
+            List<com.plink.ticket.repository.CouponOfferRepository.GateOffer> grants) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (var grant : grants) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("offerId", grant.offerId());
+            row.put("auto", grant.autoOnEntry());
+            rows.add(row);
+        }
+        return rows;
+    }
+
     /** Releases the terminal holding this gate, so another tablet can take it. */
     @PostMapping("/gates/{gateId}/release")
     public Map<String, Object> releaseGate(@PathVariable String gateId) {
@@ -846,6 +880,9 @@ public class TicketAdminController {
     @GetMapping("/sessions/{id}/gates")
     public List<Map<String, Object>> listGates(@PathVariable long id) {
         List<Map<String, Object>> result = new ArrayList<>();
+        Map<String, List<com.plink.ticket.repository.CouponOfferRepository.GateOffer>> grants = new java.util.HashMap<>();
+        coupons.grantsBySession(id)
+            .forEach(grant -> grants.computeIfAbsent(grant.gateId(), key -> new ArrayList<>()).add(grant));
         gates.findBySession(id).forEach(gate -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("gateId", gate.id);
@@ -865,6 +902,7 @@ public class TicketAdminController {
             row.put("tokenExpired", gate.tokenExpired());
             row.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
             row.put("boothId", gate.boothId);
+            row.put("grants", grantRows(grants.getOrDefault(gate.id, List.of())));
             result.add(row);
         });
         return result;

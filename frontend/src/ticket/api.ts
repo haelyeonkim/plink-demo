@@ -214,3 +214,20 @@ export async function gateRedeemCoupons(gateId: string, gateToken: string, pick:
   });
   return read(response);
 }
+
+/** Giving mode: reads a code to give coupons, and answers with what this terminal may give. */
+export async function gateGrantScan(gateId: string, gateToken: string, code: string) {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/grant`, {
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ code }),
+  });
+  return read(response);
+}
+
+/** The counter's choice after a giving-mode read: how many of each offer to add. */
+export async function gateGrantConfirm(gateId: string, gateToken: string, pick: string,
+    items: { offerId: number; count: number }[]) {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/grant/confirm`, {
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ pick, items }),
+  });
+  return read(response);
+}

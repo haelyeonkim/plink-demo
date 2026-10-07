@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,11 +44,13 @@ public class AdmissionService {
     private final GateRepository gates;
     private final PresentationService presentations;
     private final TicketService ticketService;
+    private final CouponService coupons;
 
     public AdmissionService(TicketRepository tickets, EventSessionRepository sessions,
             AdmissionRepository admissions, PresentationRepository grants, GateRepository gates,
-            PresentationService presentations, TicketService ticketService,
+            PresentationService presentations, TicketService ticketService, CouponService coupons,
             com.plink.ticket.live.LiveEvents live, com.plink.ticket.live.LiveSnapshots snapshots) {
+        this.coupons = coupons;
         this.live = live;
         this.snapshots = snapshots;
         this.tickets = tickets;
@@ -142,9 +145,15 @@ public class AdmissionService {
         admissions.append(ticket.id, session.id, direction, gate.id, method,
             "IN".equals(direction) ? "ADMITTED" : "EXITED", note, grantId);
 
+        // A door set to give something on the way in gives it now, in the same
+        // transaction: an entry that rolls back takes the welcome drink with it.
+        List<String> granted = "IN".equals(direction) ? coupons.autoGrantOnEntry(gate, ticket) : List.of();
         Presence updated = admissions.find(ticket.id).orElse(presence);
         announce(ticket, session, "IN".equals(direction) ? "ADMITTED" : "EXITED", direction, gate);
-        return result("IN".equals(direction) ? "ADMITTED" : "EXITED", direction, ticket, session, updated, null);
+        Map<String, Object> body = result("IN".equals(direction) ? "ADMITTED" : "EXITED", direction, ticket,
+            session, updated, null);
+        if (!granted.isEmpty()) body.put("granted", granted);
+        return body;
     }
 
     private String enter(Ticket ticket, EventSession session, Presence presence, Gate gate,

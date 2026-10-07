@@ -82,6 +82,8 @@ public class GateController {
         // A booth terminal also says what it is handing out, and how much is left.
         result.put("offers", gate.boothId == null ? List.of()
             : coupons.boothOffers(gate.sessionId, gate.boothId));
+        // What it may give, if anything: a terminal with none never shows the giving mode.
+        result.put("grants", coupons.gateGrants(gate));
         result.put("tokenExpiresAt", gate.tokenExpiresAt == null ? null
             : gate.tokenExpiresAt.toInstant().toString());
         return result;
@@ -191,6 +193,36 @@ public class GateController {
         }
         Object pick = body.get("pick");
         return coupons.redeemPicked(gate, pick == null ? null : String.valueOf(pick), wanted);
+    }
+
+    /** Giving mode: the terminal reads a code to give coupons rather than to admit or use. */
+    @PostMapping("/{gateId}/grant")
+    public Map<String, Object> grant(@PathVariable String gateId,
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
+            @RequestBody Map<String, String> body) {
+        Gate gate = auth.authenticate(gateId, token, device);
+        return coupons.grantByCode(gate, body.get("code"));
+    }
+
+    /** The counter's choice after a giving-mode read: how many of each offer to add. */
+    @PostMapping("/{gateId}/grant/confirm")
+    public Map<String, Object> confirmGrant(@PathVariable String gateId,
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
+            @RequestBody Map<String, Object> body) {
+        Gate gate = auth.authenticate(gateId, token, device);
+        Map<Long, Integer> wanted = new LinkedHashMap<>();
+        if (body.get("items") instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> row && row.get("offerId") instanceof Number offerId
+                        && row.get("count") instanceof Number count) {
+                    wanted.merge(offerId.longValue(), count.intValue(), Integer::sum);
+                }
+            }
+        }
+        Object pick = body.get("pick");
+        return coupons.grantPicked(gate, pick == null ? null : String.valueOf(pick), wanted);
     }
 
     @PostMapping("/{gateId}/scan")
