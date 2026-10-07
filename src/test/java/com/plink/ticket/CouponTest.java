@@ -242,13 +242,13 @@ class CouponTest {
         Gate stand = boothGate(booth);
 
         String shown = code(ticket);
-        assertEquals("REDEEMED", coupons.redeemByCode(stand, shown).get("outcome"));
+        assertEquals("CHOOSE", coupons.redeemByCode(stand, shown).get("outcome"));
         ResponseStatusException reused = assertThrows(ResponseStatusException.class,
             () -> coupons.redeemByCode(stand, shown));
         assertTrue(String.valueOf(reused.getReason()).contains("사용"), reused.getReason());
 
-        // A fresh code still finds the second offer waiting.
-        assertEquals("REDEEMED", coupons.redeemByCode(stand, code(ticket)).get("outcome"));
+        // A fresh code still finds both offers waiting: choosing nothing spent nothing.
+        assertEquals(2, ((List<?>) coupons.redeemByCode(stand, code(ticket)).get("choices")).size());
     }
 
     /** The stand's own screen can say what it gives and how much of it is left. */
@@ -259,7 +259,8 @@ class CouponTest {
         long booth = booths.insert(sessionId, "커피 스탠드", null);
         give(booth, "웰컴 커피", null, List.of());
         give(booth, "리필", null, List.of(first.id));
-        coupons.redeemByCode(boothGate(booth), code(first));
+        Gate stand = boothGate(booth);
+        coupons.redeemPicked(stand, pick(stand, first), Map.of("웰컴 커피", 1));
 
         List<Map<String, Object>> offers = coupons.boothOffers(sessionId, booth);
         assertEquals(2, offers.size(), "이 부스의 쿠폰 종류만 셉니다");
@@ -279,7 +280,8 @@ class CouponTest {
         long booth = booths.insert(sessionId, "커피 스탠드", "로비 왼쪽");
         give(booth, "웰컴 커피", "따뜻한 음료 1잔", List.of(ticket.id));
         give(booth, "리필", "오후 6시까지", List.of(ticket.id));
-        coupons.redeemByCode(boothGate(booth), code(ticket));
+        Gate stand = boothGate(booth);
+        coupons.redeemPicked(stand, pick(stand, ticket), Map.of("웰컴 커피", 1));
 
         List<Map<String, Object>> held = coupons.forTicket(sessionId, ticket.id);
         assertEquals(2, held.size());
@@ -291,6 +293,80 @@ class CouponTest {
         // And the ticket screen carries them without being asked separately.
         Map<String, Object> view = tickets.view(tickets.resolve(sessionId, tokenOf(ticket)));
         assertEquals(2, ((List<?>) view.get("coupons")).size());
+    }
+
+    /** Reads the ticket at a stand where it holds more than one coupon. */
+    private String pick(Gate stand, Ticket ticket) {
+        Map<String, Object> read = coupons.redeemByCode(stand, code(ticket));
+        assertEquals("CHOOSE", read.get("outcome"));
+        return String.valueOf(read.get("pick"));
+    }
+
+    /** A quantity tops each ticket up to that many; running it again adds nothing. */
+    @Test void aQuantityTopsEachTicketUpToThatMany() {
+        newSession();
+        Ticket first = boundTicket("one@example.com", "A-1");
+        Ticket second = boundTicket("two@example.com", "A-2");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long refill = coupons.defineOffer(sessionId, booth, "리필", null).id;
+
+        coupons.issue(sessionId, refill, List.of(first.id), 1);
+        Map<String, Object> batch = coupons.issue(sessionId, refill, List.of(), 3);
+        assertEquals(5, batch.get("given"), "첫 번째는 2장, 두 번째는 3장을 더 받습니다");
+        assertEquals(2, batch.get("tickets"));
+        assertEquals(3, couponRepository.findByTicket(first.id).size());
+        assertEquals(3, couponRepository.findByTicket(second.id).size());
+
+        Map<String, Object> again = coupons.issue(sessionId, refill, List.of(), 3);
+        assertEquals(0, again.get("given"));
+        assertEquals(2, again.get("already"));
+
+        ResponseStatusException tooMany = assertThrows(ResponseStatusException.class,
+            () -> coupons.issue(sessionId, refill, List.of(), CouponService.MAX_PER_TICKET + 1));
+        assertEquals(400, tooMany.getStatusCode().value());
+    }
+
+    /** More than one waiting: the counter picks kinds and counts, and only that is spent. */
+    @Test void theCounterChoosesWhichCouponsAndHowMany() {
+        newSession();
+        Ticket ticket = boundTicket("holder@example.com", "A-1");
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        give(booth, "웰컴 커피", null, List.of(ticket.id));
+        coupons.issue(sessionId, coupons.defineOffer(sessionId, booth, "리필", null).id, List.of(ticket.id), 3);
+        Gate stand = boothGate(booth);
+
+        Map<String, Object> read = coupons.redeemByCode(stand, code(ticket));
+        assertEquals("CHOOSE", read.get("outcome"));
+        List<?> choices = (List<?>) read.get("choices");
+        assertEquals(2, choices.size());
+        assertEquals(3, ((Map<?, ?>) choices.get(1)).get("available"), "리필 3장");
+        String pick = String.valueOf(read.get("pick"));
+
+        // Another terminal cannot answer this terminal's read.
+        ResponseStatusException elsewhere = assertThrows(ResponseStatusException.class,
+            () -> coupons.redeemPicked(boothGate(booth), pick, Map.of("리필", 1)));
+        assertEquals(HttpStatus.FORBIDDEN, elsewhere.getStatusCode());
+
+        Map<String, Object> handed = coupons.redeemPicked(stand, pick, Map.of("리필", 2));
+        assertEquals("REDEEMED", handed.get("outcome"));
+        assertEquals("리필 ×2", handed.get("title"));
+        assertEquals(2, handed.get("remaining"), "웰컴 커피 1장과 리필 1장이 남습니다");
+
+        // The pick is spent, whatever was chosen.
+        assertThrows(ResponseStatusException.class, () -> coupons.redeemPicked(stand, pick, Map.of("리필", 1)));
+
+        // Asking for more than is left is refused, and nothing is spent.
+        String next = pick(stand, ticket);
+        ResponseStatusException greedy = assertThrows(ResponseStatusException.class,
+            () -> coupons.redeemPicked(stand, next, Map.of("리필", 2)));
+        assertEquals(409, greedy.getStatusCode().value());
+        long waiting = couponRepository.findByTicket(ticket.id).stream()
+            .filter(coupon -> "ISSUED".equals(coupon.status)).count();
+        assertEquals(2, waiting);
+
+        Map<String, Object> rest = coupons.redeemPicked(stand, pick(stand, ticket), Map.of("웰컴 커피", 1, "리필", 1));
+        assertEquals(0, rest.get("remaining"));
+        assertEquals("ALREADY", coupons.redeemByCode(stand, code(ticket)).get("outcome"));
     }
 
     /** Resolving needs the token, which only the issue call returns; re-issue to get one. */

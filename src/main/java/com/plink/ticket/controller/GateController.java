@@ -8,6 +8,7 @@ import com.plink.ticket.service.GateAuthService;
 import com.plink.ticket.service.GateSetupService;
 import com.plink.ticket.service.OfflineSyncService;
 import com.plink.ticket.service.TicketService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -164,6 +165,32 @@ public class GateController {
             }
         }
         return offline.replay(gate, queued);
+    }
+
+    /**
+     * A booth counter's choice after a read that found more than one coupon: how many of
+     * each kind to hand over now. Only the terminal that read the code can answer it.
+     */
+    @PostMapping("/{gateId}/coupons")
+    public Map<String, Object> redeemCoupons(@PathVariable String gateId,
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
+            @RequestBody Map<String, Object> body) {
+        Gate gate = auth.authenticate(gateId, token, device);
+        if (!gate.booth()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "부스 단말이 아니에요.");
+        }
+        Map<String, Integer> wanted = new LinkedHashMap<>();
+        if (body.get("items") instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> row && row.get("title") instanceof String title
+                        && row.get("count") instanceof Number count) {
+                    wanted.merge(title, count.intValue(), Integer::sum);
+                }
+            }
+        }
+        Object pick = body.get("pick");
+        return coupons.redeemPicked(gate, pick == null ? null : String.valueOf(pick), wanted);
     }
 
     @PostMapping("/{gateId}/scan")

@@ -32,16 +32,26 @@ public class CouponRepository {
         return coupon;
     };
 
-    /** @return true when the offer was new to this ticket, false when it already had it. */
-    public boolean insert(long sessionId, long boothId, long offerId, long ticketId, String title,
-            String detail) {
-        try {
-            jdbc.update("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
-                + "VALUES (?, ?, ?, ?, ?, ?)", sessionId, boothId, offerId, ticketId, title, detail);
-            return true;
-        } catch (org.springframework.dao.DuplicateKeyException already) {
-            return false;
+    /** Gives {@code count} more of an offer to one ticket. */
+    public void insert(long sessionId, long boothId, long offerId, long ticketId, String title,
+            String detail, int count) {
+        List<Object[]> rows = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            rows.add(new Object[] {sessionId, boothId, offerId, ticketId, title, detail});
         }
+        jdbc.batchUpdate("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
+            + "VALUES (?, ?, ?, ?, ?, ?)", rows);
+    }
+
+    /**
+     * How many of an offer each ticket holds, used or not. A coupon taken back does not
+     * count: topping up after a void gives a fresh one.
+     */
+    public Map<Long, Integer> heldOf(long offerId) {
+        Map<Long, Integer> held = new java.util.HashMap<>();
+        jdbc.query("SELECT ticket_id, COUNT(*) AS held FROM coupon WHERE offer_id = ? AND status <> 'VOID' "
+            + "GROUP BY ticket_id", rs -> { held.put(rs.getLong("ticket_id"), rs.getInt("held")); }, offerId);
+        return held;
     }
 
     public boolean anyForOffer(long offerId) {

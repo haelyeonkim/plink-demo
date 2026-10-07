@@ -14,8 +14,15 @@ export default function CouponList({ coupons, onOpen }: {
   if (coupons.length === 0) return null;
   const live = coupons.filter(coupon => coupon.status === 'ISSUED');
   const spent = coupons.length - live.length;
-  // Unused ones first: they are the ones that can still be acted on.
-  const ordered = [...live, ...coupons.filter(coupon => coupon.status !== 'ISSUED')];
+  // Unused ones first: they are the ones that can still be acted on. Three refills at
+  // one stand are one row that says three, not three rows that say the same thing.
+  const rows: { coupon: TicketCoupon; count: number }[] = [];
+  for (const coupon of [...live, ...coupons.filter(coupon => coupon.status !== 'ISSUED')]) {
+    const same = rows.find(row => row.coupon.booth === coupon.booth
+      && row.coupon.title === coupon.title && row.coupon.status === coupon.status);
+    if (same) same.count += 1;
+    else rows.push({ coupon, count: 1 });
+  }
 
   return (
     <div className="coupon-strip">
@@ -24,10 +31,13 @@ export default function CouponList({ coupons, onOpen }: {
         {spent > 0 && <span className="coupon-spent"> · 사용 {spent}장</span>}
       </p>
       <ul>
-        {ordered.map(coupon => (
+        {rows.map(({ coupon, count }) => (
           <li key={coupon.couponId}>
             <button type="button" className="coupon-row" onClick={() => onOpen(coupon)}>
-              <span className="coupon-title">{coupon.title}</span>
+              <span className="coupon-title">
+                {coupon.title}
+                {count > 1 && <span className="coupon-count"> ×{count}</span>}
+              </span>
               {coupon.booth && <span className="coupon-booth">{coupon.booth}</span>}
               <span className={`pill pill-${coupon.status === 'REDEEMED' ? 'off' : 'ok'}`}>
                 {coupon.status === 'REDEEMED' ? '사용함' : '사용 가능'}

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import {
-  ApiError, gateFaceChallenge, gateFaceScan, gateInfo, gateRenew, gateScan, gateSync,
+  ApiError, gateFaceChallenge, gateFaceScan, gateInfo, gateRedeemCoupons, gateRenew, gateScan,
+  gateSync,
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import GateVerdict, { type Verdict } from './GateVerdict';
@@ -61,15 +62,33 @@ function couponVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'l
   // Seat first, reference second: at a counter the seat is what gets said out loud.
   const ticket = [result.seat, result.ticketRef].filter(Boolean).join(' · ');
   if (result.outcome === 'ALREADY') {
-    return { tone: 'repeat', headline: '이미 받아 감', mark: title, detail: ticket };
+    return { tone: 'repeat', headline: '이미 사용함', mark: title, detail: ticket };
   }
   // Whether this person still has something coming decides what is said next, so it is
   // a badge of its own rather than the tail of a line of small print.
   const remaining = typeof result.remaining === 'number' ? result.remaining : 0;
+  const left = (result.left as Choice[] | undefined) ?? [];
   return {
     tone: 'admit', headline: title, detail: ticket,
-    mark: remaining > 0 ? `이 부스 쿠폰 ${remaining}장 더 있음` : '이 부스 쿠폰은 이게 마지막',
+    mark: remaining === 0 ? '이 부스 쿠폰은 이게 마지막'
+      : `남은 쿠폰 ${left.map(choice => `${choice.title} ${choice.available}장`).join(' · ')
+        || `${remaining}장`}`,
   };
+}
+
+/** One kind of coupon a ticket still holds at this booth. */
+interface Choice { title: string; detail: string | null; available: number }
+
+/**
+ * A read that found more than one coupon, waiting for the counter to say what goes
+ * over the table. The pick is the server's handle on that read and lapses on its own.
+ */
+interface Picking {
+  pick: string;
+  ticket: string;
+  choices: Choice[];
+  counts: Record<string, number>;
+  expiresAt: number;
 }
 
 const STORAGE = 'plink.gate.credentials';
@@ -127,6 +146,8 @@ export default function GateScanner() {
   const frame = useRef<HTMLCanvasElement>(null);
   const lastCode = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const inFlight = useRef(false);
+  const [picking, setPicking] = useState<Picking | null>(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE);
@@ -184,11 +205,11 @@ export default function GateScanner() {
 
   // Every lane ends here, so the screen reacts the same way whether the visitor held up
   // a phone or simply walked past the camera.
-  const announce = useCallback((verdict: Omit<Verdict, 'at'>) => {
+  const announce = useCallback((verdict: Omit<Verdict, 'at'>, pieces = 1) => {
     const settled = { ...verdict, at: Date.now() };
     restUntil.current = settled.at + hold(settled.tone);
     setHandled(count => count + 1);
-    if (settled.tone === 'admit') setHandedOut(count => count + 1);
+    if (settled.tone === 'admit') setHandedOut(count => count + pieces);
     setOutcome(current => {
       // The same answer about the same person, moments apart: somebody has stayed in
       // front of the camera. The line below keeps the newest time, but taking the whole
@@ -218,8 +239,23 @@ export default function GateScanner() {
     try {
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
       if (gate?.role === 'BOOTH') {
+        if (result.outcome === 'CHOOSE') {
+          // Several things are waiting: the camera stops reading until the counter has
+          // said which of them go over the table.
+          restUntil.current = Number.POSITIVE_INFINITY;
+          const choices = (result.choices as Choice[]) ?? [];
+          setPicking({
+            pick: String(result.pick),
+            ticket: [result.seat, result.ticketRef].filter(Boolean).join(' · '),
+            choices,
+            counts: Object.fromEntries(choices.map(choice => [choice.title, 0])),
+            expiresAt: new Date(String(result.expiresAt)).getTime(),
+          });
+          return;
+        }
         const handed = couponVerdict(result);
-        announce({ ...handed, ledger: ledgerLine(handed.tone === 'repeat' ? '이미 사용' : '전달됨') });
+        announce({ ...handed, ledger: ledgerLine(handed.tone === 'repeat' ? '이미 사용' : '사용됨') },
+          typeof result.count === 'number' ? result.count : 1);
         if (handed.tone === 'admit') refreshOffers();
         return;
       }
@@ -254,6 +290,56 @@ export default function GateScanner() {
       window.setTimeout(() => { inFlight.current = false; }, 1200);
     }
   }, [gateId, gateToken, gate, announce, ledgerLine, refreshOffers]);
+
+  /** Hands over what the counter chose, or says why it could not. */
+  const confirmPick = useCallback(async () => {
+    if (!picking || sending) return;
+    const items = picking.choices
+      .map(choice => ({ title: choice.title, count: picking.counts[choice.title] ?? 0 }))
+      .filter(item => item.count > 0);
+    if (items.length === 0) return;
+    setSending(true);
+    try {
+      const result = await gateRedeemCoupons(gateId.trim(), gateToken.trim(), picking.pick, items);
+      const handed = couponVerdict(result);
+      announce({ ...handed, ledger: ledgerLine('사용됨') },
+        typeof result.count === 'number' ? result.count : 1);
+      refreshOffers();
+    } catch (err) {
+      announce({
+        tone: 'deny', headline: '사용 못 함',
+        detail: err instanceof Error ? err.message : '쿠폰을 사용 처리하지 못했어요.',
+        ledger: ledgerLine('거부됨'),
+      });
+    } finally {
+      setSending(false);
+      setPicking(null);
+    }
+  }, [picking, sending, gateId, gateToken, announce, ledgerLine, refreshOffers]);
+
+  /** Nothing goes over the table; the camera goes back to reading. */
+  const cancelPick = useCallback(() => {
+    setPicking(null);
+    restUntil.current = Date.now() + 800;
+  }, []);
+
+  // The server forgets a pick after a while; the screen should not outlive it.
+  useEffect(() => {
+    if (!picking) return;
+    const timer = window.setTimeout(() => {
+      setPicking(null);
+      announce({
+        tone: 'repeat', headline: '선택 시간 지남',
+        detail: '사용한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.',
+        ledger: ledgerLine('취소됨'),
+      });
+    }, Math.max(0, picking.expiresAt - Date.now() - 1000));
+    return () => window.clearTimeout(timer);
+  }, [picking, announce, ledgerLine]);
+
+  function setCount(title: string, count: number) {
+    setPicking(current => (current ? { ...current, counts: { ...current.counts, [title]: count } } : current));
+  }
 
   // Face runs on the same stream as the QR decoder: the operator never switches modes,
   // and a visitor either holds up a phone or simply walks up.
@@ -440,7 +526,7 @@ export default function GateScanner() {
                 {(gate.offers ?? []).map(offer => (
                   <span className="booth-offer" key={offer.title}>
                     {offer.title}
-                    <b>{offer.waiting > 0 ? `${offer.waiting}장 남음` : '모두 전달'}</b>
+                    <b>{offer.waiting > 0 ? `${offer.waiting}장 남음` : '모두 사용'}</b>
                   </span>
                 ))}
               </span>
@@ -450,7 +536,7 @@ export default function GateScanner() {
         {handled > 0 && (
           <span className="result-count">
             {gate.role === 'BOOTH'
-              ? `이 단말 ${handled}건 · 전달 ${handedOut}장` : `이 단말 ${handled}건`}
+              ? `이 단말 ${handled}건 · 사용 ${handedOut}장` : `이 단말 ${handled}건`}
           </span>
         )}
       </div>
@@ -464,11 +550,61 @@ export default function GateScanner() {
         <div className="gate-vignette" aria-hidden="true" />
         {/* A terminal that looks asleep between visitors reads as a terminal that is not
             checking. The sweep runs only while it really is reading. */}
-        {scanning && !flash && <span className="gate-scanline" aria-hidden="true" />}
-        {flash && <GateVerdict key={flash.at} verdict={flash} rest={hold(flash.tone)} />}
+        {scanning && !flash && !picking && <span className="gate-scanline" aria-hidden="true" />}
+        {flash && !picking && <GateVerdict key={flash.at} verdict={flash} rest={hold(flash.tone)} />}
+        {picking && (() => {
+          const total = Object.values(picking.counts).reduce((sum, count) => sum + count, 0);
+          const everything = picking.choices.reduce((sum, choice) => sum + choice.available, 0);
+          return (
+            <div className="coupon-pick" role="dialog" aria-modal="true" aria-labelledby="coupon-pick-title">
+              <header>
+                <strong id="coupon-pick-title">사용할 쿠폰</strong>
+                <span>{picking.ticket}</span>
+                {/* The time the server will hold this read for, draining. */}
+                <span className="coupon-pick-clock" aria-hidden="true"
+                  style={{ animationDuration: `${Math.max(0, picking.expiresAt - Date.now())}ms` }} />
+              </header>
+              <ul>
+                {picking.choices.map(choice => {
+                  const count = picking.counts[choice.title] ?? 0;
+                  return (
+                    <li key={choice.title} className={count > 0 ? 'picked' : undefined}>
+                      <span className="coupon-pick-name">
+                        <b>{choice.title}</b>
+                        {choice.detail && <small>{choice.detail}</small>}
+                        <small className="coupon-pick-held">보유 {choice.available}장</small>
+                      </span>
+                      <span className="stepper" role="group" aria-label={`${choice.title} 개수`}>
+                        <button type="button" onClick={() => setCount(choice.title, count - 1)}
+                          disabled={count === 0} aria-label={`${choice.title} 하나 빼기`}>−</button>
+                        <output aria-live="polite">{count}</output>
+                        <button type="button" onClick={() => setCount(choice.title, count + 1)}
+                          disabled={count >= choice.available} aria-label={`${choice.title} 하나 더`}>+</button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <footer>
+                <button type="button" className="btn-ghost" onClick={cancelPick}>사용 안 함</button>
+                <button type="button" className="btn-ghost" disabled={total === everything}
+                  onClick={() => setPicking(current => (current ? {
+                    ...current,
+                    counts: Object.fromEntries(current.choices.map(choice => [choice.title, choice.available])),
+                  } : current))}>
+                  전부 선택
+                </button>
+                <button type="button" className="btn-primary" disabled={total === 0 || sending}
+                  onClick={() => { void confirmPick(); }}>
+                  {sending ? '처리 중…' : total === 0 ? '쿠폰을 골라 주세요' : `${total}장 사용`}
+                </button>
+              </footer>
+            </div>
+          );
+        })()}
         {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
         {/* On the picture rather than in the bar below: it is the picture it changes. */}
-        <button className="gate-flip" onClick={flipCamera}
+        {!picking && <button className="gate-flip" onClick={flipCamera}
           title={`${facing === 'user' ? '전면' : '후면'} 카메라 · 앞뒤 전환`}
           aria-label={`지금 ${facing === 'user' ? '전면' : '후면'} 카메라입니다. 앞뒤 전환`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
@@ -481,7 +617,7 @@ export default function GateScanner() {
             <path d="M15.6 13.7a3.6 3.6 0 0 1-7.2 0" />
             <path d="M10 15l-1.6-1.6L6.8 15" />
           </svg>
-        </button>
+        </button>}
       </div>
 
       <footer className="gate-controls">

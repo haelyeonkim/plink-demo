@@ -202,3 +202,15 @@ export async function gateScan(gateId: string, gateToken: string, code: string) 
   });
   return read(response);
 }
+
+/**
+ * A booth counter's choice after a read that found several coupons: how many of each
+ * kind to hand over. The pick is the one the read returned, and only this terminal's.
+ */
+export async function gateRedeemCoupons(gateId: string, gateToken: string, pick: string,
+    items: { title: string; count: number }[]) {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/coupons`, {
+    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ pick, items }),
+  });
+  return read(response);
+}

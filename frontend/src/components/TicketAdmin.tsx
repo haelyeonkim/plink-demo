@@ -116,6 +116,8 @@ const UNMATCHED_LABEL: Record<string, string> = {
 /** What a gate does, in the words on the screen rather than the ones in the database. */
 const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
 type CouponFilter = 'ALL' | 'ISSUED' | 'REDEEMED' | 'VOID';
+/** The most of one offer a ticket can hold; the server says the same. */
+const MAX_PER_TICKET = 20;
 const PAGE_SIZE = 50;
 
 interface CouponRow {
@@ -203,6 +205,8 @@ export default function TicketAdmin() {
   const [pickPage, setPickPage] = useState<Paged<TicketRow>>(EMPTY_PAGE);
   const [sheetBooth, setSheetBooth] = useState<number | null>(null);
   const [sheetOffer, setSheetOffer] = useState<number | null>(null);
+  // How many of the offer each recipient should end up holding.
+  const [sheetQuantity, setSheetQuantity] = useState(1);
   // The sheet covers the page, so its own complaint has to be on the sheet.
   const [sheetError, setSheetError] = useState('');
   const [couponPage, setCouponPage] = useState<Paged<CouponRow>>(EMPTY_PAGE);
@@ -472,14 +476,17 @@ export default function TicketAdmin() {
   });
 
   /** Gives one of a booth's offers to everybody, or to the people the operator picked. */
-  const giveCoupons = (offerId: number, ticketIds: number[]) =>
+  const giveCoupons = (offerId: number, ticketIds: number[], quantity: number) =>
     act(async () => {
       const result = await read(await mutate(`/api/admin/sessions/${selected}/coupons`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offerId, ticketIds }),
+        body: JSON.stringify({ offerId, ticketIds, quantity }),
       }));
-      setNotice(`${result.title} 쿠폰을 ${result.given}장 발급했어요`
-        + (result.already > 0 ? ` · 이미 가지고 있던 ${result.already}장은 그대로예요.` : '.'));
+      const each = quantity > 1 ? ` (1인당 ${quantity}장까지)` : '';
+      setNotice(result.given > 0
+        ? `${result.title} 쿠폰을 입장권 ${result.tickets}장에 모두 ${result.given}장 발급했어요${each}`
+          + (result.already > 0 ? ` · 이미 다 가진 ${result.already}명은 그대로예요.` : '.')
+        : `모두 이미 ${result.title} 쿠폰을 ${quantity}장 이상 가지고 있어 새로 발급하지 않았어요.`);
       await loadSession(selected!);
     });
 
@@ -509,6 +516,7 @@ export default function TicketAdmin() {
     setSheetError('');
     setSheetBooth(booth?.boothId ?? null);
     setSheetOffer(booth?.offers.find(offer => offer.active)?.offerId ?? null);
+    setSheetQuantity(1);
     setCouponSheet({ only, boothId });
   };
 
@@ -523,8 +531,12 @@ export default function TicketAdmin() {
       setSheetError('쿠폰을 받을 입장권을 선택해 주세요.');
       return;
     }
+    if (!Number.isInteger(sheetQuantity) || sheetQuantity < 1 || sheetQuantity > MAX_PER_TICKET) {
+      setSheetError(`1인당 장수는 1장부터 ${MAX_PER_TICKET}장까지예요.`);
+      return;
+    }
     setCouponSheet(null);
-    void giveCoupons(sheetOffer, ids);
+    void giveCoupons(sheetOffer, ids, sheetQuantity);
   };
 
   // The recipient list in the sheet is a search, not the whole event: it reads the
@@ -1406,6 +1418,18 @@ export default function TicketAdmin() {
                           <p>{offer.detail || '상세 안내 없음'}</p>
                         </div>
                       )}
+                      <div className="field quantity-field">
+                        <label htmlFor="give-quantity">1인당 장수</label>
+                        <input id="give-quantity" type="number" inputMode="numeric" min={1} max={MAX_PER_TICKET}
+                          value={sheetQuantity}
+                          onChange={e => { setSheetQuantity(Number(e.target.value)); setSheetError(''); }} />
+                        {/* A total, not an increment: sending the same batch again for
+                            latecomers must not give everybody else a second helping. */}
+                        <p className="hint-text">
+                          입장권마다 이 쿠폰이 {Number.isFinite(sheetQuantity) && sheetQuantity > 0 ? sheetQuantity : 1}장이
+                          되도록 채워요. 이미 받은 쿠폰(사용한 것 포함)도 장수에 들어가요.
+                        </p>
+                      </div>
                     </>);
                   })()}
 

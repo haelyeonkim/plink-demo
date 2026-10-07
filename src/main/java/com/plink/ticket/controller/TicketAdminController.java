@@ -674,7 +674,8 @@ public class TicketAdminController {
 
     /**
      * Gives an offer to tickets. With no {@code ticketIds} it goes to every live ticket
-     * in the event, which is the usual case: everybody gets a welcome drink.
+     * in the event, which is the usual case: everybody gets a welcome drink. {@code quantity}
+     * is how many each ticket should hold, one unless said otherwise.
      */
     @PostMapping("/sessions/{id}/coupons")
     @ResponseStatus(HttpStatus.CREATED)
@@ -687,7 +688,8 @@ public class TicketAdminController {
         if (!(body.get("offerId") instanceof Number offerId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "발급할 쿠폰을 골라 주세요.");
         }
-        return coupons.issue(id, offerId.longValue(), ticketIds);
+        int quantity = body.get("quantity") instanceof Number number ? number.intValue() : 1;
+        return coupons.issue(id, offerId.longValue(), ticketIds, quantity);
     }
 
     /** One page of the event's coupons, narrowed by booth, state and a search. */

@@ -16,11 +16,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Coupons: what a ticket can collect once it is inside, booth by booth.
@@ -100,16 +102,29 @@ public class CouponService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰 종류를 찾을 수 없어요."));
     }
 
+    /** The most of one offer a single ticket can be given. */
+    public static final int MAX_PER_TICKET = 20;
+
+    public Map<String, Object> issue(long sessionId, long offerId, List<Long> ticketIds) {
+        return issue(sessionId, offerId, ticketIds, 1);
+    }
+
     /**
-     * Gives one of a booth's offers to tickets.
+     * Gives one of a booth's offers to tickets, {@code quantity} apiece.
      *
-     * <p>Only an offer the booth has, and only while it is switched on. Already having it
-     * is not an error: an organiser adding the latecomers to a batch should not have to
-     * work out who was in the last one.
+     * <p>Only an offer the booth has, and only while it is switched on. The quantity is
+     * what each ticket should end up holding, counting what it already has, used or not:
+     * an organiser adding the latecomers to a batch should not have to work out who was
+     * in the last one, and running it twice must not hand out double.
      */
     @Transactional
-    public Map<String, Object> issue(long sessionId, long offerId, List<Long> ticketIds) {
-        CouponOffer offer = requireOffer(offerId);
+    public Map<String, Object> issue(long sessionId, long offerId, List<Long> ticketIds, int quantity) {
+        if (quantity < 1 || quantity > MAX_PER_TICKET) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "1인당 장수는 1장부터 " + MAX_PER_TICKET + "장까지예요.");
+        }
+        CouponOffer offer = offers.lockById(offerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰 종류를 찾을 수 없어요."));
         if (offer.sessionId != sessionId) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
         }
@@ -122,8 +137,9 @@ public class CouponService {
         if (targets.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰을 줄 입장권이 없어요.");
         }
-        int given = 0, already = 0;
-        for (long ticketId : targets) {
+        Map<Long, Integer> held = coupons.heldOf(offer.id);
+        int given = 0, already = 0, reached = 0;
+        for (long ticketId : new java.util.LinkedHashSet<>(targets)) {
             if (ticketIds != null && !ticketIds.isEmpty()) {
                 Ticket ticket = tickets.findById(ticketId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
@@ -135,14 +151,23 @@ public class CouponService {
                         ticket.ticketRef + "은(는) 비활성화된 입장권이에요.");
                 }
             }
-            if (coupons.insert(sessionId, booth.id, offer.id, ticketId, offer.title, offer.detail)) given++;
-            else already++;
+            int missing = quantity - held.getOrDefault(ticketId, 0);
+            if (missing <= 0) {
+                already++;
+                continue;
+            }
+            coupons.insert(sessionId, booth.id, offer.id, ticketId, offer.title, offer.detail, missing);
+            given += missing;
+            reached++;
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("boothId", booth.id);
         result.put("offerId", offer.id);
         result.put("title", offer.title);
+        result.put("quantity", quantity);
+        // Coupons added, tickets that got some, and tickets that already had enough.
         result.put("given", given);
+        result.put("tickets", reached);
         result.put("already", already);
         return result;
     }
@@ -173,12 +198,24 @@ public class CouponService {
         return result;
     }
 
+    /** How long a terminal has to say what it is handing over, once a code is read. */
+    static final Duration PICK_WINDOW = Duration.ofSeconds(90);
+
+    /** A read that is waiting for the counter to choose: which ticket, at which stand. */
+    private record Pick(String gateId, long ticketId, long boothId, Instant expires) {}
+
+    private final Map<String, Pick> picks = new ConcurrentHashMap<>();
+
     /**
-     * The booth terminal's read: prove the code, then hand over one coupon.
+     * The booth terminal's read: prove the code, then hand over, or ask what to hand over.
      *
      * <p>The grant is consumed either way, exactly as at a door. A code that has been
      * shown to a stand is spent whether or not there was anything to give, so nobody can
      * try the same code around the room.
+     *
+     * <p>One coupon waiting is handed over on the spot; there is nothing to choose. More
+     * than one and the counter decides - which kinds, and how many of each - so the
+     * answer is a list and a short-lived pick that {@link #redeemPicked} spends.
      */
     @Transactional
     public Map<String, Object> redeemByCode(Gate gate, String code) {
@@ -202,32 +239,132 @@ public class CouponService {
                 // the spot instead of sending somebody to the desk.
                 Map<String, Object> result = describe(spent, booth, ticket);
                 result.put("outcome", "ALREADY");
-                result.put("message", "이미 받아 간 쿠폰이에요.");
-                announce(ticket, booth, spent, "ALREADY");
+                result.put("message", "이미 사용한 쿠폰이에요.");
+                announce(ticket, booth, spent.title, "ALREADY");
                 return result;
             }
             throw deny(booth.name + "에서 쓸 수 있는 쿠폰이 없어요.");
         }
-        Coupon coupon = live.get(0);
-        Timestamp at = Timestamp.from(Instant.now());
-        coupons.redeem(coupon.id, gate.id, at);
-        coupon.status = "REDEEMED";
-        coupon.redeemedAt = at;
-        coupon.redeemedGate = gate.id;
+        if (live.size() == 1) return handOver(gate, booth, ticket, live, Map.of(live.get(0).title, 1));
 
-        Map<String, Object> result = describe(coupon, booth, ticket);
-        result.put("outcome", "REDEEMED");
-        result.put("remaining", live.size() - 1);
-        announce(ticket, booth, coupon, "REDEEMED");
+        Instant now = Instant.now();
+        picks.values().removeIf(pick -> pick.expires.isBefore(now));
+        String id = Secrets.randomAlnum(24);
+        picks.put(id, new Pick(gate.id, ticket.id, booth.id, now.plus(PICK_WINDOW)));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("outcome", "CHOOSE");
+        result.put("pick", id);
+        result.put("expiresAt", now.plus(PICK_WINDOW).toString());
+        result.put("booth", booth.name);
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("seat", ticket.seat);
+        result.put("choices", choices(live));
         return result;
     }
 
+    /**
+     * The counter's answer to a pick: how many of each kind to hand over now. The pick is
+     * spent whatever is chosen, so a terminal cannot keep drawing on one read.
+     */
+    @Transactional
+    public Map<String, Object> redeemPicked(Gate gate, String pickId, Map<String, Integer> wanted) {
+        // Another terminal naming this pick does not spend it; only its own terminal can.
+        Pick pick = pickId == null ? null : picks.get(pickId);
+        if (pick == null || !pick.gateId.equals(gate.id) || !picks.remove(pickId, pick)
+                || pick.expires.isBefore(Instant.now())) {
+            throw deny("선택 시간이 지났어요. 입장 QR을 다시 비춰 주세요.");
+        }
+        Booth booth = requireBooth(gate.sessionId, pick.boothId);
+        Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
+        if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        Map<String, Integer> chosen = new LinkedHashMap<>();
+        wanted.forEach((title, count) -> { if (count != null && count > 0) chosen.put(title, count); });
+        if (chosen.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사용할 쿠폰을 골라 주세요.");
+        }
+        List<Coupon> live = coupons.lockLiveFor(ticket.id, booth.id);
+        for (Map.Entry<String, Integer> entry : chosen.entrySet()) {
+            long held = live.stream().filter(coupon -> coupon.title.equals(entry.getKey())).count();
+            if (entry.getValue() > held) {
+                // Another terminal got there first, or the console took one back.
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "'" + entry.getKey() + "'은(는) " + held + "장만 남아 있어요.");
+            }
+        }
+        return handOver(gate, booth, ticket, live, chosen);
+    }
+
+    /** Spends the chosen coupons, oldest of each kind first, and says what is left. */
+    private Map<String, Object> handOver(Gate gate, Booth booth, Ticket ticket, List<Coupon> live,
+            Map<String, Integer> chosen) {
+        Timestamp at = Timestamp.from(Instant.now());
+        List<Map<String, Object>> handed = new ArrayList<>();
+        List<Coupon> left = new ArrayList<>(live);
+        int total = 0;
+        for (Map.Entry<String, Integer> entry : chosen.entrySet()) {
+            int need = entry.getValue();
+            for (java.util.Iterator<Coupon> it = left.iterator(); it.hasNext() && need > 0; ) {
+                Coupon coupon = it.next();
+                if (!coupon.title.equals(entry.getKey())) continue;
+                coupons.redeem(coupon.id, gate.id, at);
+                it.remove();
+                need--;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("title", entry.getKey());
+            row.put("count", entry.getValue());
+            handed.add(row);
+            total += entry.getValue();
+        }
+        String summary = summary(handed);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("outcome", "REDEEMED");
+        result.put("booth", booth.name);
+        result.put("title", summary);
+        result.put("handed", handed);
+        result.put("count", total);
+        result.put("ticketRef", ticket.ticketRef);
+        result.put("seat", ticket.seat);
+        result.put("redeemedAt", at.toInstant().toString());
+        result.put("remaining", left.size());
+        result.put("left", choices(left));
+        announce(ticket, booth, summary, "REDEEMED");
+        return result;
+    }
+
+    /** What is still waiting, kind by kind, in the order it was given. */
+    private static List<Map<String, Object>> choices(List<Coupon> live) {
+        Map<String, Map<String, Object>> byTitle = new LinkedHashMap<>();
+        for (Coupon coupon : live) {
+            Map<String, Object> row = byTitle.computeIfAbsent(coupon.title, title -> {
+                Map<String, Object> fresh = new LinkedHashMap<>();
+                fresh.put("title", title);
+                fresh.put("detail", coupon.detail);
+                fresh.put("available", 0);
+                return fresh;
+            });
+            row.put("available", (Integer) row.get("available") + 1);
+        }
+        return new ArrayList<>(byTitle.values());
+    }
+
+    /** "웰컴 드링크" for one, "웰컴 드링크 · 리필 ×2" for more: what the counter says aloud. */
+    private static String summary(List<Map<String, Object>> handed) {
+        List<String> parts = new ArrayList<>();
+        for (Map<String, Object> row : handed) {
+            int count = (Integer) row.get("count");
+            parts.add(count > 1 ? row.get("title") + " ×" + count : String.valueOf(row.get("title")));
+        }
+        return String.join(" · ", parts);
+    }
+
     /** Tells the holder's screen, so the phone shows what was handed over. */
-    private void announce(Ticket ticket, Booth booth, Coupon coupon, String outcome) {
+    private void announce(Ticket ticket, Booth booth, String title, String outcome) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("outcome", outcome);
         message.put("booth", booth.name);
-        message.put("title", coupon.title);
+        message.put("title", title);
         message.put("at", Instant.now().toString());
         live.publishForTicket(ticket.sessionId, ticket.id, "COUPON", message);
     }

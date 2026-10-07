@@ -49,6 +49,11 @@ public class CouponOfferRepository {
         return jdbc.query("SELECT * FROM coupon_offer WHERE id = ?", MAPPER, id).stream().findFirst();
     }
 
+    /** Holds the offer while tickets are topped up, so two batches cannot both add. */
+    public Optional<CouponOffer> lockById(long id) {
+        return jdbc.query("SELECT * FROM coupon_offer WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
+    }
+
     public List<CouponOffer> findBySession(long sessionId) {
         return jdbc.query("SELECT * FROM coupon_offer WHERE session_id = ? ORDER BY booth_id, id",
             MAPPER, sessionId);
