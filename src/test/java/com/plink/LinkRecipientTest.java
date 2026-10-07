@@ -310,6 +310,27 @@ class LinkRecipientTest {
             .andReturn().getResponse().getContentAsString();
         long snapshotId = json(delivery).get("contentId").asLong();
 
+        String deferred = mvc.perform(post("/api/links/artworks").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"artworkIds\":[" + selectedId + "]}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.recipient").doesNotExist())
+            .andReturn().getResponse().getContentAsString();
+        long deferredId = json(deferred).get("id").asLong();
+        mvc.perform(get("/api/links/" + deferredId).session(session))
+            .andExpect(jsonPath("$.recipients.length()").value(0));
+        mvc.perform(post("/api/links/" + deferredId + "/recipients/bulk").session(session).with(csrf())
+                .contentType("application/json")
+                .content("{\"notify\":false,\"rows\":[{\"email\":\"first@example.com\"},"
+                    + "{\"email\":\"second@example.com\"}]}"))
+            .andExpect(status().is2xxSuccessful());
+        String populated = mvc.perform(get("/api/links/" + deferredId).session(session))
+            .andExpect(jsonPath("$.recipients.length()").value(2))
+            .andExpect(jsonPath("$.contentId").value(json(deferred).get("contentId").asLong()))
+            .andReturn().getResponse().getContentAsString();
+        JsonNode issued = json(populated).get("recipients");
+        assertNotEquals(issued.get(0).get("shortCode").asText(), issued.get(1).get("shortCode").asText());
+
         mvc.perform(get("/api/contents/" + snapshotId).session(session))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.body.artworks.length()").value(1))

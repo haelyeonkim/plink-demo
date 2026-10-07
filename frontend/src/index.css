@@ -149,31 +149,6 @@ a { color: inherit; text-decoration: none; }
 .trust b { font-size: 12px; }
 .trust small { font-size: 10px; color: #949cad; margin-top: 3px; }
 
-.access-form {
-  display: flex;
-  gap: 8px;
-  max-width: 380px;
-}
-.access-form input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  font-size: 14px;
-  outline: none;
-}
-.access-form input:focus { border-color: var(--blue); }
-.access-form button {
-  padding: 12px 20px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  font-weight: 700;
-  font-size: 13px;
-  cursor: pointer;
-}
-.access-form button:hover { border-color: var(--blue); color: var(--blue); }
-
 /* Hero art */
 .hero-art {
   height: 440px;
@@ -343,9 +318,9 @@ a { color: inherit; text-decoration: none; }
   border-radius: 13px;
   display: grid;
   place-items: center;
-  font-size: 22px;
   margin-bottom: 28px;
 }
+.feature-icon img { display: block; }
 .feature-grid article > p:not(.feature-text) {
   font-size: 10px;
   letter-spacing: 1.5px;
@@ -402,7 +377,7 @@ a { color: inherit; text-decoration: none; }
   margin: -35px auto 80px;
   padding: 0 28px;
 }
-.mini-sections article {
+.mini-sections .mini-section-link {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 25px;
@@ -410,22 +385,6 @@ a { color: inherit; text-decoration: none; }
 }
 .mini-sections b { font-size: 15px; }
 .mini-sections p { color: #7e879c; font-size: 12px; margin-bottom: 0; }
-
-/* ---- Access Section ---- */
-.access-section {
-  max-width: 500px;
-  margin: 0 auto 80px;
-  padding: 0 28px;
-  text-align: center;
-}
-.access-section h2 {
-  font-size: 20px;
-  margin-bottom: 16px;
-}
-.access-section .access-form {
-  max-width: 100%;
-  justify-content: center;
-}
 
 /* ---- Buttons ---- */
 .btn-primary {
@@ -458,23 +417,6 @@ a { color: inherit; text-decoration: none; }
   margin-left: 12px;
 }
 .btn-secondary:hover { border-color: var(--blue); color: var(--blue); }
-
-.btn-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #4a5570;
-  cursor: pointer;
-  padding: 7px 14px 7px 11px;
-  margin-bottom: 18px;
-  transition: border-color 0.15s, color 0.15s;
-}
-.btn-back:hover { color: var(--blue); border-color: var(--blue); }
 
 .btn-tiny {
   background: none;
@@ -531,6 +473,8 @@ a { color: inherit; text-decoration: none; }
 .page-wide { max-width: var(--page-width); }
 /* A form is read left to right: it stays narrow inside the wide page. */
 .page-section > .create-form { max-width: 640px; }
+.link-create-submit { margin-top: 24px; }
+.page-section > h2 + .create-form { margin-top: 24px; }
 .tab-split { min-width: 0; }
 .tab-split > * { min-width: 0; }
 
@@ -631,7 +575,13 @@ a { color: inherit; text-decoration: none; }
 .list-more { display: flex; justify-content: center; margin-top: 14px; }
 .list-more .btn-secondary { width: auto; margin: 0; }
 /* Which one is open reads in the title, as a path: "링크 관리 / 이번 주 제안서". */
-.crumb-sep { color: #c3c9d6; margin: 0 8px; font-weight: 400; }
+.crumb-sep { display: block; flex-shrink: 0; width: 16px; height: 16px; margin: 0 8px; }
+.page-section > h2:has(.crumb-sep) { line-height: 1.2; }
+.page-section > h2:has(.crumb-sep) > .crumb-link,
+.page-section > h2:has(.crumb-sep) > .crumb { padding-block: 4px; }
+.crumb-link:hover, .crumb-link:focus-visible {
+  text-decoration: underline; text-underline-offset: 4px;
+}
 /* The count rides with the title rather than taking a line of its own. */
 .page-section > h2 .count, .page-head > h2 .count { margin-left: 10px; }
 .crumb {
@@ -1166,7 +1116,14 @@ a { color: inherit; text-decoration: none; }
      gate terminal are reached from here, and on a phone there was no other way in. */
   .header nav { display: none; }
   .header .header-account { display: none; }
-  .header .menu-toggle { display: block; }
+  .header .header-account-guest {
+    display: flex; margin-left: auto; margin-right: 12px; flex-shrink: 0;
+  }
+  .header-account-guest .login {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 19px; border-color: var(--line);
+  }
+  .header .menu-toggle { display: inline-flex; }
   /* Three columns squeezed into 390px left the tagline in a two-word ribbon. */
   .footer { flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; }
   .footer p { flex: none; }
@@ -1845,8 +1802,9 @@ body:has(.gate-screen) .header-plain { display: none; }
 .menu-toggle {
   /* Shown only under the mobile breakpoint; see the .header .menu-toggle rule there. */
   display: none;
+  align-items: center; justify-content: center; padding: 0; flex-shrink: 0;
   background: none; border: 1px solid var(--line); border-radius: 10px;
-  width: 40px; height: 40px; font-size: 17px; line-height: 1; cursor: pointer; color: var(--ink);
+  width: 40px; height: 40px; cursor: pointer; color: var(--ink);
 }
 .menu-toggle:hover { border-color: var(--blue); color: var(--blue); }
 .mobile-menu {
@@ -1948,8 +1906,10 @@ body:has(.gate-screen) .header-plain { display: none; }
 }
 
 .artwork-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; max-height: 560px; overflow: auto; }
-.artwork-pick-card { border: 1px solid var(--line); border-radius: 10px; padding: .55rem; display: grid; grid-template-columns: auto 64px 1fr; gap: .55rem; align-items: center; cursor: pointer; }
-.artwork-pick-card.selected { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.artwork-pick-card { border: 1px solid var(--line); border-radius: 10px; padding: .55rem; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: .55rem; align-items: center; cursor: pointer; background: white; color: var(--ink); font: inherit; text-align: left; min-width: 0; }
+.artwork-pick-card:hover { border-color: #9ba2b4; }
+.artwork-pick-card.selected { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: #eef3ff; }
+.artwork-pick-card:focus-visible { outline: 2px solid var(--blue); outline-offset: -4px; }
 .artwork-pick-card img, .artwork-pick-placeholder { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; background: var(--bg-section); }
 .artwork-pick-placeholder { display: grid; place-items: center; font-size: .68rem; color: #68708a; text-align: center; }
 .artwork-pick-card span:last-child { min-width: 0; display: grid; gap: .2rem; }
@@ -1987,12 +1947,12 @@ body:has(.gate-screen) .header-plain { display: none; }
 
 /* Guide and privacy: prose pages, read rather than operated. */
 .guide-role-title { font-size: 15px; margin: 28px 0 12px; }
-.guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; }
-.guide-card { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
-.guide-card b { font-size: 11px; letter-spacing: 1px; color: var(--blue); }
+.guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; align-items: stretch; }
+.guide-card { display: flex; flex-direction: column; min-width: 0; background: white; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+.guide-card > b { font-size: 11px; letter-spacing: 1px; color: var(--blue); }
 .guide-card h3 { font-size: 15px; margin: 8px 0 8px; }
 .guide-card p { font-size: 13px; color: #5b647a; line-height: 1.7; }
-.guide-card a { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.guide-card > a { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: auto; padding-top: 10px; font-size: 13px; font-weight: 700; color: var(--blue); }
 .guide-note { margin-top: 28px; background: var(--bg-section); border-radius: 16px; padding: 18px 20px; }
 .guide-note strong { display: block; font-size: 13px; margin-bottom: 6px; }
 .guide-note p { font-size: 13px; color: #5b647a; line-height: 1.7; }
@@ -2288,3 +2248,18 @@ body:has(.gate-screen) .header-plain { display: none; }
   .code-spent .code-canvas { opacity: 0; }
   .verdict-ledger::after { content: none; }
 }
+
+/* SVG image icons inherit the surrounding text color, including hover states. */
+.ui-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: var(--icon-url) center / contain no-repeat;
+  mask: var(--icon-url) center / contain no-repeat;
+}
+.source-icon .ui-icon { font-size: 24px; }
+.lock .ui-icon { font-size: 24px; }
+.link-card button .ui-icon { float: none; }

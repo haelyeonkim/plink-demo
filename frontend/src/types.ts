@@ -131,7 +131,7 @@ export interface ArtworkRecord extends Record<string, string | number> {
 
 export interface ArtworkDeliveryRequest {
   artworkIds: number[];
-  email: string;
+  email?: string;
   label?: string;
   title?: string;
   password?: string;
@@ -141,5 +141,5 @@ export interface ArtworkDeliveryRequest {
 }
 
 export interface ArtworkDelivery extends ProtectedLink {
-  recipient: LinkRecipient;
+  recipient?: LinkRecipient;
 }

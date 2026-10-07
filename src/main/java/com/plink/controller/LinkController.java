@@ -131,9 +131,11 @@ public class LinkController {
             text(req.get("email")), text(req.get("label")), text(req.get("title")),
             text(req.get("password")), expiresAt, maxViews, Boolean.TRUE.equals(req.get("notify")));
         Map<String, Object> body = toSummary(delivery.link());
-        Map<String, Object> recipient = toRecipient(delivery.link(), delivery.recipient());
-        recipient.put("deliveredVia", delivery.delivered() ? "EMAIL" : "LINK");
-        body.put("recipient", recipient);
+        if (delivery.recipient() != null) {
+            Map<String, Object> recipient = toRecipient(delivery.link(), delivery.recipient());
+            recipient.put("deliveredVia", delivery.delivered() ? "EMAIL" : "LINK");
+            body.put("recipient", recipient);
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 

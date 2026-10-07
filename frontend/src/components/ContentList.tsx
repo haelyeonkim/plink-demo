@@ -28,11 +28,10 @@ export default function ContentList() {
   return (
     <section className="page-section page-wide">
       <div className="page-head">
-        <h2>링크 관리<span className="crumb-sep">/</span><span className="crumb">컨텐츠</span>
+        <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">컨텐츠</span>
           <span className="count">{contents.length}</span>
         </h2>
         <span className="page-actions">
-          <Link className="btn-secondary" to="/links">링크 목록</Link>
           <Link className="btn-primary" to="/contents/new">새 컨텐츠 만들기</Link>
         </span>
       </div>

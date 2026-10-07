@@ -1,31 +1,7 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { accessLink } from '../api';
+import Icon from './Icon';
+import { Link } from 'react-router-dom';
 
 export default function Hero() {
-  const [code, setCode] = useState('');
-  const navigate = useNavigate();
-
-  const [codeError, setCodeError] = useState('');
-  const [checking, setChecking] = useState(false);
-
-  // Checked before navigating: a mistyped code otherwise lands on a "link not found"
-  // page that reads like the link was revoked rather than like a typo.
-  const handleAccess = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const value = code.trim();
-    if (!value) { setCodeError('공유받은 코드를 입력해 주세요.'); return; }
-    setChecking(true); setCodeError('');
-    try {
-      const info = await accessLink(value);
-      navigate(info.path ?? `/s/${encodeURIComponent(value)}`);
-    } catch {
-      setCodeError('이 코드로는 링크를 찾을 수 없어요. 전달받은 주소를 다시 확인해 주세요.');
-    } finally {
-      setChecking(false);
-    }
-  };
-
   return (
     <>
       {/* Hero */}
@@ -41,7 +17,7 @@ export default function Hero() {
             수신자에게 링크를 전달하고, 패스키 수신 확정과 열람을 관리하세요.
           </p>
           <div className="actions">
-            <Link className="primary" to="/links/new">보호 링크 만들기 <b>&rarr;</b></Link>
+            <Link className="primary" to="/links/new">보호 링크 만들기 <b><Icon name="arrow-right" /></b></Link>
             <Link className="secondary" to="/guide">사용 방법 보기</Link>
           </div>
           <div className="trust">
@@ -58,9 +34,9 @@ export default function Hero() {
           <div className="link-card">
             <div className="card-top">
               <img className="card-logo" src="/logo-small.svg" alt="P" width="28" height="28" />
-              <span className="dots">&bull;&bull;&bull;</span>
+              <span className="dots"><Icon name="more" /></span>
             </div>
-            <div className="lock"><span>&#x25CF;</span></div>
+            <div className="lock"><span><Icon name="lock" /></span></div>
             <p className="secure">PROTECTED LINK</p>
             <h2>2026 브랜드 리뉴얼<br />최종 제안서</h2>
             <div className="recipient">
@@ -69,18 +45,18 @@ export default function Hero() {
               <em>인증됨</em>
             </div>
             <div className="expires">
-              <span>&#x25F7;</span>
+              <span><Icon name="clock" /></span>
               <div><small>링크 만료까지</small><b>2일 14시간</b></div>
             </div>
-            <button>안전하게 링크 열기 <span>&rarr;</span></button>
+            <button>안전하게 링크 열기 <span><Icon name="arrow-right" /></span></button>
             <p className="notice">이 링크는 수신을 확정한 패스키로 열 수 있어요.</p>
           </div>
           <div className="float-card check">
-            <span>&#x2713;</span>
+            <span><Icon name="check" /></span>
             <div><small>열람 확인</small><b>방금 링크를 확인했어요</b></div>
           </div>
           <div className="float-card shield">
-            <span>&#x25C6;</span>
+            <span><Icon name="shield" /></span>
             <div><small>P-LINK SECURITY</small><b>보호 중</b></div>
           </div>
         </div>
@@ -93,21 +69,21 @@ export default function Hero() {
         <p className="section-lead">링크 하나에도 배려와 안전, 우선순위를 담았습니다.</p>
         <div className="feature-grid">
           <article className="violet">
-            <div className="feature-icon">&#x2301;</div>
+            <div className="feature-icon"><img src="/icons/private.svg" alt="" width="26" height="26" /></div>
             <p>P for</p>
             <h3>Private<span>.</span></h3>
             <h4>보여줄 사람만</h4>
             <p className="feature-text">받을 사람에게 링크를 전달하면, 처음 등록한 패스키에 접근 권한이 연결돼요.</p>
           </article>
           <article className="blue">
-            <div className="feature-icon">&#x25C7;</div>
+            <div className="feature-icon"><img src="/icons/protected.svg" alt="" width="26" height="26" /></div>
             <p>P for</p>
             <h3>Protected<span>.</span></h3>
             <h4>안전하게 보호</h4>
             <p className="feature-text">비밀번호와 만료일을 설정해 중요한 콘텐츠를 지켜요.</p>
           </article>
           <article className="mint">
-            <div className="feature-icon">&#x2197;</div>
+            <div className="feature-icon"><img src="/icons/priority.svg" alt="" width="26" height="26" /></div>
             <p>P for</p>
             <h3>Priority<span>.</span></h3>
             <h4>중요한 순간 먼저</h4>
@@ -142,20 +118,6 @@ export default function Hero() {
         </Link>
       </section>
 
-      {/* Access code form */}
-      <section className="access-section">
-        <h2>공유받은 링크 열기</h2>
-        <form className="access-form" onSubmit={handleAccess}>
-          <input
-            type="text"
-            placeholder="공유받은 코드를 입력하세요"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-          <button type="submit" disabled={checking}>{checking ? '확인 중…' : '열기'}</button>
-        </form>
-        {codeError && <p className="error-text" role="alert">{codeError}</p>}
-      </section>
     </>
   );
 }

@@ -8,10 +8,11 @@
 export interface ParsedTable {
   headers: string[];
   rows: string[][];
+  lineNumbers: number[];
 }
 
 function detectDelimiter(text: string): string {
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
+  const firstLine = text.split(/\r?\n/).find(line => line.trim()) ?? '';
   const counts: Array<[string, number]> = [
     ['\t', (firstLine.match(/\t/g) || []).length],
     [',', (firstLine.match(/,/g) || []).length],
@@ -21,18 +22,22 @@ function detectDelimiter(text: string): string {
   return counts[0][1] > 0 ? counts[0][0] : ',';
 }
 
-export function parseTable(input: string): ParsedTable {
-  const text = input.replace(/^﻿/, '').trim();
-  if (!text) return { headers: [], rows: [] };
+export function parseTable(input: string, strictHeaders = false): ParsedTable {
+  const text = input.replace(/^﻿/, '');
+  if (!text.trim()) return { headers: [], rows: [], lineNumbers: [] };
   const delimiter = detectDelimiter(text);
 
   const rows: string[][] = [];
   let field = '';
   let row: string[] = [];
   let quoted = false;
+  let lineNumber = 1;
+  let rowStart = 1;
+  const sourceLines: number[] = [];
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
+    if (char === '\n') lineNumber++;
     if (quoted) {
       if (char === '"') {
         if (text[i + 1] === '"') { field += '"'; i++; } else { quoted = false; }
@@ -44,24 +49,28 @@ export function parseTable(input: string): ParsedTable {
     if (char === '"') { quoted = true; continue; }
     if (char === delimiter) { row.push(field); field = ''; continue; }
     if (char === '\r') continue;
-    if (char === '\n') { row.push(field); rows.push(row); field = ''; row = []; continue; }
+    if (char === '\n') { row.push(field); rows.push(row); sourceLines.push(rowStart); rowStart = lineNumber; field = ''; row = []; continue; }
     field += char;
   }
   row.push(field);
   rows.push(row);
+  sourceLines.push(rowStart);
 
-  const cleaned = rows
+  const kept = rows.map((cells, index) => ({ cells, line: sourceLines[index] }))
+    .filter(({ cells }) => cells.some(cell => cell.trim().length > 0));
+  const lineNumbers = kept.map(row => row.line);
+  const cleaned = kept.map(row => row.cells)
     .map(cells => cells.map(cell => cell.trim()))
     .filter(cells => cells.some(cell => cell.length > 0));
-  if (cleaned.length === 0) return { headers: [], rows: [] };
+  if (cleaned.length === 0) return { headers: [], rows: [], lineNumbers: [] };
 
   // A header row is one whose cells name columns rather than hold an address.
   const first = cleaned[0].map(cell => cell.toLowerCase());
-  const looksLikeHeader = first.some(cell => HEADER_WORDS.some(word => cell.includes(word)))
+  const looksLikeHeader = first.some(cell => HEADER_WORDS.some(word => strictHeaders ? cell.trim() === word : cell.includes(word)))
     && !first.some(cell => cell.includes('@'));
   return looksLikeHeader
-    ? { headers: cleaned[0], rows: cleaned.slice(1) }
-    : { headers: [], rows: cleaned };
+    ? { headers: cleaned[0], rows: cleaned.slice(1), lineNumbers: lineNumbers.slice(1) }
+    : { headers: [], rows: cleaned, lineNumbers };
 }
 
 const HEADER_WORDS = ['email', '이메일', '메일', 'seat', '좌석', 'tier', '등급', 'phone', '휴대폰',
