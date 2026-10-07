@@ -63,6 +63,7 @@ public class ArtworkDeliveryService {
         body.put("columns", "2");
         body.put("artworks", selected.stream().map(ArtworkRepository.Artwork::body).toList());
         long contentId = contents.insert(ownerSub, title, "SELECTION", mapper.writeValueAsString(body));
+        artworks.linkSnapshot(contentId, selected);
         images.sync(contentId, ownerSub, body);
         ProtectedLink link = links.createLink(null, contentId, title, password, expiresAt, null,
             Math.max(0, maxViews), ownerSub);

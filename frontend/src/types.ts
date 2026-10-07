@@ -113,9 +113,10 @@ export interface ContentImportResult {
 }
 
 /** One reusable work saved from an authored or imported content document. */
-export interface ArtworkRecord extends Record<string, string | number> {
+export interface ArtworkRecord {
   id: number;
   sourceContentId: number;
+  saleStatus: 'hold' | 'sold' | null;
   image: string;
   artist: string;
   title: string;

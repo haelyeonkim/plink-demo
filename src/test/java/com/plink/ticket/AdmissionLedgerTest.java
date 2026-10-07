@@ -258,7 +258,7 @@ class AdmissionLedgerTest {
 
         // The holder went home without scanning out; the ledger still says INSIDE.
         ledger.backdateInside(f.ticket.id,
-            Timestamp.from(Instant.now().minus(20, ChronoUnit.HOURS)));
+            Timestamp.from(Instant.now().minus(25, ChronoUnit.HOURS)));
 
         Map<String, Object> next = f.scan(f.entry, "IN");
         assertEquals("ADMITTED", next.get("outcome"), "날이 바뀌면 다시 입장할 수 있어야 합니다");

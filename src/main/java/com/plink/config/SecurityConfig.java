@@ -72,6 +72,8 @@ public class SecurityConfig {
                 // whatever the menu decides to show it.
                 .requestMatchers("/api/accounts", "/api/accounts/**")
                     .access(scope(AdminPrincipal.ACCOUNTS, false))
+                .requestMatchers("/api/admin/artworks", "/api/admin/artworks/**")
+                    .access(scope(AdminPrincipal.ACCOUNTS, false))
                 .requestMatchers("/api/admin/**").access(scope(AdminPrincipal.TICKETS, true))
                 .requestMatchers("/api/links", "/api/links/**").access(scope(AdminPrincipal.LINKS, true))
                 // Content is written by whoever may issue links; it exists only for them.

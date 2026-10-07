@@ -4,6 +4,7 @@ import com.plink.account.CurrentUser;
 import com.plink.model.LinkContent;
 import com.plink.repository.ContentRepository;
 import com.plink.repository.ArtworkRepository;
+import static com.plink.service.ArtworkFields.artworkRows;
 import com.plink.service.ContentImportService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -32,14 +33,17 @@ public class ContentController {
     private final ArtworkRepository artworks;
     private final ContentImportService importer;
     private final com.plink.service.ContentImageService images;
+    private final com.plink.service.ArtworkStatusService saleStatuses;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ContentController(ContentRepository contents, ArtworkRepository artworks,
-            ContentImportService importer, com.plink.service.ContentImageService images) {
+            ContentImportService importer, com.plink.service.ContentImageService images,
+            com.plink.service.ArtworkStatusService saleStatuses) {
         this.contents = contents;
         this.artworks = artworks;
         this.importer = importer;
         this.images = images;
+        this.saleStatuses = saleStatuses;
     }
 
     private String owner(Authentication user) {
@@ -65,8 +69,12 @@ public class ContentController {
     }
 
     @GetMapping("/{id}")
+    @Transactional
     public Map<String, Object> read(@PathVariable long id, Authentication user) {
         LinkContent content = owned(id, user);
+        if (!"SELECTION".equals(content.kind) && artworks.countByContent(id) == 0) {
+            artworks.replace(id, content.ownerSub, artworkRows(mapper.readValue(content.body, Object.class)));
+        }
         Map<String, Object> result = summary(content);
         result.put("body", body(content));
         return result;
@@ -107,6 +115,7 @@ public class ContentController {
             row.put("id", artwork.id());
             row.put("sourceContentId", artwork.sourceContentId());
             row.putAll(artwork.body());
+            row.put("saleStatus", artwork.saleStatus());
             result.add(row);
         }
         return result;
@@ -139,6 +148,9 @@ public class ContentController {
             Authentication user) {
         LinkContent content = owned(id, user);
         Object requestedBody = request.get("body");
+        if ("SELECTION".equals(content.kind)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 전달된 작품 정보는 수정할 수 없습니다.");
+        }
         String sourceType = request.containsKey("sourceType")
             ? sourceType(request.get("sourceType")) : content.sourceType;
         String sourceRef = request.containsKey("sourceRef")
@@ -181,7 +193,7 @@ public class ContentController {
     }
 
     private Object body(LinkContent content) {
-        try { return mapper.readTree(content.body); }
+        try { return saleStatuses.body(content); }
         catch (RuntimeException unreadable) { return Map.of(); }
     }
 
@@ -219,25 +231,4 @@ public class ContentController {
         return ref;
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<Map<String, String>> artworkRows(Object body) {
-        if (!(body instanceof Map<?, ?> map) || !(map.get("artworks") instanceof List<?> values)) {
-            return List.of();
-        }
-        if (values.size() > 200) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "작품은 컨텐츠당 200개까지 저장할 수 있어요.");
-        }
-        List<Map<String, String>> result = new ArrayList<>();
-        for (Object value : values) {
-            if (!(value instanceof Map<?, ?> fields)) continue;
-            Map<String, String> row = new LinkedHashMap<>();
-            for (String key : List.of("image", "artist", "title", "year", "medium", "width",
-                    "height", "depth", "unit", "description", "price")) {
-                Object field = fields.get(key);
-                row.put(key, field == null ? "" : field.toString());
-            }
-            result.add(row);
-        }
-        return result;
-    }
 }

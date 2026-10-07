@@ -138,6 +138,29 @@ public class ContentImageService {
         if (!owner && !canRead(id, session)) throw notFound();
         return new Download(storage.get(image.backend(), image.key()), image.type());
     }
+
+    /** Live status access uses the same short-lived grant issued after passkey verification. */
+    public boolean hasContentGrant(long contentId, long linkId, long recipientId, HttpSession session) {
+        if (session == null) return false;
+        try {
+            Grant grant;
+            synchronized (session) { grant = grants(session).get(contentId); }
+            if (grant == null || grant.linkId() != linkId || grant.recipientId() != recipientId
+                    || grant.expires() <= System.currentTimeMillis()) return false;
+            var link = links.findById(linkId).orElse(null);
+            var recipient = recipients.findById(recipientId).orElse(null);
+            return link != null && recipient != null && recipient.linkId == linkId && !recipient.revoked()
+                && !link.isExpired() && Objects.equals(link.getContentId(), contentId);
+        } catch (IllegalStateException expiredSession) { return false; }
+    }
+
+    /** Only the owner-only administrator endpoint calls this; unrelated uploads stay private. */
+    public Download readArtworkForAdmin(String id) {
+        Image image = find(id, false);
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM artwork WHERE image_url = ?",
+                Integer.class, PREFIX + id) == 0) throw notFound();
+        return new Download(storage.get(image.backend(), image.key()), image.type());
+    }
     private boolean canRead(String id, HttpSession session) {
         if (session == null) return false;
         Map<Long, Grant> grants;

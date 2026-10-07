@@ -44,6 +44,11 @@ public class ContentRepository {
         return jdbc.query("SELECT * FROM link_content WHERE id = ?", MAPPER, id).stream().findFirst();
     }
 
+    public List<LinkContent> findUnindexed() {
+        return jdbc.query("SELECT c.* FROM link_content c WHERE c.kind <> 'SELECTION' "
+            + "AND NOT EXISTS (SELECT 1 FROM artwork a WHERE a.source_content_id = c.id)", MAPPER);
+    }
+
     public long insert(String ownerSub, String title, String kind, String body) {
         return insert(ownerSub, title, kind, body, "MANUAL", null);
     }
@@ -84,8 +89,10 @@ public class ContentRepository {
 
     /** Refused while a link still points at it: the recipients would find nothing. */
     public int linksUsing(long id) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM protected_link WHERE content_id = ?",
-            Integer.class, id);
+        return jdbc.queryForObject("SELECT COUNT(*) FROM protected_link l WHERE l.content_id = ? "
+            + "OR EXISTS (SELECT 1 FROM content_artwork r JOIN artwork a ON a.id = r.artwork_id "
+            + "WHERE r.content_id = l.content_id AND a.source_content_id = ?)",
+            Integer.class, id, id);
     }
 
     public void delete(long id) {

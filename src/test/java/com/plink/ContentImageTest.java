@@ -79,6 +79,18 @@ class ContentImageTest {
         mvc.perform(post("/api/contents").with(oidcLogin().idToken(t -> t.subject("other"))).with(csrf())
             .contentType("application/json").content(document(url))).andExpect(status().isNotFound());
     }
+    @Test void administratorCanReadLibraryImagesButNotUnattachedUploads() throws Exception {
+        String url = upload(), unattached = upload();
+        save(url);
+        String adminUrl = url.replace("/api/content-images/", "/api/admin/artworks/images/");
+        mvc.perform(get(adminUrl).with(AdminArtworkTest.admin(true)))
+            .andExpect(status().isOk()).andExpect(content().contentType("image/png"))
+            .andExpect(header().string("Cache-Control", "no-store"));
+        mvc.perform(get(unattached.replace("/api/content-images/", "/api/admin/artworks/images/"))
+            .with(AdminArtworkTest.admin(true))).andExpect(status().isNotFound());
+        mvc.perform(get(adminUrl).with(AdminArtworkTest.admin(false))).andExpect(status().isForbidden());
+        mvc.perform(get(url).with(oidcLogin().idToken(t -> t.subject("other")))).andExpect(status().isNotFound());
+    }
     @Test void rejectsAnonymousUploadsMissingCsrfAndDisguisedFiles() throws Exception {
         var file = new MockMultipartFile("file", "bad.png", "image/png", "<svg/>".getBytes());
         mvc.perform(multipart("/api/contents/images").file(file).with(csrf())).andExpect(status().isUnauthorized());
@@ -118,14 +130,14 @@ class ContentImageTest {
         mvc.perform(get(url).session(session)).andExpect(status().isNotFound());
     }
 
-    @Test void recipientSnapshotRetainsImageAfterSourceDeletion() throws Exception {
+    @Test void recipientSnapshotRetainsImageAndPreventsDeletingSharedIdentity() throws Exception {
         String url = upload();
         long source = save(url);
         long artwork = jdbc.queryForObject("SELECT id FROM artwork WHERE source_content_id = ?", Long.class, source);
         String owner = jdbc.queryForObject("SELECT owner_sub FROM link_content WHERE id = ?", String.class, source);
         var delivery = deliveries.create(owner, List.of(artwork), "snapshot@example.com", "",
             "Snapshot", null, null, 0, false);
-        mvc.perform(delete("/api/contents/" + source).with(oidcLogin()).with(csrf())).andExpect(status().isOk());
+        mvc.perform(delete("/api/contents/" + source).with(oidcLogin()).with(csrf())).andExpect(status().isConflict());
         jdbc.update("UPDATE content_image SET created_at = ?", new Timestamp(System.currentTimeMillis() - 172800000));
         images.cleanup();
         var session = new MockHttpSession();

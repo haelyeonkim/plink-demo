@@ -16,6 +16,7 @@ export default function AccessLink() {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [statusNotice, setStatusNotice] = useState('');
   const currentCode = useRef(shortCode);
   currentCode.current = shortCode;
   useEffect(() => {
@@ -32,6 +33,32 @@ export default function AccessLink() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [shortCode, slug, navigate]);
+
+  useEffect(() => {
+    if (!opened?.statusEventsUrl) return;
+    const stream = new EventSource(opened.statusEventsUrl);
+    setStatusNotice('');
+    stream.addEventListener('statuses', event => {
+      try {
+        const updates: Array<{ position: number; saleStatus: 'hold' | 'sold' | null; linked: boolean }> = JSON.parse(event.data);
+        const byPosition = new Map(updates.map(row => [row.position, row]));
+        setOpened(current => current?.content ? { ...current, content: { ...current.content,
+          artworks: current.content.artworks?.map((row, index) => {
+            const state = byPosition.get(index);
+            return state ? { ...row, saleStatus: state.saleStatus || '', saleStatusLinked: String(state.linked) } : row;
+          }),
+        } } : current);
+        setStatusNotice('');
+      } catch { setStatusNotice('판매 상태를 확인하지 못했어요. 링크를 다시 열어 주세요.'); }
+    });
+    stream.addEventListener('unavailable', () => {
+      stream.close(); setOpened(null);
+      setError('판매 상태 확인 권한이 만료되었습니다. 패스키로 링크를 다시 열어 주세요.');
+    });
+    stream.onopen = () => setStatusNotice('');
+    stream.onerror = () => setStatusNotice('판매 상태 연결을 다시 시도하고 있어요. 표시된 상태가 최신이 아닐 수 있습니다.');
+    return () => stream.close();
+  }, [opened?.statusEventsUrl]);
 
   async function handleOpen(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +81,7 @@ export default function AccessLink() {
   // it exists only behind this ceremony, so there is nowhere else to send the reader.
   if (opened?.content) return (
     <section className="page-section">
+      {statusNotice && <p className="hint-text" role="status">{statusNotice}</p>}
       <ContentView title={opened.contentTitle ?? info.title ?? '공유된 컨텐츠'} body={opened.content} />
     </section>
   );
