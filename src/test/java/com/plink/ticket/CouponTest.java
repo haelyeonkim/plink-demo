@@ -364,8 +364,13 @@ class CouponTest {
         long waiting = couponRepository.findByTicket(ticket.id).stream()
             .filter(coupon -> "ISSUED".equals(coupon.status)).count();
         assertEquals(2, waiting);
+        // The refusal left the pick in place: the counter corrects the count and goes on.
+        assertEquals("REDEEMED", coupons.redeemPicked(stand, next, Map.of("리필", 1)).get("outcome"));
+        assertEquals(1, couponRepository.findByTicket(ticket.id).stream()
+            .filter(coupon -> "ISSUED".equals(coupon.status)).count());
 
-        Map<String, Object> rest = coupons.redeemPicked(stand, pick(stand, ticket), Map.of("웰컴 커피", 1, "리필", 1));
+        Map<String, Object> rest = coupons.redeemByCode(stand, code(ticket));
+        assertEquals("REDEEMED", rest.get("outcome"), "하나만 남으면 고를 것 없이 바로 사용");
         assertEquals(0, rest.get("remaining"));
         assertEquals("ALREADY", coupons.redeemByCode(stand, code(ticket)).get("outcome"));
     }
@@ -402,18 +407,26 @@ class CouponTest {
         ResponseStatusException notListed = assertThrows(ResponseStatusException.class,
             () -> coupons.grantPicked(stand, pick, Map.of(coffee, 1)));
         assertEquals(409, notListed.getStatusCode().value());
-        // A refused answer still spent the pick.
+        // A refused answer changed nothing, so the same pick can still be answered.
+        assertEquals("GRANTED", coupons.grantPicked(stand, pick, Map.of(refill, 1)).get("outcome"));
+        // And once answered, it is spent.
         assertThrows(ResponseStatusException.class, () -> coupons.grantPicked(stand, pick, Map.of(refill, 1)));
 
         Map<String, Object> given = coupons.grantPicked(stand,
             String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick")), Map.of(refill, 2));
         assertEquals("GRANTED", given.get("outcome"));
         assertEquals("리필 ×2", given.get("title"));
-        assertEquals(2, couponRepository.findByTicket(ticket.id).size());
+        assertEquals(3, couponRepository.findByTicket(ticket.id).size());
+
+        // A count that would wrap around is a count that is too large, not a small one.
+        String huge = String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick"));
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+            () -> coupons.grantPicked(stand, huge, Map.of(refill, Integer.MAX_VALUE))).getStatusCode().value());
+        assertEquals(3, couponRepository.findByTicket(ticket.id).size());
 
         String tooMany = String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick"));
         assertEquals(409, assertThrows(ResponseStatusException.class,
-            () -> coupons.grantPicked(stand, tooMany, Map.of(refill, CouponService.MAX_PER_TICKET - 1)))
+            () -> coupons.grantPicked(stand, tooMany, Map.of(refill, CouponService.MAX_PER_TICKET - 2)))
             .getStatusCode().value(), "한 사람에게 최대 장수까지만");
 
         // Stopping the offer takes it off every terminal's list.

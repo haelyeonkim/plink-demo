@@ -2267,6 +2267,8 @@ body:has(.gate-screen) .header-plain { display: none; }
   .gate-scanline { display: none; }
   /* The rest bar still shows how much of the pause is left; it simply jumps. */
   .verdict-rest { animation: none !important; transform: scaleX(0); }
+  /* The chooser's clock is still a deadline; without motion it is simply a full bar. */
+  .coupon-pick-clock { animation: none !important; }
   /* The ring still says how much of the code's life is left; it just stops sweeping. */
   .life-run { animation-play-state: paused; }
   .seal-mark:not(.seal-working) .seal-lock { opacity: 0; }

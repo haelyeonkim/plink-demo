@@ -43,6 +43,23 @@ public class CouponRepository {
             + "VALUES (?, ?, ?, ?, ?, ?)", rows);
     }
 
+    /** One row to add: which ticket, and how many of the offer. */
+    public record Grant(long ticketId, int count) {}
+
+    /** Adds an offer to many tickets in one round trip. */
+    public void insertAll(long sessionId, long boothId, long offerId, String title, String detail,
+            List<Grant> grants) {
+        List<Object[]> rows = new ArrayList<>();
+        for (Grant grant : grants) {
+            for (int i = 0; i < grant.count(); i++) {
+                rows.add(new Object[] {sessionId, boothId, offerId, grant.ticketId(), title, detail});
+            }
+        }
+        if (rows.isEmpty()) return;
+        jdbc.batchUpdate("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
+            + "VALUES (?, ?, ?, ?, ?, ?)", rows);
+    }
+
     /**
      * How many of an offer each ticket holds, used or not. A coupon taken back does not
      * count: topping up after a void gives a fresh one.

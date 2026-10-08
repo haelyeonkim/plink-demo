@@ -33,6 +33,10 @@ import java.util.Optional;
 public class TicketPasskeyService {
     private static final String PENDING = "plink.ticket.passkey.pending";
     private static final String OTP_PREFIX = "plink.ticket.otp.";
+    /** Public so the live channel can read it from the handshake's copy of the session. */
+    public static final String VIEW_PREFIX = "plink.ticket.viewer.";
+    /** How long one passkey check keeps a registered ticket open in this browser. */
+    static final long VIEW_MILLIS = 12 * 3600_000L;
     private static final long TIMEOUT_MS = 120_000;
 
     private final TicketRepository tickets;
@@ -88,6 +92,45 @@ public class TicketPasskeyService {
     /** Marks this browser session as having proved control of the ticket's email inbox. */
     public void markEmailVerified(HttpSession session, long ticketId, String email) {
         session.setAttribute(OTP_PREFIX + ticketId, email);
+    }
+
+    /**
+     * Marks this browser as the holder's: it has just answered the ticket's passkey. A
+     * registered ticket shows nothing of itself until this is true, so the link alone,
+     * forwarded or opened on somebody else's phone, is not a window onto the ticket.
+     */
+    public void markViewer(HttpSession session, Ticket ticket) {
+        session.setAttribute(VIEW_PREFIX + ticket.id,
+            (System.currentTimeMillis() + VIEW_MILLIS) + "|" + binding(ticket));
+    }
+
+    public boolean canView(HttpSession session, Ticket ticket) {
+        return session != null && viewerUntil(session.getAttribute(VIEW_PREFIX + ticket.id), ticket) != null;
+    }
+
+    /**
+     * Who the ticket was bound to when the mark was made. Recovery and transfer both
+     * rebind it, so a phone that proved the old binding - a lost one, or the sender's -
+     * stops seeing the ticket the moment it changes hands, not twelve hours later.
+     */
+    static String binding(Ticket ticket) {
+        return ticket.holderId + "@" + (ticket.boundAt == null ? 0 : ticket.boundAt.getTime());
+    }
+
+    /**
+     * Until when a mark lets this browser see the ticket, or null when it does not. Also
+     * read from a socket's copy of the session attributes.
+     */
+    public static Long viewerUntil(Object mark, Ticket ticket) {
+        if (!(mark instanceof String value)) return null;
+        int bar = value.indexOf('|');
+        if (bar < 0 || !value.substring(bar + 1).equals(binding(ticket))) return null;
+        try {
+            long until = Long.parseLong(value.substring(0, bar));
+            return until > System.currentTimeMillis() ? until : null;
+        } catch (NumberFormatException broken) {
+            return null;
+        }
     }
 
     public Optional<String> verifiedEmail(HttpSession session, long ticketId) {
@@ -188,7 +231,9 @@ public class TicketPasskeyService {
             String direction = null;
             String toEmail = null;
             String resolvedIntent = intent == null ? "PRESENT" : intent.trim().toUpperCase(Locale.ROOT);
-            if ("TRANSFER".equals(resolvedIntent)) {
+            if ("VIEW".equals(resolvedIntent)) {
+                // Only proving it is theirs: nothing is opened, so where they are is not asked.
+            } else if ("TRANSFER".equals(resolvedIntent)) {
                 // The assertion is what authorises this specific handover; the recipient
                 // address is held server-side with the challenge, not taken on trust later.
                 toEmail = EmailOtpService.normalize(rawToEmail);
@@ -248,9 +293,13 @@ public class TicketPasskeyService {
         Ticket locked = tickets.lockById(ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
 
-        return pending.registration != null
+        Map<String, Object> result = pending.registration != null
             ? register(locked, pending, resolved, credential)
             : authenticate(locked, pending, resolved, credential, ip, userAgent);
+        // Whatever the ceremony was for, it proved this browser holds the ticket - as it is
+        // bound now, which a claim or an accepted transfer has just changed.
+        tickets.findById(ticket.id).filter(Ticket::claimed).ifPresent(bound -> markViewer(session, bound));
+        return result;
     }
 
     private Map<String, Object> register(Ticket ticket, Pending pending, TicketService.Resolved resolved,
@@ -327,6 +376,9 @@ public class TicketPasskeyService {
         }
         if ("TRANSFER".equals(pending.intent)) {
             return transfers.initiate(ticket, pending.toEmail, ip, userAgent);
+        }
+        if ("VIEW".equals(pending.intent)) {
+            return Map.of("viewer", true);
         }
         if (!ticket.bound()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,

@@ -87,10 +87,18 @@ export default function TicketPage() {
   const [used, setUsed] = useState<Handover | null>(null);
   const wasInside = useRef<boolean | null>(null);
 
+  // Set once a fresh link has been mailed: this link is dead from then on, and the page
+  // keeps saying where the new one went instead of failing to reload a token that is gone.
+  const [recoveredTo, setRecoveredTo] = useState<string | null>(null);
+  const recoveredRef = useRef(false);
+
   const reload = useCallback(async () => {
+    if (recoveredRef.current) return;
     try {
-      setTicket(await fetchTicket(sessionId, token));
+      const view = await fetchTicket(sessionId, token);
+      setTicket(view);
       setLoadError('');
+      if (view.locked) return;
       const face = await fetchFaceStatus(sessionId, token).catch(() => null);
       setFaceEnrolled(face?.enrolled ?? false);
     } catch (err) {
@@ -103,7 +111,11 @@ export default function TicketPage() {
   // The gate pushes its verdict down this channel, so the phone learns the moment it is
   // scanned rather than on the next poll. The polling below stays as the fallback for a
   // network that will not carry a socket.
+  // Opened only for a registered ticket this phone has proved: a locked ticket's channel,
+  // or a transfer link's, would be refused anyway.
+  const showing = ticket !== null && !ticket.locked && ticket.claimed;
   useEffect(() => {
+    if (!showing) return;
     const live = openLive(`/ws/tickets/${sessionId}/${token}`, message => {
       // The server only sends this ticket's movements down this socket, so anything
       // arriving here is about the person holding the phone.
@@ -118,12 +130,12 @@ export default function TicketPage() {
       }
     });
     return () => live.close();
-  }, [sessionId, token, reload]);
+  }, [sessionId, token, reload, showing]);
 
   // A network that will not carry the socket still has to show the holder that they were
   // read: the poll notices the ledger moved, and the screen says so with what it knows.
   useEffect(() => {
-    if (!ticket) return;
+    if (!ticket || ticket.locked) return;
     const inside = ticket.presence.inside;
     const before = wasInside.current;
     wasInside.current = inside;
@@ -268,6 +280,39 @@ export default function TicketPage() {
     await reload();
   });
 
+  /** Proves this phone holds the ticket, which is what opens the rest of the page. */
+  const unlock = () => guard(async () => {
+    await sealed('unlock', onStage => runCeremony(sessionId, token, { intent: 'VIEW', onStage }));
+    await reload();
+  });
+
+  // A locked ticket asks for the passkey straight away; a phone that will not raise the
+  // prompt without a tap still has the button.
+  const askedOnce = useRef(false);
+  useEffect(() => {
+    if (!ticket?.locked || askedOnce.current || !supportsPasskeys() || inAppBrowser()) return;
+    askedOnce.current = true;
+    void unlock();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket?.locked]);
+
+  // The holder on a new phone has no passkey here: the mailbox proves it is theirs, and
+  // a fresh link goes to it.
+  const [recovering, setRecovering] = useState(false);
+  const sendRecoveryCode = () => guard(async () => {
+    await requestOtp(sessionId, token, email);
+    setStage('code');
+    // The server answers alike for any address, so the page cannot say more than this.
+    setNotice('입장권을 받은 주소가 맞다면 인증번호가 메일로 갔어요. 메일함을 확인해 주세요.');
+  });
+  const recoverByEmail = () => guard(async () => {
+    await verifyOtp(sessionId, token, email, code);
+    const result = await reissueTicket(sessionId, token);
+    recoveredRef.current = true;
+    setRecovering(false);
+    setRecoveredTo(String(result.sentTo));
+  });
+
   const reissue = () => guard(async () => {
     const result = await reissueTicket(sessionId, token);
     setNotice(`${result.sentTo} 로 새 링크를 보냈어요. 이 링크와 기존 기기는 더 이상 사용할 수 없어요.`);
@@ -275,6 +320,20 @@ export default function TicketPage() {
     await reload();
   });
 
+  if (recoveredTo) {
+    return (
+      <section className="page-section page-tight">
+        <div className="access-card">
+          <h2>새 링크를 보냈어요</h2>
+          <p className="notice-text" role="status">{recoveredTo} 로 새 입장권 링크를 보냈어요.</p>
+          <p className="hint-text">
+            메일의 새 링크를 이 휴대폰에서 열어 다시 등록해 주세요. 이전 기기와 지금 이 링크는 더 이상
+            사용할 수 없어요.
+          </p>
+        </div>
+      </section>
+    );
+  }
   if (loadError) {
     return (
       <section className="page-section page-tight">
@@ -288,6 +347,70 @@ export default function TicketPage() {
   }
   if (!ticket) {
     return <section className="page-section page-tight"><p className="loading" role="status">입장권을 확인하고 있어요.</p></section>;
+  }
+  if (ticket.locked) {
+    return (
+      <section className="page-section page-tight ticket-page">
+        <div className="access-card">
+          {ceremony && <CeremonySeal ceremony={ceremony} />}
+          <p className="eyebrow center"><span></span> {ticket.event.name}</p>
+          <h2>본인 확인이 필요해요</h2>
+          <dl className="ticket-meta">
+            <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
+            {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
+          </dl>
+          <p className="hint-text">
+            이미 등록된 입장권이에요. 등록한 휴대폰의 지문·얼굴 인증을 거쳐야 좌석과 입장 정보가 보여요.
+          </p>
+          {inAppBrowser() && (
+            <p className="warn-text" role="alert">
+              카카오톡 등 앱 안의 브라우저에서는 지문·얼굴 인증을 쓸 수 없어요.
+              오른쪽 위 메뉴에서 <b>기본 브라우저로 열기</b>를 선택해 주세요.
+            </p>
+          )}
+          {notice && <p className="notice-text" role="status">{notice}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
+          <button className="btn-primary" onClick={unlock} disabled={busy || !supportsPasskeys()}>
+            패스키로 열기
+          </button>
+
+          {/* Not on the registered phone: the only way forward is a new link to the
+              mailbox, which retires this one. */}
+          <button className="manage-toggle" aria-expanded={recovering}
+            onClick={() => { setRecovering(value => !value); setStage('email'); setError(''); }}>
+            휴대폰을 바꿨거나 패스키가 없어요
+            <span className="entity-chevron" aria-hidden="true">{recovering ? '▴' : '▾'}</span>
+          </button>
+          {recovering && (
+            <div className="manage-panel">
+              <p className="hint-text">
+                입장권을 받은 이메일로 인증하면 새 링크를 보내 드려요. 새 링크로 이 휴대폰에 다시
+                등록하면 이전 기기와 지금 링크는 사용할 수 없게 됩니다.
+              </p>
+              {stage !== 'code' ? (
+                <form onSubmit={e => { e.preventDefault(); sendRecoveryCode(); }}>
+                  <div className="field">
+                    <label htmlFor="recover-email">입장권을 받은 이메일</label>
+                    <input id="recover-email" type="email" autoComplete="email" required
+                      value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+                  </div>
+                  <button className="btn-secondary" type="submit" disabled={busy}>인증번호 받기</button>
+                </form>
+              ) : (
+                <form onSubmit={e => { e.preventDefault(); recoverByEmail(); }}>
+                  <div className="field">
+                    <label htmlFor="recover-code">인증번호 6자리</label>
+                    <input id="recover-code" inputMode="numeric" maxLength={6} required
+                      value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} />
+                  </div>
+                  <button className="btn-secondary" type="submit" disabled={busy}>확인하고 새 링크 받기</button>
+                </form>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    );
   }
   if (grant) {
     return (

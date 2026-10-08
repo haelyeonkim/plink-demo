@@ -16,6 +16,8 @@ interface SessionRow {
   reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
   claimRequiresOtp: boolean;
+  /** A rehearsal: recipient emails are shown in full in the console's lists. */
+  testEvent: boolean;
   seats: string[]; tiers: string[];
   /** Issued so far; the list of events says it without opening each one. */
   ticketCount?: number;
@@ -454,13 +456,16 @@ export default function TicketAdmin() {
   const saveGrants = () => {
     const gate = grantGate;
     if (!gate) return;
-    const items = [...grantDraft.entries()].map(([offerId, auto]) => ({ offerId, auto }));
-    setGrantGate(null);
+    // A terminal that admits nobody cannot give on entry, whatever it was set to before.
+    const items = [...grantDraft.entries()]
+      .map(([offerId, auto]) => ({ offerId, auto: auto && admitsPeople(gate) }));
     void act(async () => {
       await read(await mutate(`/api/admin/gates/${gate.gateId}/grants`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       }));
+      // Closed only once it has saved: a refusal leaves the choices where they were.
+      setGrantGate(null);
       setNotice(items.length === 0
         ? `${gate.label || gate.gateId} 단말은 이제 쿠폰을 부여하지 않아요.`
         : `${gate.label || gate.gateId} 단말이 쿠폰 ${items.length}종을 부여할 수 있어요.`);
@@ -684,6 +689,14 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
+  // Turning an event into a test shows every recipient's address in full, so it asks.
+  const [confirmTest, setConfirmTest] = useState<HTMLFormElement | null>(null);
+  const submitDetails = (form: HTMLFormElement) => {
+    const turningOn = new FormData(form).get('testEvent') === 'on' && !session?.testEvent;
+    if (turningOn) setConfirmTest(form);
+    else void saveDetails(form);
+  };
+
   const saveDetails = (form: HTMLFormElement) => act(async () => {
     const data = new FormData(form);
     const startsAt = String(data.get('startsAt') || '');
@@ -696,6 +709,7 @@ export default function TicketAdmin() {
         // The input speaks local time; the API speaks instants.
         startsAt: startsAt ? new Date(startsAt).toISOString() : null,
         gateOpensAt: gateOpensAt ? new Date(gateOpensAt).toISOString() : null,
+        testEvent: data.get('testEvent') === 'on' ? 'true' : 'false',
       }),
     }));
     setNotice('행사 정보를 저장했어요. 발급된 입장권에도 바로 반영됩니다.');
@@ -808,6 +822,7 @@ export default function TicketAdmin() {
                   {row.venue && <span>{row.venue}</span>}
                   {row.gateOpensAt && <span>입장 {shortTime(row.gateOpensAt)}</span>}
                   {row.ticketCount !== undefined && <span>발급 {row.ticketCount.toLocaleString()}장</span>}
+                  {row.testEvent && <span>테스트 행사</span>}
                 </>,
                 badge: <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'off' : 'in'}`}>
                   {when === 'today' ? '오늘' : when === 'past' ? '지난 행사' : '예정'}
@@ -1157,6 +1172,7 @@ export default function TicketAdmin() {
               event: [
                 ['행사 시각', shortTime(session.startsAt) || '-'],
                 ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
+                ['이메일 표시', session.testEvent ? '테스트 행사 · 전체 표시' : '가림'],
               ],
               policy: [
                 ['재입장', session.reentryMode === 'DISABLED' ? '불가'
@@ -1184,7 +1200,7 @@ export default function TicketAdmin() {
 
           {settingsTab === 'event' && (
             <form key={`details-${session.id}`} className="settings-form"
-              onSubmit={e => { e.preventDefault(); saveDetails(e.currentTarget); }}>
+              onSubmit={e => { e.preventDefault(); submitDetails(e.currentTarget); }}>
               <div className="field">
                 <label htmlFor="event-name">이름</label>
                 <input id="event-name" name="name" required defaultValue={session.name} />
@@ -1205,6 +1221,14 @@ export default function TicketAdmin() {
                     defaultValue={localInput(session.gateOpensAt)} />
                 </div>
               </div>
+              <label className="field-inline">
+                <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
+                테스트 행사
+              </label>
+              <p className="hint-text">
+                테스트 행사는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
+                명단이 들어간 행사에는 켜지 마세요.
+              </p>
               <p className="hint-text">
                 입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
                 있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
@@ -1441,6 +1465,17 @@ export default function TicketAdmin() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmTest != null}
+        title="테스트 행사로 바꿀까요?"
+        message={`발급 현황과 쿠폰 목록에 받는 사람의 이메일이 가리지 않고 전부 보입니다. `
+          + `실제 관람객 명단이 들어 있는 행사라면 취소하세요.`
+          + (session?.ticketCount ? ` 지금 입장권 ${session.ticketCount.toLocaleString()}장이 발급되어 있어요.` : '')}
+        confirmLabel="테스트 행사로 저장"
+        onConfirm={() => { const form = confirmTest; setConfirmTest(null); if (form) void saveDetails(form); }}
+        onCancel={() => setConfirmTest(null)}
+      />
 
       <ConfirmDialog
         open={confirmField != null}

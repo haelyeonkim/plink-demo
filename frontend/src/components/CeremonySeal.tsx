@@ -13,13 +13,14 @@ import type { CeremonyStage } from '../ticket/passkey';
 export type SealState = CeremonyStage | 'done' | 'failed';
 
 export interface Ceremony {
-  kind: 'claim' | 'open';
+  kind: 'claim' | 'open' | 'unlock';
   state: SealState;
 }
 
 const STEPS: Record<Ceremony['kind'], [string, string, string]> = {
   claim: ['인증 요청을 받는 중', '이 기기에서 지문·얼굴 확인', '이 기기에만 입장권 봉인'],
   open: ['입장 요청을 만드는 중', '이 기기에서 지문·얼굴 확인', '서버가 서명을 검증'],
+  unlock: ['확인 요청을 만드는 중', '이 기기에서 지문·얼굴 확인', '서버가 서명을 검증'],
 };
 
 const TITLES: Record<Ceremony['kind'], Record<'working' | 'done' | 'failed', string>> = {
@@ -31,6 +32,11 @@ const TITLES: Record<Ceremony['kind'], Record<'working' | 'done' | 'failed', str
   open: {
     working: '본인 확인 중',
     done: '본인 확인 완료',
+    failed: '확인하지 못했어요',
+  },
+  unlock: {
+    working: '본인 확인 중',
+    done: '입장권을 열었어요',
     failed: '확인하지 못했어요',
   },
 };

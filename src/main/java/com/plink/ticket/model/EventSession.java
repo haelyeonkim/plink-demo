@@ -29,6 +29,8 @@ public class EventSession {
             .map(String::trim).filter(value -> !value.isEmpty()).distinct().toList();
     }
     public boolean exitScanRequired;
+    /** A rehearsal: the console shows recipient emails in full. */
+    public boolean testEvent;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }
     public boolean reentryLimited() { return "LIMITED".equals(reentryMode); }

@@ -20,6 +20,11 @@ export interface TicketCoupon {
 export interface TicketView {
   ticketRef: string;
   claimed: boolean;
+  /**
+   * A registered ticket opened by a browser that has not answered its passkey: only the
+   * event is filled in, and the page asks for the passkey before anything else.
+   */
+  locked?: boolean;
   /** HOLDER opened their own ticket; RECIPIENT opened a transfer link. */
   role: 'HOLDER' | 'RECIPIENT';
   transfer: TicketTransfer | null;

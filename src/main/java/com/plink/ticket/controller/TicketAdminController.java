@@ -38,6 +38,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin")
 public class TicketAdminController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TicketAdminController.class);
     private final EventSessionRepository sessions;
     private final TicketRepository tickets;
     private final GateRepository gates;
@@ -111,7 +112,19 @@ public class TicketAdminController {
      * ticket keeps working across the change.
      */
     @PutMapping("/sessions/{id}")
-    public Map<String, Object> updateSession(@PathVariable long id, @RequestBody Map<String, String> body) {
+    public Map<String, Object> updateSession(@PathVariable long id, @RequestBody Map<String, String> body,
+            Authentication user) {
+        Map<String, Object> result = updateSession(id, body);
+        if (body.get("testEvent") != null) {
+            // Marking an event as a test shows every recipient's address in full, so who
+            // switched it, and which way, is written down.
+            log.info("audit: event {} test_event={} by {}", id, result.get("testEvent"),
+                CurrentUser.of(user).map(current -> current.email).orElse("unknown"));
+        }
+        return result;
+    }
+
+    public Map<String, Object> updateSession(long id, Map<String, String> body) {
         EventSession current = ticketService.requireSession(id);
         String name = required(body.get("name"), "행사 이름을 입력해 주세요.");
         Timestamp startsAt = body.get("startsAt") == null || body.get("startsAt").isBlank()
@@ -127,6 +140,8 @@ public class TicketAdminController {
         String venue = body.get("venue") == null || body.get("venue").isBlank()
             ? null : body.get("venue").trim();
         sessions.updateDetails(id, name, venue, startsAt, gateOpensAt);
+        // Left out, it stays as it was: an older console does not know the setting.
+        if (body.get("testEvent") != null) sessions.updateTestEvent(id, "true".equals(body.get("testEvent")));
         return describe(ticketService.requireSession(id));
     }
 
@@ -515,7 +530,7 @@ public class TicketAdminController {
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "ALL") String filter) {
-        ticketService.requireSession(id);
+        boolean plain = ticketService.requireSession(id).testEvent;
         int limit = pageSize(size);
         int offset = Math.max(page, 0) * limit;
         TicketRepository.Filter narrowed = ticketFilter(filter);
@@ -523,7 +538,7 @@ public class TicketAdminController {
         List<Ticket> found = tickets.search(id, narrowed, query, limit, offset);
         Map<Long, Presence> presence = admissions.findAll(found.stream().map(ticket -> ticket.id).toList());
         List<Map<String, Object>> items = new ArrayList<>();
-        for (Ticket ticket : found) items.add(ticketRow(ticket, presence.get(ticket.id)));
+        for (Ticket ticket : found) items.add(ticketRow(ticket, presence.get(ticket.id), plain));
         return paged(items, tickets.count(id, narrowed, query), page, limit);
     }
 
@@ -561,7 +576,12 @@ public class TicketAdminController {
         return result;
     }
 
-    private Map<String, Object> ticketRow(Ticket ticket, Presence presence) {
+    /** A test event's list shows addresses in full; a real one masks them. */
+    private static String email(String address, boolean plain) {
+        return plain ? address : TicketService.mask(address);
+    }
+
+    private Map<String, Object> ticketRow(Ticket ticket, Presence presence, boolean plain) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("ticketId", ticket.id);
         row.put("ticketRef", ticket.ticketRef);
@@ -569,8 +589,8 @@ public class TicketAdminController {
         row.put("tier", ticket.tier);
         row.put("attributes", readAttributes(ticket.attributes));
         row.put("status", ticket.status);
-        row.put("issuedToEmail", TicketService.mask(ticket.issuedToEmail));
-        row.put("holderEmail", TicketService.mask(ticket.holderEmail));
+        row.put("issuedToEmail", email(ticket.issuedToEmail, plain));
+        row.put("holderEmail", email(ticket.holderEmail, plain));
         row.put("reissueCount", ticket.reissueCount);
         row.put("transferCount", ticket.transferCount);
         row.put("phone", ticket.phone);
@@ -700,7 +720,7 @@ public class TicketAdminController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long boothId,
             @RequestParam(required = false) String status) {
-        ticketService.requireSession(id);
+        boolean plain = ticketService.requireSession(id).testEvent;
         int limit = pageSize(size);
         String state = blankToNull(status) == null ? null : status.toUpperCase(java.util.Locale.ROOT);
         if (state != null && !List.of("ISSUED", "REDEEMED", "VOID").contains(state)) {
@@ -720,7 +740,7 @@ public class TicketAdminController {
             row.put("ticketId", coupon.ticketId());
             row.put("ticketRef", coupon.ticketRef());
             row.put("seat", coupon.seat());
-            row.put("issuedToEmail", TicketService.mask(coupon.issuedToEmail()));
+            row.put("issuedToEmail", email(coupon.issuedToEmail(), plain));
             row.put("redeemedAt", coupon.redeemedAt() == null ? null : coupon.redeemedAt().toInstant().toString());
             items.add(row);
         }
@@ -995,6 +1015,7 @@ public class TicketAdminController {
         row.put("venue", session.venue);
         row.put("startsAt", session.startsAt.toInstant().toString());
         row.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
+        row.put("testEvent", session.testEvent);
         row.put("reentryMode", session.reentryMode);
         row.put("reentryMax", session.reentryMax);
         row.put("reentryGraceMinutes", session.reentryGraceMinutes);
