@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { fetchContent, importContentPdf, importContentUrl, saveContent, uploadContentImage } from '../api';
 
 interface Artwork {
+  artworkId?: string;
   image: string; artist: string; title: string; year: string; medium: string;
   width: string; height: string; depth: string; unit: 'cm' | 'inch';
   description: string; price: string;
@@ -94,6 +95,7 @@ export default function ContentCreate() {
     try {
       const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
         { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) }, sourceType, sourceRef);
+      setArtworks((document.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork)));
       setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
       if (!editing) navigate(`/contents/${document.id}/edit`, { replace: true });
     } catch (err) {

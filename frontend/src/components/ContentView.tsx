@@ -18,6 +18,10 @@ export default function ContentView({ title, body }: { title: string; body: Exhi
             {artwork.image && <img src={artwork.image} alt={artwork.title || `작품 ${index + 1}`} />}
             <figcaption>
               <b>{artwork.title || `작품 ${index + 1}`}</b>
+              {artwork.saleStatusLinked !== undefined && <span className={`artwork-status ${artwork.saleStatus || 'unsold'}`}>
+                {artwork.saleStatusLinked !== 'true' ? '판매 상태 확인 필요'
+                  : artwork.saleStatus === 'hold' ? '대기' : artwork.saleStatus === 'sold' ? '판매 완료' : '미판매'}
+              </span>}
               {artwork.artist && <span>{artwork.artist}</span>}
               {(artwork.year || artwork.medium) && (
                 <span>{[artwork.year, artwork.medium].filter(Boolean).join(' · ')}</span>

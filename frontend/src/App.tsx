@@ -9,6 +9,7 @@ import LinkCreate from './components/LinkCreate';
 import ContentCreate from './components/ContentCreate';
 import ContentList from './components/ContentList';
 import AdminConsole from './components/AdminConsole';
+import AdminArtworkList from './components/AdminArtworkList';
 import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
 import Privacy from './components/Privacy';
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/content/create" element={<RequireAdmin scope="canLinks"><LegacyContentCreate /></RequireAdmin>} />
           {/* Administration sits on its own path, away from the product consoles. */}
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
+          <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/accounts" element={<Navigate to="/admin" replace />} />
           <Route path="/create" element={<Navigate to="/links/new" replace />} />
           <Route path="/manage" element={<Navigate to="/links" replace />} />

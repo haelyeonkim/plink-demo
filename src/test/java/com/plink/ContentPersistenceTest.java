@@ -34,6 +34,50 @@ class ContentPersistenceTest {
     @MockitoBean ContentImportService importer;
 
     @ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @ValueSource(strings = {"hold", "sold"})
+    void saleStatusPersistsAndCanBeCleared(String saleStatus) throws Exception {
+        var owner = oidcLogin().idToken(token -> token.subject("sale-status-owner"));
+        var mapper = new ObjectMapper();
+        Map<String, Object> work = new java.util.LinkedHashMap<>();
+        work.put("title", "Sale status work");
+        work.put("saleStatus", saleStatus);
+        Map<String, Object> request = Map.of("title", "Sale status", "body", Map.of("artworks", List.of(work)));
+        String response = mvc.perform(post("/api/contents").with(owner).with(csrf())
+                .contentType("application/json").content(mapper.writeValueAsString(request)))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long id = mapper.readTree(response).get("id").asLong();
+        String expected = saleStatus == null || saleStatus.isEmpty() ? null : saleStatus;
+        var row = artworks.findByOwner("sale-status-owner").stream()
+            .filter(artwork -> artwork.sourceContentId() == id).findFirst().orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(row.saleStatus()).isEqualTo(expected);
+        org.assertj.core.api.Assertions.assertThat(row.body().get("saleStatus")).isEqualTo(expected);
+        String library = mvc.perform(get("/api/contents/artworks").with(owner))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        for (var entry : mapper.readTree(library)) {
+            if (entry.get("sourceContentId").asLong() != id) continue;
+            org.assertj.core.api.Assertions.assertThat(entry.has("saleStatus")).isTrue();
+            org.assertj.core.api.Assertions.assertThat(entry.get("saleStatus").isNull() ? null
+                : entry.get("saleStatus").asText()).isEqualTo(expected);
+        }
+
+        work.put("saleStatus", "invalid");
+        mvc.perform(put("/api/contents/" + id).with(owner).with(csrf())
+                .contentType("application/json").content(mapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest());
+        org.assertj.core.api.Assertions.assertThat(artworks.findByOwner("sale-status-owner").stream()
+            .filter(artwork -> artwork.sourceContentId() == id).findFirst().orElseThrow().saleStatus())
+            .isEqualTo(expected);
+
+        work.put("saleStatus", null);
+        mvc.perform(put("/api/contents/" + id).with(owner).with(csrf())
+                .contentType("application/json").content(mapper.writeValueAsString(request)))
+            .andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(artworks.findByOwner("sale-status-owner").stream()
+            .filter(artwork -> artwork.sourceContentId() == id).findFirst().orElseThrow().saleStatus()).isNull();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"URL", "PDF"})
     void importedContentSurvivesNewRequestsAndIsPrivateToItsOwner(String type) throws Exception {
         Map<String, String> work = Map.ofEntries(

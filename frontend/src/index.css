@@ -2295,3 +2295,27 @@ body:has(.gate-screen) .header-plain { display: none; }
 .source-icon .ui-icon { font-size: 24px; }
 .lock .ui-icon { font-size: 24px; }
 .link-card button .ui-icon { float: none; }
+
+.admin-artwork-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 24px 0; }
+.admin-artwork-filters .field { margin: 0; flex: 1 1 160px; }
+.admin-artwork-filters .field:first-child { flex: 3 1 260px; }
+.admin-artwork-filters > button { width: auto; margin: 0; }
+.admin-artwork-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.admin-artwork-table { border-collapse: collapse; width: 100%; min-width: 950px; font-size: 13px; text-align: left; }
+.admin-artwork-table th { background: var(--bg-section); white-space: nowrap; }
+.admin-artwork-table th, .admin-artwork-table td { padding: 14px; border-bottom: 1px solid var(--line); }
+.admin-artwork-table tr:last-child td { border-bottom: 0; }
+.admin-artwork-table td { max-width: 260px; overflow-wrap: anywhere; }
+.admin-artwork-table small { display: block; margin-top: 5px; color: #68708a; }
+.admin-artwork-work { display: flex; align-items: center; gap: 12px; min-width: 200px; }
+.admin-artwork-work img, .admin-artwork-placeholder { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: var(--bg-section); flex-shrink: 0; }
+.admin-artwork-placeholder { display: grid; place-items: center; font-size: 10px; color: #68708a; }
+.artwork-status { display: inline-block; white-space: nowrap; padding: 5px 9px; border-radius: 20px; background: #edf5ef; color: #356447; font-size: 12px; }
+.artwork-status.hold { background: #fff3d7; color: #795812; }
+.artwork-status.sold { background: #edf0f5; color: #5b647a; }
+.admin-artwork-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 24px; }
+.admin-artwork-pagination .btn-secondary { width: auto; margin: 0; }
+.legacy-artwork-links { margin: 20px 0; }
+.legacy-artwork-links > summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.legacy-artwork-picker { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
+.content-view .artwork-status { align-self: flex-start; }

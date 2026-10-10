@@ -42,6 +42,7 @@ export function supportsPasskeys() {
 /** What the link opens: an address elsewhere, or a document written by the sender. */
 export interface Opened {
   originalUrl: string | null;
+  statusEventsUrl?: string;
   contentTitle?: string;
   content?: { intro?: string; columns?: '1' | '2'; artworks?: Array<Record<string, string>> };
 }
