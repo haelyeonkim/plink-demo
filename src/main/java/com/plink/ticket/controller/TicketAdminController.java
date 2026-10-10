@@ -183,6 +183,16 @@ public class TicketAdminController {
             sessions.updateCrowdLevels(id, busy, steady);
             publishCrowding(id);
         }
+        if (body.containsKey("dayCloseExit") || body.containsKey("dayCloseHour")) {
+            int hour = number(body.get("dayCloseHour"), current.dayCloseHour);
+            if (hour < 0 || hour > 23) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "날짜 기준 시각은 0시부터 23시 사이예요.");
+            }
+            sessions.updateDayClose(id,
+                body.get("dayCloseExit") == null ? current.dayCloseExit
+                    : Boolean.parseBoolean(body.get("dayCloseExit").toString()),
+                hour);
+        }
         if (body.containsKey("claimRequiresOtp")) {
             sessions.updateClaimPolicy(id, Boolean.parseBoolean(body.get("claimRequiresOtp").toString()));
         }
@@ -1016,6 +1026,8 @@ public class TicketAdminController {
         row.put("startsAt", session.startsAt.toInstant().toString());
         row.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         row.put("testEvent", session.testEvent);
+        row.put("dayCloseExit", session.dayCloseExit);
+        row.put("dayCloseHour", session.dayCloseHour);
         row.put("reentryMode", session.reentryMode);
         row.put("reentryMax", session.reentryMax);
         row.put("reentryGraceMinutes", session.reentryGraceMinutes);

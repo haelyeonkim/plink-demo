@@ -116,6 +116,26 @@ public class AdmissionRepository {
             + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ?", entryCount, reentryCount, gateId, ticketId);
     }
 
+    /**
+     * Closes an entry only if it is still the one that was read: a holder who came back
+     * in since then has a newer entry, and a background job must not wipe it.
+     *
+     * @return whether the row was closed
+     */
+    public boolean markOutsideIfSince(long ticketId, Timestamp insideSince) {
+        return jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE', inside_since = NULL, "
+            + "last_exit_at = CURRENT_TIMESTAMP, last_event_at = CURRENT_TIMESTAMP, last_gate_id = NULL, "
+            + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ? AND state = 'INSIDE' AND inside_since = ?",
+            ticketId, insideSince) == 1;
+    }
+
+    /** Open entries in events that close the day, with each event's closing hour. */
+    public List<Map<String, Object>> dayCloseCandidates() {
+        return jdbc.queryForList("SELECT p.ticket_id, p.session_id, p.inside_since, s.day_close_hour "
+            + "FROM ticket_presence p JOIN event_session s ON s.id = p.session_id "
+            + "WHERE p.state = 'INSIDE' AND s.day_close_exit = TRUE AND p.inside_since IS NOT NULL");
+    }
+
     public void markOutside(long ticketId, String gateId) {
         jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE', inside_since = NULL, "
             + "last_exit_at = CURRENT_TIMESTAMP, last_event_at = CURRENT_TIMESTAMP, last_gate_id = ?, "

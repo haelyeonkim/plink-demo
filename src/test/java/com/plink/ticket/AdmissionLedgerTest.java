@@ -256,12 +256,49 @@ class AdmissionLedgerTest {
         assertTrue(f.refuse(f.entry, "IN").getReason().contains("이미 장내에 있는"),
             "같은 날에는 그대로 막혀야 합니다");
 
-        // The holder went home without scanning out; the ledger still says INSIDE.
+        // The holder went home without scanning out; the ledger still says INSIDE. More
+        // than a day back, so it is yesterday whatever hour the suite runs at.
         ledger.backdateInside(f.ticket.id,
-            Timestamp.from(Instant.now().minus(20, ChronoUnit.HOURS)));
+            Timestamp.from(Instant.now().minus(30, ChronoUnit.HOURS)));
 
         Map<String, Object> next = f.scan(f.entry, "IN");
         assertEquals("ADMITTED", next.get("outcome"), "날이 바뀌면 다시 입장할 수 있어야 합니다");
+    }
+
+    /** An event that closes the day exits yesterday's open entries without a scan. */
+    @Test void anEventThatClosesTheDayExitsYesterdaysEntries(
+            @Autowired com.plink.ticket.service.TicketMaintenance maintenance) {
+        Fixture closing = new Fixture("UNLIMITED", 0, 45, 0, "STRICT");
+        sessions.updateDayClose(closing.sessionId, true, 0);
+        Fixture open = new Fixture("UNLIMITED", 0, 45, 0, "STRICT");
+        assertEquals("ADMITTED", closing.scan(closing.entry, "IN").get("outcome"));
+        assertEquals("ADMITTED", open.scan(open.entry, "IN").get("outcome"));
+
+        // Today's entry is left alone.
+        maintenance.closeYesterday();
+        assertTrue(ledger.find(closing.ticket.id).orElseThrow().inside());
+
+        Timestamp yesterday = Timestamp.from(Instant.now().minus(30, ChronoUnit.HOURS));
+        ledger.backdateInside(closing.ticket.id, yesterday);
+        ledger.backdateInside(open.ticket.id, yesterday);
+        maintenance.closeYesterday();
+
+        assertFalse(ledger.find(closing.ticket.id).orElseThrow().inside(), "날이 바뀌면 퇴장 처리");
+        assertTrue(ledger.find(open.ticket.id).orElseThrow().inside(), "끄면 그대로 둡니다");
+        assertTrue(ledger.recentEvents(closing.sessionId, 5).stream()
+            .anyMatch(row -> "날짜 변경 자동 퇴장".equals(String.valueOf(row.get("reason")))));
+    }
+
+    /** The venue's day, not the server's: Seoul turns over at its own midnight. */
+    @Test void theDayTurnsAtTheVenuesHour() {
+        java.time.ZoneId seoul = java.time.ZoneId.of("Asia/Seoul");
+        Instant lateNight = java.time.ZonedDateTime.of(2026, 10, 10, 23, 30, 0, 0, seoul).toInstant();
+        Instant pastMidnight = java.time.ZonedDateTime.of(2026, 10, 11, 0, 30, 0, 0, seoul).toInstant();
+        Instant dawn = java.time.ZonedDateTime.of(2026, 10, 11, 5, 30, 0, 0, seoul).toInstant();
+        assertTrue(com.plink.ticket.service.VenueDay.changed(lateNight, pastMidnight, seoul, 0));
+        assertFalse(com.plink.ticket.service.VenueDay.changed(lateNight, pastMidnight, seoul, 5),
+            "새벽 5시 기준이면 0시 30분은 아직 전날");
+        assertTrue(com.plink.ticket.service.VenueDay.changed(lateNight, dawn, seoul, 5));
     }
 
     @Test void staleAndForgedCodesAreRefused() {

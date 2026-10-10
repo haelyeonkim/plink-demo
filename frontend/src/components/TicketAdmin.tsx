@@ -18,6 +18,8 @@ interface SessionRow {
   claimRequiresOtp: boolean;
   /** A rehearsal: recipient emails are shown in full in the console's lists. */
   testEvent: boolean;
+  /** Close open entries once the venue's day turns over, at this hour (venue time). */
+  dayCloseExit: boolean; dayCloseHour: number;
   seats: string[]; tiers: string[];
   /** Issued so far; the list of events says it without opening each one. */
   ticketCount?: number;
@@ -121,6 +123,15 @@ const UNMATCHED_LABEL: Record<string, string> = {
   LENIENT: '다시 들어올 때 자동 보정',
   AUTO_EXIT: '시간이 지나면 자동 퇴장',
 };
+/** 0 -> "자정", 5 -> "새벽 5시", 14 -> "오후 2시": how the hour is said, not written. */
+function hourLabel(hour: number): string {
+  if (hour === 0) return '자정';
+  if (hour < 6) return `새벽 ${hour}시`;
+  if (hour < 12) return `오전 ${hour}시`;
+  if (hour === 12) return '정오';
+  return `오후 ${hour - 12}시`;
+}
+
 /** What a gate does, in the words on the screen rather than the ones in the database. */
 const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
 type CouponFilter = 'ALL' | 'ISSUED' | 'REDEEMED' | 'VOID';
@@ -728,6 +739,8 @@ export default function TicketAdmin() {
         exitScanRequired: data.get('exitScanRequired') === 'on',
         claimRequiresOtp: data.get('claimRequiresOtp') === 'on',
         unmatchedExit: data.get('unmatchedExit'),
+        dayCloseExit: data.get('dayCloseExit') === 'on',
+        dayCloseHour: Number(data.get('dayCloseHour') ?? 0),
       }),
     }));
     setNotice('정책을 저장했어요. 다음 스캔부터 적용됩니다.');
@@ -1182,6 +1195,7 @@ export default function TicketAdmin() {
                 ['퇴장', `${session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · `
                   + (UNMATCHED_LABEL[session.unmatchedExit] ?? session.unmatchedExit)],
                 ['자동 보정', `${session.autoExitAfterMinutes}분 경과 후`],
+                ['날짜 변경', session.dayCloseExit ? `${hourLabel(session.dayCloseHour)} 지나면 자동 퇴장` : '끔'],
                 ['등록 인증', session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'],
               ],
               crowd: [
@@ -1288,6 +1302,24 @@ export default function TicketAdmin() {
                 <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
                 퇴장 스캔 필수
               </label>
+              <div className="form-row day-close-row">
+                <label className="field-inline">
+                  <input name="dayCloseExit" type="checkbox" defaultChecked={session.dayCloseExit} />
+                  날이 바뀌면 자동 퇴장
+                </label>
+                <div className="field">
+                  <label htmlFor="day-close-hour">날짜 기준 시각</label>
+                  <select id="day-close-hour" name="dayCloseHour" defaultValue={session.dayCloseHour}>
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={hour} value={hour}>{hourLabel(hour)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="hint-text day-close-hint">
+                켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
+                처리합니다. 자정을 넘겨 계속되는 행사라면 기준 시각을 새벽으로 늦추세요.
+              </p>
               <label className="field-inline">
                 <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
                 등록 시 이메일 인증 필요

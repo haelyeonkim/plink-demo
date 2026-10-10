@@ -31,6 +31,10 @@ public class EventSession {
     public boolean exitScanRequired;
     /** A rehearsal: the console shows recipient emails in full. */
     public boolean testEvent;
+    /** Close open entries once the venue's day turns over, at {@link #dayCloseHour}. */
+    public boolean dayCloseExit;
+    /** The hour (0-23, venue time) at which one day becomes the next. */
+    public int dayCloseHour;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }
     public boolean reentryLimited() { return "LIMITED".equals(reentryMode); }

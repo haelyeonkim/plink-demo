@@ -25,8 +25,17 @@ public class TicketMaintenance {
     private final TransferService transfers;
     private final com.plink.ticket.face.FaceService faces;
 
+    private final com.plink.ticket.config.TicketProperties properties;
+    private final com.plink.ticket.live.LiveEvents live;
+    private final com.plink.ticket.live.LiveSnapshots snapshots;
+
     public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions,
-            TransferService transfers, com.plink.ticket.face.FaceService faces) {
+            TransferService transfers, com.plink.ticket.face.FaceService faces,
+            com.plink.ticket.config.TicketProperties properties, com.plink.ticket.live.LiveEvents live,
+            com.plink.ticket.live.LiveSnapshots snapshots) {
+        this.properties = properties;
+        this.live = live;
+        this.snapshots = snapshots;
         this.nonces = nonces;
         this.admissions = admissions;
         this.transfers = transfers;
@@ -71,10 +80,49 @@ public class TicketMaintenance {
             if (insideSince.toInstant().isAfter(now.minus(threshold, ChronoUnit.MINUTES))) continue;
             long ticketId = ((Number) row.get("ticket_id")).longValue();
             long sessionId = ((Number) row.get("session_id")).longValue();
-            admissions.markOutside(ticketId, null);
+            if (!admissions.markOutsideIfSince(ticketId, insideSince)) continue;
             admissions.append(ticketId, sessionId, "OUT", null, "STAFF", "EXITED",
                 "AUTO_EXIT 정책에 따른 자동 정리", null);
+            announce(sessionId, ticketId);
             log.info("Auto-exited ticket {} after {} minutes inside", ticketId, threshold);
         }
+    }
+
+    /**
+     * Closes yesterday's open entries in events that asked for it. Runs every few
+     * minutes, so the day closes shortly after the venue's turn of the day rather than at
+     * the holder's next scan - which may never come.
+     */
+    @Scheduled(initialDelay = 150_000, fixedDelay = 300_000)
+    public void closeYesterday() {
+        Instant now = Instant.now();
+        java.time.ZoneId zone = properties.venueZoneId();
+        java.util.Set<Long> touched = new java.util.HashSet<>();
+        for (java.util.Map<String, Object> row : admissions.dayCloseCandidates()) {
+            Timestamp insideSince = (Timestamp) row.get("inside_since");
+            int hour = ((Number) row.get("day_close_hour")).intValue();
+            if (!VenueDay.changed(insideSince.toInstant(), now, zone, hour)) continue;
+            long ticketId = ((Number) row.get("ticket_id")).longValue();
+            long sessionId = ((Number) row.get("session_id")).longValue();
+            // Only the entry that was read: one made since then is today's, and stays.
+            if (!admissions.markOutsideIfSince(ticketId, insideSince)) continue;
+            admissions.append(ticketId, sessionId, "OUT", null, "STAFF", "EXITED",
+                "날짜 변경 자동 퇴장", null);
+            live.publishForTicket(sessionId, ticketId, "PRESENCE", snapshots.presence(ticketId));
+            touched.add(sessionId);
+        }
+        // One update per event, not one per person: a whole hall can close at midnight.
+        for (long sessionId : touched) {
+            live.publish(sessionId, "OCCUPANCY", snapshots.occupancy(sessionId));
+            live.publish(sessionId, "CROWDING", snapshots.crowding(sessionId));
+        }
+        if (!touched.isEmpty()) log.info("Closed overnight entries in {} event(s)", touched.size());
+    }
+
+    /** The holder's screen and the console hear about an exit nobody scanned. */
+    private void announce(long sessionId, long ticketId) {
+        live.publishForTicket(sessionId, ticketId, "PRESENCE", snapshots.presence(ticketId));
+        live.publish(sessionId, "OCCUPANCY", snapshots.occupancy(sessionId));
+        live.publish(sessionId, "CROWDING", snapshots.crowding(sessionId));
     }
 }

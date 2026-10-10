@@ -17,6 +17,8 @@ public class TicketProperties {
     private int gateTokenDays = 30;
     /** How long a gate's setup link and code stay usable once issued. */
     private int gateSetupHours = 24;
+    /** The venue's time zone, which decides when one event day becomes the next. */
+    private String venueZone = "Asia/Seoul";
     /** Lifetime of a presentation grant, i.e. how long the QR keeps rotating after one passkey tap. */
     private int presentationTtlSeconds = 90;
     /** Rotation period of the on-screen code. */
@@ -81,6 +83,9 @@ public class TicketProperties {
 
     public int getGateTokenDays() { return gateTokenDays; }
     public void setGateTokenDays(int v) { this.gateTokenDays = v; }
+    public String getVenueZone() { return venueZone; }
+    public void setVenueZone(String v) { this.venueZone = v; }
+    public java.time.ZoneId venueZoneId() { return java.time.ZoneId.of(venueZone); }
     public int getGateSetupHours() { return gateSetupHours; }
     public void setGateSetupHours(int v) { this.gateSetupHours = v; }
     public int getPresentationTtlSeconds() { return presentationTtlSeconds; }

@@ -1610,6 +1610,10 @@ body:has(.gate-screen) .header-plain { display: none; }
 .field select:focus { border-color: var(--blue); }
 .field-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3d4663; margin-bottom: 20px; }
 .field-inline input { width: auto; }
+/* The switch and its hour read as one setting: the hour sits beside the box it qualifies. */
+.day-close-row { align-items: end; }
+.day-close-row .field-inline { margin-bottom: 30px; }
+.hint-text.day-close-hint { margin: -8px 0 22px; }
 
 /* Link handed back once after issuing or re-issuing. */
 .issued-link {
