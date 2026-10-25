@@ -8,7 +8,7 @@ import org.flywaydb.core.api.migration.Context;
 import tools.jackson.databind.ObjectMapper;
 
 /** Preserves original price strings and all delivery snapshots. */
-public class V36__backfill_artwork_prices extends BaseJavaMigration {
+public class V37__backfill_artwork_prices extends BaseJavaMigration {
     @Override public void migrate(Context context) throws Exception {
         var connection = context.getConnection();
         try (var select = connection.prepareStatement("SELECT id, price_text FROM artwork");

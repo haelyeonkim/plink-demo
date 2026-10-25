@@ -45,7 +45,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO event_session(id,name,starts_at,test_event) VALUES (1,'Rehearsal',CURRENT_TIMESTAMP,TRUE)");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(5);
         current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT a.title,a.sale_status,a.archived,ca.artwork_id FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -67,7 +67,8 @@ class MigrationUpgradeTest {
         try (var paths = Files.list(source)) {
             for (Path p : paths.toList()) {
                 String name = p.getFileName().toString();
-                if (name.startsWith("V32__") || name.startsWith("V35__")) continue;
+                int version = Integer.parseInt(name.substring(1, name.indexOf("__")));
+                if (version == 32 || version >= 35) continue;
                 if (name.startsWith("V33__")) name = name.replace("V33__", "V32__");
                 else if (name.startsWith("V34__")) name = name.replace("V34__", "V33__");
                 Files.copy(p, legacy.resolve(name));
@@ -84,7 +85,7 @@ class MigrationUpgradeTest {
         }
         var reconcile = Flyway.configure().dataSource(dataSource(url))
                 .locations("classpath:db/migration").outOfOrder(true).load();
-        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(4);
         flyway(url, "classpath:db/migration").validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT a.sale_status FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {

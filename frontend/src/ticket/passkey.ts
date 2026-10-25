@@ -67,7 +67,7 @@ async function coarsePosition(): Promise<Record<string, string>> {
 export async function runCeremony(
   sessionId: string, token: string,
   options_: {
-    direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER'; toEmail?: string;
+    direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER' | 'VIEW'; toEmail?: string;
     /** The address the ticket was issued to, typed back when no code was required. */
     email?: string;
     /**
@@ -82,11 +82,13 @@ export async function runCeremony(
   | { mode: 'authenticate'; intent: 'PRESENT'; grant: Grant }
   | { mode: 'authenticate'; intent: 'TRANSFER'; transfer: TransferStarted }
   | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true; viaTransfer: boolean }
+  | { mode: 'authenticate'; intent: 'VIEW' }
 > {
   const base = ticketBase(sessionId, token);
   const stage = async (step: CeremonyStage) => { await options_.onStage?.(step); };
   await stage('preparing');
-  const position = options_.intent === 'TRANSFER' ? {} : await coarsePosition();
+  // Only opening a code asks where the phone is; proving the ticket is yours does not.
+  const position = options_.intent === 'TRANSFER' || options_.intent === 'VIEW' ? {} : await coarsePosition();
   const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...options_, ...position }),
@@ -141,6 +143,7 @@ export async function runCeremony(
   if (intent === 'TRANSFER') {
     return { mode: 'authenticate', intent: 'TRANSFER', transfer: result as TransferStarted };
   }
+  if (intent === 'VIEW') return { mode: 'authenticate', intent: 'VIEW' };
   if (intent === 'CLAIM') {
     // A person who already has a passkey attaches a new ticket by proving it, so a
     // claim can finish through an assertion rather than a registration.

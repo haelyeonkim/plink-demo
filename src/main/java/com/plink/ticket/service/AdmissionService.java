@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -34,8 +33,6 @@ import java.util.Map;
  */
 @Service
 public class AdmissionService {
-    /** The venue's day, which is the one a visitor means by "yesterday". */
-    private static final ZoneId VENUE_ZONE = ZoneId.systemDefault();
 
     private final TicketRepository tickets;
     private final EventSessionRepository sessions;
@@ -45,12 +42,15 @@ public class AdmissionService {
     private final PresentationService presentations;
     private final TicketService ticketService;
     private final CouponService coupons;
+    private final com.plink.ticket.config.TicketProperties properties;
 
     public AdmissionService(TicketRepository tickets, EventSessionRepository sessions,
             AdmissionRepository admissions, PresentationRepository grants, GateRepository gates,
             PresentationService presentations, TicketService ticketService, CouponService coupons,
+            com.plink.ticket.config.TicketProperties properties,
             com.plink.ticket.live.LiveEvents live, com.plink.ticket.live.LiveSnapshots snapshots) {
         this.coupons = coupons;
+        this.properties = properties;
         this.live = live;
         this.snapshots = snapshots;
         this.tickets = tickets;
@@ -172,9 +172,9 @@ public class AdmissionService {
             // the next day: nobody stays in the venue overnight, and refusing them at the
             // door on day two is the wrong answer to a missed exit scan. The calendar day
             // is therefore forgiven even under STRICT, which only governs the same day.
-            boolean dayChanged = presence.insideSince != null && !LocalDate.ofInstant(
-                    presence.insideSince.toInstant(), VENUE_ZONE)
-                .equals(LocalDate.ofInstant(now, VENUE_ZONE));
+            // The venue's day, which is the one a visitor means by "yesterday".
+            boolean dayChanged = presence.insideSince != null && VenueDay.changed(
+                presence.insideSince.toInstant(), now, properties.venueZoneId(), session.dayCloseHour);
             if (!dayChanged && ("STRICT".equals(policy) || !forgiveDue)) {
                 throw deny("이미 장내에 있는 입장권이에요. 퇴장을 먼저 처리하거나 안내 데스크에서 확인해 주세요.");
             }

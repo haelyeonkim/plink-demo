@@ -187,7 +187,7 @@ public class GateController {
             for (Object item : items) {
                 if (item instanceof Map<?, ?> row && row.get("title") instanceof String title
                         && row.get("count") instanceof Number count) {
-                    wanted.merge(title, count.intValue(), Integer::sum);
+                    wanted.merge(title, count.intValue(), GateController::addCapped);
                 }
             }
         }
@@ -217,7 +217,7 @@ public class GateController {
             for (Object item : items) {
                 if (item instanceof Map<?, ?> row && row.get("offerId") instanceof Number offerId
                         && row.get("count") instanceof Number count) {
-                    wanted.merge(offerId.longValue(), count.intValue(), Integer::sum);
+                    wanted.merge(offerId.longValue(), count.intValue(), GateController::addCapped);
                 }
             }
         }
@@ -245,5 +245,10 @@ public class GateController {
             admissions.recordDenied(gate, code, method, refused.getReason());
             throw refused;
         }
+    }
+
+    /** Adds two counts for the same item without wrapping; the service refuses the total. */
+    private static Integer addCapped(Integer a, Integer b) {
+        return (int) Math.min((long) a + b, Integer.MAX_VALUE);
     }
 }

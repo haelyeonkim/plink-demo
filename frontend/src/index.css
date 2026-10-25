@@ -1645,6 +1645,10 @@ select.artwork-status {
 }
 .field-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3d4663; margin-bottom: 20px; }
 .field-inline input { width: auto; }
+/* The switch and its hour read as one setting: the hour sits beside the box it qualifies. */
+.day-close-row { align-items: end; }
+.day-close-row .field-inline { margin-bottom: 30px; }
+.hint-text.day-close-hint { margin: -8px 0 22px; }
 
 /* Link handed back once after issuing or re-issuing. */
 .issued-link {
@@ -2302,6 +2306,8 @@ select.artwork-status {
   .gate-scanline { display: none; }
   /* The rest bar still shows how much of the pause is left; it simply jumps. */
   .verdict-rest { animation: none !important; transform: scaleX(0); }
+  /* The chooser's clock is still a deadline; without motion it is simply a full bar. */
+  .coupon-pick-clock { animation: none !important; }
   /* The ring still says how much of the code's life is left; it just stops sweeping. */
   .life-run { animation-play-state: paused; }
   .seal-mark:not(.seal-working) .seal-lock { opacity: 0; }

@@ -49,11 +49,6 @@ public class CouponOfferRepository {
         return jdbc.query("SELECT * FROM coupon_offer WHERE id = ?", MAPPER, id).stream().findFirst();
     }
 
-    /** Holds the offer while tickets are topped up, so two batches cannot both add. */
-    public Optional<CouponOffer> lockById(long id) {
-        return jdbc.query("SELECT * FROM coupon_offer WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
-    }
-
     public List<CouponOffer> findBySession(long sessionId) {
         return jdbc.query("SELECT * FROM coupon_offer WHERE session_id = ? ORDER BY booth_id, id",
             MAPPER, sessionId);
@@ -89,6 +84,15 @@ public class CouponOfferRepository {
         return jdbc.query("SELECT gate_id, offer_id, auto_on_entry FROM gate_offer WHERE gate_id = ? ORDER BY offer_id",
             (rs, row) -> new GateOffer(rs.getString("gate_id"), rs.getLong("offer_id"), rs.getBoolean("auto_on_entry")),
             gateId);
+    }
+
+    /** A terminal's offers with the offer itself, in one query. */
+    public record Granted(CouponOffer offer, boolean autoOnEntry) {}
+
+    public List<Granted> grantedOffers(String gateId) {
+        return jdbc.query("SELECT o.*, g.auto_on_entry FROM gate_offer g JOIN coupon_offer o ON o.id = g.offer_id "
+            + "WHERE g.gate_id = ? ORDER BY o.id",
+            (rs, row) -> new Granted(MAPPER.mapRow(rs, row), rs.getBoolean("auto_on_entry")), gateId);
     }
 
     /** Every terminal's offers in one event, for the console's gate list. */

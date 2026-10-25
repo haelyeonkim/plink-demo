@@ -123,8 +123,7 @@ public class CouponService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "1인당 장수는 1장부터 " + MAX_PER_TICKET + "장까지예요.");
         }
-        CouponOffer offer = offers.lockById(offerId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰 종류를 찾을 수 없어요."));
+        CouponOffer offer = requireOffer(offerId);
         if (offer.sessionId != sessionId) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
         }
@@ -133,16 +132,20 @@ public class CouponService {
                 "'" + offer.title + "' 쿠폰은 발급이 중지되어 있어요.");
         }
         Booth booth = requireBooth(sessionId, offer.boothId);
-        List<Long> targets = ticketIds == null || ticketIds.isEmpty() ? tickets.liveIds(sessionId) : ticketIds;
+        boolean named = ticketIds != null && !ticketIds.isEmpty();
+        List<Long> targets = named ? ticketIds : tickets.liveIds(sessionId);
         if (targets.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰을 줄 입장권이 없어요.");
         }
-        Map<Long, Integer> held = coupons.heldOf(offer.id);
-        int given = 0, already = 0, reached = 0;
-        for (long ticketId : new java.util.LinkedHashSet<>(targets)) {
-            if (ticketIds != null && !ticketIds.isEmpty()) {
-                Ticket ticket = tickets.findById(ticketId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        // Every path that adds coupons holds the ticket rows, and only those: a door
+        // admitting one of these people waits for this batch, or this batch for it, but
+        // neither ever holds something the other needs next.
+        List<Ticket> locked = tickets.lockAll(targets);
+        if (named) {
+            if (locked.size() != new java.util.HashSet<>(targets).size()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요.");
+            }
+            for (Ticket ticket : locked) {
                 if (ticket.sessionId != sessionId) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 입장권이에요.");
                 }
@@ -151,15 +154,19 @@ public class CouponService {
                         ticket.ticketRef + "은(는) 비활성화된 입장권이에요.");
                 }
             }
-            int missing = quantity - held.getOrDefault(ticketId, 0);
-            if (missing <= 0) {
-                already++;
-                continue;
-            }
-            coupons.insert(sessionId, booth.id, offer.id, ticketId, offer.title, offer.detail, missing);
-            given += missing;
-            reached++;
         }
+        // Counted after the locks, so nothing can be added between counting and topping up.
+        Map<Long, Integer> held = coupons.heldOf(offer.id);
+        List<CouponRepository.Grant> rows = new ArrayList<>();
+        int given = 0, already = 0;
+        for (Ticket ticket : locked) {
+            int missing = quantity - held.getOrDefault(ticket.id, 0);
+            if (missing <= 0) { already++; continue; }
+            rows.add(new CouponRepository.Grant(ticket.id, missing));
+            given += missing;
+        }
+        coupons.insertAll(sessionId, booth.id, offer.id, offer.title, offer.detail, rows);
+        int reached = rows.size();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("boothId", booth.id);
         result.put("offerId", offer.id);
@@ -219,9 +226,28 @@ public class CouponService {
         Pick pick = pickId == null ? null : picks.get(pickId);
         if (pick == null || !pick.gateId.equals(gate.id) || !pick.kind.equals(kind)
                 || !picks.remove(pickId, pick) || pick.expires.isBefore(Instant.now())) {
-            throw deny("선택 시간이 지났어요. 입장 QR을 다시 비춰 주세요.");
+            throw deny("이미 처리했거나 선택 시간이 지났어요. 입장 QR을 다시 비춰 주세요.");
         }
         return pick;
+    }
+
+    /**
+     * A choice that was refused - too many asked for, nothing chosen, a database that
+     * gave up - changed nothing, so the counter may answer again with the same pick
+     * rather than ask the visitor for a fresh code.
+     */
+    private void giveBack(String pickId, Pick pick) {
+        if (pick.expires.isAfter(Instant.now())) picks.putIfAbsent(pickId, pick);
+    }
+
+    /** Each count on its own: at least one, at most what one ticket may ever hold. */
+    private static void checkCounts(java.util.Collection<Integer> counts) {
+        for (Integer count : counts) {
+            if (count == null || count < 0 || count > MAX_PER_TICKET) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "한 번에 " + MAX_PER_TICKET + "장까지 고를 수 있어요.");
+            }
+        }
     }
 
     private final Map<String, Pick> picks = new ConcurrentHashMap<>();
@@ -274,6 +300,8 @@ public class CouponService {
         result.put("outcome", "CHOOSE");
         result.put("pick", id);
         result.put("expiresAt", now.plus(PICK_WINDOW).toString());
+        // How long, rather than until when: the tablet's clock is not the server's.
+        result.put("ttlMs", PICK_WINDOW.toMillis());
         result.put("booth", booth.name);
         result.put("ticketRef", ticket.ticketRef);
         result.put("seat", ticket.seat);
@@ -288,6 +316,16 @@ public class CouponService {
     @Transactional
     public Map<String, Object> redeemPicked(Gate gate, String pickId, Map<String, Integer> wanted) {
         Pick pick = takePick(gate, pickId, "REDEEM");
+        try {
+            return redeemChosen(gate, pick, wanted);
+        } catch (RuntimeException refused) {
+            giveBack(pickId, pick);
+            throw refused;
+        }
+    }
+
+    private Map<String, Object> redeemChosen(Gate gate, Pick pick, Map<String, Integer> wanted) {
+        checkCounts(wanted.values());
         Booth booth = requireBooth(gate.sessionId, pick.boothId);
         Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
@@ -316,16 +354,16 @@ public class CouponService {
         Map<Long, Booth> boothsById = new LinkedHashMap<>();
         booths.findBySession(gate.sessionId).forEach(booth -> boothsById.put(booth.id, booth));
         List<Map<String, Object>> result = new ArrayList<>();
-        for (CouponOfferRepository.GateOffer grant : offers.grantsForGate(gate.id)) {
-            CouponOffer offer = offers.findById(grant.offerId()).orElse(null);
-            if (offer == null || !offer.active || offer.sessionId != gate.sessionId) continue;
+        for (CouponOfferRepository.Granted granted : offers.grantedOffers(gate.id)) {
+            CouponOffer offer = granted.offer();
+            if (!offer.active || offer.sessionId != gate.sessionId) continue;
             Booth booth = boothsById.get(offer.boothId);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("offerId", offer.id);
             row.put("title", offer.title);
             row.put("detail", offer.detail);
             row.put("booth", booth == null ? null : booth.name);
-            row.put("auto", grant.autoOnEntry());
+            row.put("auto", granted.autoOnEntry());
             result.add(row);
         }
         return result;
@@ -386,6 +424,8 @@ public class CouponService {
         result.put("outcome", "CHOOSE");
         result.put("pick", newPick("GRANT", gate, ticket.id, null, now));
         result.put("expiresAt", now.plus(PICK_WINDOW).toString());
+        // How long, rather than until when: the tablet's clock is not the server's.
+        result.put("ttlMs", PICK_WINDOW.toMillis());
         result.put("ticketRef", ticket.ticketRef);
         result.put("seat", ticket.seat);
         result.put("choices", choices);
@@ -396,6 +436,16 @@ public class CouponService {
     @Transactional
     public Map<String, Object> grantPicked(Gate gate, String pickId, Map<Long, Integer> wanted) {
         Pick pick = takePick(gate, pickId, "GRANT");
+        try {
+            return grantChosen(gate, pick, wanted);
+        } catch (RuntimeException refused) {
+            giveBack(pickId, pick);
+            throw refused;
+        }
+    }
+
+    private Map<String, Object> grantChosen(Gate gate, Pick pick, Map<Long, Integer> wanted) {
+        checkCounts(wanted.values());
         Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
         Map<Long, Integer> chosen = new LinkedHashMap<>();
@@ -411,9 +461,10 @@ public class CouponService {
             if (!allowed.contains(entry.getKey())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "이 단말에서 줄 수 없는 쿠폰이에요.");
             }
-            CouponOffer offer = offers.lockById(entry.getKey()).orElseThrow();
+            CouponOffer offer = requireOffer(entry.getKey());
+            // The ticket row is locked above, which is what keeps this count true.
             int held = coupons.heldBy(offer.id, ticket.id);
-            if (held + entry.getValue() > MAX_PER_TICKET) {
+            if (entry.getValue() > MAX_PER_TICKET - held) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "'" + offer.title + "'은(는) 한 사람에게 " + MAX_PER_TICKET + "장까지 줄 수 있어요.");
             }
@@ -444,11 +495,11 @@ public class CouponService {
      * @return the titles given this time, empty when the ticket already had them
      */
     public List<String> autoGrantOnEntry(Gate gate, Ticket ticket) {
+        // The caller holds the ticket row; that alone keeps "already has one" true here.
         List<String> given = new ArrayList<>();
-        for (CouponOfferRepository.GateOffer grant : offers.grantsForGate(gate.id)) {
-            if (!grant.autoOnEntry()) continue;
-            CouponOffer offer = offers.lockById(grant.offerId()).orElse(null);
-            if (offer == null || !offer.active || offer.sessionId != ticket.sessionId) continue;
+        for (CouponOfferRepository.Granted granted : offers.grantedOffers(gate.id)) {
+            CouponOffer offer = granted.offer();
+            if (!granted.autoOnEntry() || !offer.active || offer.sessionId != ticket.sessionId) continue;
             if (coupons.heldBy(offer.id, ticket.id) > 0) continue;
             coupons.insert(ticket.sessionId, offer.boothId, offer.id, ticket.id, offer.title, offer.detail, 1);
             given.add(offer.title);

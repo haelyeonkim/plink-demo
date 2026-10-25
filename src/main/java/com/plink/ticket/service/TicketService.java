@@ -44,6 +44,7 @@ public class TicketService {
     private final TicketProperties properties;
     private final TextCipher cipher;
     private final CouponService coupons;
+    private final com.plink.ticket.live.LiveEvents live;
     private final String baseUrl;
 
     public TicketService(TicketRepository tickets, TicketFieldRepository fields,
@@ -51,7 +52,9 @@ public class TicketService {
             HolderRepository holders, AdmissionRepository admissions,
             TransferRepository transfers, PresentationService presentations, EmailSender mail,
             MessageSender sms, TicketProperties properties, TextCipher cipher, CouponService coupons,
+            com.plink.ticket.live.LiveEvents live,
             @Value("${plink.auth.base-url}") String baseUrl) {
+        this.live = live;
         this.coupons = coupons;
         this.tickets = tickets;
         this.fields = fields;
@@ -202,6 +205,8 @@ public class TicketService {
             Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
         tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
             claimExpiresAt, true);
+        // The phone that held it stops hearing about it now, not when it next reconnects.
+        live.dropTicket(ticket.id);
 
         String url = urlFor(ticket.sessionId, token);
         String delivered = "LINK";
@@ -283,6 +288,8 @@ public class TicketService {
             Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
         tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
             claimExpiresAt, true);
+        // The phone that held it stops hearing about it now, not when it next reconnects.
+        live.dropTicket(ticket.id);
 
         String url = urlFor(ticket.sessionId, token);
         mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
@@ -400,16 +407,37 @@ public class TicketService {
 
     /** What the ticket page renders. Never includes the token or any credential. */
     public Map<String, Object> view(Resolved resolved) {
+        return view(resolved, true);
+    }
+
+    /**
+     * What the ticket page shows. A registered ticket opened by a browser that has not
+     * answered its passkey gets only the event it is for, and a request to prove it.
+     */
+    public Map<String, Object> view(Resolved resolved, boolean viewer) {
         Ticket ticket = resolved.ticket;
         EventSession session = requireSession(ticket.sessionId);
-        Presence presence = admissions.find(ticket.id).orElse(null);
         // A recipient opening a transfer link has not registered anything yet, whatever
         // binding the sender may still hold.
         boolean claimed = !resolved.viaTransfer() && ticket.claimed();
+        if (claimed && !viewer) {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("name", session.name);
+            event.put("startsAt", session.startsAt.toInstant().toString());
+            event.put("venue", session.venue);
+            Map<String, Object> locked = new LinkedHashMap<>();
+            locked.put("claimed", true);
+            locked.put("locked", true);
+            locked.put("role", "HOLDER");
+            locked.put("event", event);
+            return locked;
+        }
+        Presence presence = admissions.find(ticket.id).orElse(null);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketRef", ticket.ticketRef);
         result.put("claimed", claimed);
+        result.put("locked", false);
         result.put("role", resolved.viaTransfer() ? "RECIPIENT" : "HOLDER");
         Transfer pending = transfers.findPendingByTicket(ticket.id).filter(Transfer::open).orElse(null);
         result.put("transfer", pending == null ? null : Map.of(
@@ -434,6 +462,17 @@ public class TicketService {
         result.put("event", event);
 
         Map<String, Object> state = new LinkedHashMap<>();
+        if (resolved.viaTransfer()) {
+            // The recipient has proved nothing yet, and what the sender has done with the
+            // ticket - where they are, what they collected - is the sender's business.
+            state.put("inside", false);
+            state.put("entryCount", 0);
+            state.put("reentryRemaining", null);
+            state.put("reentryUntil", null);
+            result.put("presence", state);
+            result.put("coupons", java.util.List.of());
+            return result;
+        }
         state.put("inside", presence != null && presence.inside());
         state.put("entryCount", presence == null ? 0 : presence.entryCount);
         state.put("reentryRemaining", presence == null ? null : reentryRemaining(session, presence));

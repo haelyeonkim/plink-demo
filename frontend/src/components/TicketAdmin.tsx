@@ -16,6 +16,10 @@ interface SessionRow {
   reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
   claimRequiresOtp: boolean;
+  /** A rehearsal: recipient emails are shown in full in the console's lists. */
+  testEvent: boolean;
+  /** Close open entries once the venue's day turns over, at this hour (venue time). */
+  dayCloseExit: boolean; dayCloseHour: number;
   seats: string[]; tiers: string[];
   /** Issued so far; the list of events says it without opening each one. */
   ticketCount?: number;
@@ -119,6 +123,15 @@ const UNMATCHED_LABEL: Record<string, string> = {
   LENIENT: '다시 들어올 때 자동 보정',
   AUTO_EXIT: '시간이 지나면 자동 퇴장',
 };
+/** 0 -> "자정", 5 -> "새벽 5시", 14 -> "오후 2시": how the hour is said, not written. */
+function hourLabel(hour: number): string {
+  if (hour === 0) return '자정';
+  if (hour < 6) return `새벽 ${hour}시`;
+  if (hour < 12) return `오전 ${hour}시`;
+  if (hour === 12) return '정오';
+  return `오후 ${hour - 12}시`;
+}
+
 /** What a gate does, in the words on the screen rather than the ones in the database. */
 const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
 type CouponFilter = 'ALL' | 'ISSUED' | 'REDEEMED' | 'VOID';
@@ -454,13 +467,16 @@ export default function TicketAdmin() {
   const saveGrants = () => {
     const gate = grantGate;
     if (!gate) return;
-    const items = [...grantDraft.entries()].map(([offerId, auto]) => ({ offerId, auto }));
-    setGrantGate(null);
+    // A terminal that admits nobody cannot give on entry, whatever it was set to before.
+    const items = [...grantDraft.entries()]
+      .map(([offerId, auto]) => ({ offerId, auto: auto && admitsPeople(gate) }));
     void act(async () => {
       await read(await mutate(`/api/admin/gates/${gate.gateId}/grants`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       }));
+      // Closed only once it has saved: a refusal leaves the choices where they were.
+      setGrantGate(null);
       setNotice(items.length === 0
         ? `${gate.label || gate.gateId} 단말은 이제 쿠폰을 부여하지 않아요.`
         : `${gate.label || gate.gateId} 단말이 쿠폰 ${items.length}종을 부여할 수 있어요.`);
@@ -684,6 +700,14 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
+  // Turning an event into a test shows every recipient's address in full, so it asks.
+  const [confirmTest, setConfirmTest] = useState<HTMLFormElement | null>(null);
+  const submitDetails = (form: HTMLFormElement) => {
+    const turningOn = new FormData(form).get('testEvent') === 'on' && !session?.testEvent;
+    if (turningOn) setConfirmTest(form);
+    else void saveDetails(form);
+  };
+
   const saveDetails = (form: HTMLFormElement) => act(async () => {
     const data = new FormData(form);
     const startsAt = String(data.get('startsAt') || '');
@@ -696,6 +720,7 @@ export default function TicketAdmin() {
         // The input speaks local time; the API speaks instants.
         startsAt: startsAt ? new Date(startsAt).toISOString() : null,
         gateOpensAt: gateOpensAt ? new Date(gateOpensAt).toISOString() : null,
+        testEvent: data.get('testEvent') === 'on' ? 'true' : 'false',
       }),
     }));
     setNotice('행사 정보를 저장했어요. 발급된 입장권에도 바로 반영됩니다.');
@@ -714,6 +739,8 @@ export default function TicketAdmin() {
         exitScanRequired: data.get('exitScanRequired') === 'on',
         claimRequiresOtp: data.get('claimRequiresOtp') === 'on',
         unmatchedExit: data.get('unmatchedExit'),
+        dayCloseExit: data.get('dayCloseExit') === 'on',
+        dayCloseHour: Number(data.get('dayCloseHour') ?? 0),
       }),
     }));
     setNotice('정책을 저장했어요. 다음 스캔부터 적용됩니다.');
@@ -808,6 +835,7 @@ export default function TicketAdmin() {
                   {row.venue && <span>{row.venue}</span>}
                   {row.gateOpensAt && <span>입장 {shortTime(row.gateOpensAt)}</span>}
                   {row.ticketCount !== undefined && <span>발급 {row.ticketCount.toLocaleString()}장</span>}
+                  {row.testEvent && <span>테스트 행사</span>}
                 </>,
                 badge: <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'off' : 'in'}`}>
                   {when === 'today' ? '오늘' : when === 'past' ? '지난 행사' : '예정'}
@@ -1157,6 +1185,7 @@ export default function TicketAdmin() {
               event: [
                 ['행사 시각', shortTime(session.startsAt) || '-'],
                 ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
+                ['이메일 표시', session.testEvent ? '테스트 행사 · 전체 표시' : '가림'],
               ],
               policy: [
                 ['재입장', session.reentryMode === 'DISABLED' ? '불가'
@@ -1166,6 +1195,7 @@ export default function TicketAdmin() {
                 ['퇴장', `${session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · `
                   + (UNMATCHED_LABEL[session.unmatchedExit] ?? session.unmatchedExit)],
                 ['자동 보정', `${session.autoExitAfterMinutes}분 경과 후`],
+                ['날짜 변경', session.dayCloseExit ? `${hourLabel(session.dayCloseHour)} 지나면 자동 퇴장` : '끔'],
                 ['등록 인증', session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'],
               ],
               crowd: [
@@ -1184,7 +1214,7 @@ export default function TicketAdmin() {
 
           {settingsTab === 'event' && (
             <form key={`details-${session.id}`} className="settings-form"
-              onSubmit={e => { e.preventDefault(); saveDetails(e.currentTarget); }}>
+              onSubmit={e => { e.preventDefault(); submitDetails(e.currentTarget); }}>
               <div className="field">
                 <label htmlFor="event-name">이름</label>
                 <input id="event-name" name="name" required defaultValue={session.name} />
@@ -1205,6 +1235,14 @@ export default function TicketAdmin() {
                     defaultValue={localInput(session.gateOpensAt)} />
                 </div>
               </div>
+              <label className="field-inline">
+                <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
+                테스트 행사
+              </label>
+              <p className="hint-text">
+                테스트 행사는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
+                명단이 들어간 행사에는 켜지 마세요.
+              </p>
               <p className="hint-text">
                 입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
                 있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
@@ -1264,6 +1302,24 @@ export default function TicketAdmin() {
                 <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
                 퇴장 스캔 필수
               </label>
+              <div className="form-row day-close-row">
+                <label className="field-inline">
+                  <input name="dayCloseExit" type="checkbox" defaultChecked={session.dayCloseExit} />
+                  날이 바뀌면 자동 퇴장
+                </label>
+                <div className="field">
+                  <label htmlFor="day-close-hour">날짜 기준 시각</label>
+                  <select id="day-close-hour" name="dayCloseHour" defaultValue={session.dayCloseHour}>
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={hour} value={hour}>{hourLabel(hour)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="hint-text day-close-hint">
+                켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
+                처리합니다. 자정을 넘겨 계속되는 행사라면 기준 시각을 새벽으로 늦추세요.
+              </p>
               <label className="field-inline">
                 <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
                 등록 시 이메일 인증 필요
@@ -1441,6 +1497,17 @@ export default function TicketAdmin() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmTest != null}
+        title="테스트 행사로 바꿀까요?"
+        message={`발급 현황과 쿠폰 목록에 받는 사람의 이메일이 가리지 않고 전부 보입니다. `
+          + `실제 관람객 명단이 들어 있는 행사라면 취소하세요.`
+          + (session?.ticketCount ? ` 지금 입장권 ${session.ticketCount.toLocaleString()}장이 발급되어 있어요.` : '')}
+        confirmLabel="테스트 행사로 저장"
+        onConfirm={() => { const form = confirmTest; setConfirmTest(null); if (form) void saveDetails(form); }}
+        onCancel={() => setConfirmTest(null)}
+      />
 
       <ConfirmDialog
         open={confirmField != null}

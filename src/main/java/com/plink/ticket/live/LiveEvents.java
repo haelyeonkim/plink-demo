@@ -88,7 +88,34 @@ public class LiveEvents {
         for (WebSocketSession socket : sockets) {
             Object watching = socket.getAttributes().get(TicketSocketHandler.TICKET_KEY);
             // No ticket on the socket means the console, which watches all of them.
-            if (watching == null || watching.equals(ticketId)) send(socket, type, payload);
+            if (watching != null && !watching.equals(ticketId)) continue;
+            // A phone whose passkey proof has run out hears nothing more until it proves
+            // it again, which opens a new channel.
+            if (socket.getAttributes().get(TicketSocketHandler.VIEW_UNTIL_KEY) instanceof Long until
+                    && until < System.currentTimeMillis()) {
+                closeQuietly(socket);
+                continue;
+            }
+            send(socket, type, payload);
         }
+    }
+
+    /**
+     * Closes every holder channel on this ticket. Called when the ticket changes hands -
+     * recovered onto a new phone, or transferred - so the old phone stops hearing about
+     * the new holder.
+     */
+    public void dropTicket(long ticketId) {
+        for (Set<WebSocketSession> sockets : listeners.values()) {
+            for (WebSocketSession socket : sockets) {
+                if (Long.valueOf(ticketId).equals(socket.getAttributes().get(TicketSocketHandler.TICKET_KEY))) {
+                    closeQuietly(socket);
+                }
+            }
+        }
+    }
+
+    private void closeQuietly(WebSocketSession socket) {
+        try { socket.close(); } catch (IOException ignored) { /* already gone */ }
     }
 }

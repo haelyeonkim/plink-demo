@@ -294,6 +294,27 @@ class ConsoleOperationsTest {
      * 발급 현황 comes a page at a time: searched, narrowed by the label on the rows, and
      * counted without reading the tickets themselves.
      */
+    /** A real event masks recipients; one marked as a test shows the testers' addresses. */
+    @Test void aTestEventShowsEmailsInFull() {
+        long sessionId = newSession();
+        tickets.issue(sessionId, "tester01@example.com", "A-1", null, null);
+        assertEquals("t***@example.com",
+            rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).get(0).get("issuedToEmail"));
+        assertEquals(false, adminController.listSessions().stream()
+            .filter(row -> ((Number) row.get("id")).longValue() == sessionId).findFirst().orElseThrow()
+            .get("testEvent"));
+
+        java.util.Map<String, String> details = new java.util.HashMap<>(Map.of(
+            "name", "리허설", "testEvent", "true"));
+        assertEquals(true, adminController.updateSession(sessionId, details).get("testEvent"));
+        assertEquals("tester01@example.com",
+            rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).get(0).get("issuedToEmail"));
+
+        // Saving the details without the setting leaves it as it was.
+        details.remove("testEvent");
+        assertEquals(true, adminController.updateSession(sessionId, details).get("testEvent"));
+    }
+
     @Test void theTicketListComesAPageAtATime() {
         long sessionId = newSession();
         for (int i = 1; i <= 7; i++) tickets.issue(sessionId, "p" + i + "@example.com", "B-" + i, null, null);

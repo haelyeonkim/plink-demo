@@ -104,6 +104,22 @@ public class TicketRepository {
         return jdbc.query("SELECT * FROM ticket WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
     }
 
+    /**
+     * Locks several tickets, always in id order, so two batches over overlapping tickets
+     * queue behind each other instead of each holding what the other wants next.
+     */
+    public List<Ticket> lockAll(java.util.Collection<Long> ids) {
+        List<Long> sorted = new java.util.ArrayList<>(new java.util.TreeSet<>(ids));
+        List<Ticket> locked = new java.util.ArrayList<>();
+        for (int from = 0; from < sorted.size(); from += 500) {
+            List<Long> chunk = sorted.subList(from, Math.min(from + 500, sorted.size()));
+            String marks = String.join(",", java.util.Collections.nCopies(chunk.size(), "?"));
+            locked.addAll(jdbc.query("SELECT * FROM ticket WHERE id IN (" + marks + ") ORDER BY id FOR UPDATE",
+                MAPPER, chunk.toArray()));
+        }
+        return locked;
+    }
+
     public List<Ticket> findBySession(long sessionId) {
         return jdbc.query("SELECT * FROM ticket WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }

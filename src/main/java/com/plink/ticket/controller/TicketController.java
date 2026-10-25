@@ -49,8 +49,22 @@ public class TicketController {
     }
 
     @GetMapping
-    public Map<String, Object> view(@PathVariable long sessionId, @PathVariable String token) {
-        return tickets.view(tickets.resolve(sessionId, token));
+    public Map<String, Object> view(@PathVariable long sessionId, @PathVariable String token,
+            HttpServletRequest request) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        return tickets.view(resolved, passkeyService.canView(request.getSession(false), resolved.ticket));
+    }
+
+    /** A registered ticket's details are for the browser that answered its passkey. */
+    private void requireViewer(TicketService.Resolved resolved, HttpServletRequest request) {
+        requireViewer(resolved, request.getSession(false));
+    }
+
+    private void requireViewer(TicketService.Resolved resolved, HttpSession session) {
+        if (!resolved.viaTransfer() && resolved.ticket.claimed()
+                && !passkeyService.canView(session, resolved.ticket)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 본인 확인을 먼저 해 주세요.");
+        }
     }
 
     /**
@@ -62,10 +76,13 @@ public class TicketController {
             @RequestBody Map<String, String> body) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         String email = EmailOtpService.normalize(body.get("email"));
+        boolean claimed = isClaimed(resolved);
         if (!email.equalsIgnoreCase(expectedEmail(resolved))) {
+            // On a registered ticket the page no longer shows whose it is, so a wrong
+            // guess and a right one answer alike; only the right one gets mail.
+            if (claimed) return Collections.singletonMap("sent", true);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 링크에 등록된 이메일이 아니에요.");
         }
-        boolean claimed = isClaimed(resolved);
         otp.issue(email, purpose(resolved),
             claimed ? "입장권 재발급 인증번호" : "입장권 등록 인증번호",
             resolved.viaTransfer() ? "양도받은 입장권을 등록하기 위한 인증번호예요."
@@ -158,8 +175,11 @@ public class TicketController {
     }
 
     @GetMapping("/face")
-    public Map<String, Object> faceStatus(@PathVariable long sessionId, @PathVariable String token) {
-        return faces.status(tickets.resolve(sessionId, token).ticket);
+    public Map<String, Object> faceStatus(@PathVariable long sessionId, @PathVariable String token,
+            HttpServletRequest request) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        requireViewer(resolved, request);
+        return faces.status(resolved.ticket);
     }
 
     /**
@@ -170,6 +190,9 @@ public class TicketController {
     public Map<String, Object> faceConsent(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody Map<String, Object> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        // A face is a way through the door: only the holder's own phone may add or remove
+        // one, whatever the claim policy lets the link alone do.
+        requireViewer(resolved, session);
         String email = requireVerifiedEmail(resolved, session);
         return faces.consent(resolved.ticket, email, Boolean.TRUE.equals(body.get("agreed")));
     }
@@ -178,6 +201,7 @@ public class TicketController {
     public Map<String, Object> faceEnroll(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody Map<String, Object> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        requireViewer(resolved, session);
         requireVerifiedEmail(resolved, session);
         return faces.enrol(resolved.ticket, Frames.decode(body.get("frames")));
     }
@@ -186,6 +210,7 @@ public class TicketController {
     public Map<String, Object> faceWithdraw(@PathVariable long sessionId, @PathVariable String token,
             HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        requireViewer(resolved, session);
         requireVerifiedEmail(resolved, session);
         return faces.withdraw(resolved.ticket);
     }

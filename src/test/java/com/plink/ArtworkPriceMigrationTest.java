@@ -1,7 +1,8 @@
 package com.plink;
 
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -12,11 +13,13 @@ import static org.assertj.core.api.Assertions.*;
 class ArtworkPriceMigrationTest {
     private HikariDataSource source;
     @AfterEach void close() { if (source != null) source.close(); }
-    @Test void upgradesExistingDollarPricesAndPreservesInquiryTextAndSnapshots() {
+    @ParameterizedTest
+    @ValueSource(ints = {34, 35})
+    void upgradesExistingDollarPricesAndPreservesInquiryTextAndSnapshots(int previousVersion) {
         source = new HikariDataSource();
         source.setJdbcUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
         source.setUsername("sa"); source.setPassword(""); source.setMaximumPoolSize(2);
-        Flyway.configure().dataSource(source).locations("classpath:db/migration").target("34").load().migrate();
+        Flyway.configure().dataSource(source).locations("classpath:db/migration").target(Integer.toString(previousVersion)).load().migrate();
         var jdbc = new JdbcTemplate(source);
         String body = "{\"artworks\":[{\"title\":\"A\",\"price\":\"$5,000.25\"},{\"price\":\"가격 문의\"},{\"price\":\"\"}]}";
         jdbc.update("INSERT INTO link_content(id,owner_sub,title,kind,body) VALUES (1,'user','Original','EXHIBITION',?)", body);
@@ -25,7 +28,7 @@ class ArtworkPriceMigrationTest {
         for (int i = 0; i < prices.length; i++) jdbc.update(
             "INSERT INTO artwork(owner_sub,source_content_id,position,title,price_text,sale_status) VALUES ('user',1,?,'Work',?,'sold')", i, prices[i]);
         var current = Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(37 - previousVersion);
         current.validate();
         assertThat(jdbc.queryForObject("SELECT price_amount FROM artwork WHERE position=0", java.math.BigDecimal.class)).isEqualByComparingTo("5000.25");
         assertThat(jdbc.queryForObject("SELECT price_currency FROM artwork WHERE position=0", String.class)).isEqualTo("USD");

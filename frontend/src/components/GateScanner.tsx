@@ -110,7 +110,10 @@ interface Picking {
   ticket: string;
   choices: Choice[];
   counts: Record<string, number>;
+  /** On this tablet's clock: opened time plus the server's window, never its instant. */
   expiresAt: number;
+  /** The whole window, fixed when the chooser opens, so the bar drains at one speed. */
+  durationMs: number;
 }
 
 const STORAGE = 'plink.gate.credentials';
@@ -173,6 +176,7 @@ export default function GateScanner() {
   // Not remembered across reloads, so a tablet never wakes up quietly handing things out.
   const [giving, setGiving] = useState(false);
   const [givenOut, setGivenOut] = useState(0);
+  const modeGeneration = useRef(0);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -263,9 +267,13 @@ export default function GateScanner() {
   const submit = useCallback(async (code: string) => {
     if (inFlight.current || Date.now() < restUntil.current) return;
     inFlight.current = true;
+    // An answer that arrives after the operator switched modes belongs to the old mode.
+    const generation = modeGeneration.current;
     const choose = (kind: Picking['kind'], result: Record<string, unknown>, choices: Choice[]) => {
+      if (generation !== modeGeneration.current) return;
       // The camera stops reading until the counter has said what goes over the table.
       restUntil.current = Number.POSITIVE_INFINITY;
+      const ttl = typeof result.ttlMs === 'number' && result.ttlMs > 0 ? result.ttlMs : 90_000;
       setPicking({
         kind,
         pick: String(result.pick),
@@ -274,7 +282,8 @@ export default function GateScanner() {
         // With one thing on offer, one of it is nearly always the answer.
         counts: Object.fromEntries(choices.map(choice => [choice.key,
           choices.length === 1 && choice.max > 0 ? 1 : 0])),
-        expiresAt: new Date(String(result.expiresAt)).getTime(),
+        expiresAt: Date.now() + ttl,
+        durationMs: ttl,
       });
     };
     try {
@@ -390,7 +399,8 @@ export default function GateScanner() {
 
   // The server forgets a pick after a while; the screen should not outlive it.
   useEffect(() => {
-    if (!picking) return;
+    // A confirm already on its way decides the outcome; the clock does not overrule it.
+    if (!picking || sending) return;
     const timer = window.setTimeout(() => {
       setPicking(null);
       announce({
@@ -402,7 +412,18 @@ export default function GateScanner() {
       });
     }, Math.max(0, picking.expiresAt - Date.now() - 1000));
     return () => window.clearTimeout(timer);
-  }, [picking, announce, ledgerLine]);
+  }, [picking, sending, announce, ledgerLine]);
+
+  // The chooser is a dialog: it takes the focus, and Escape is "nothing goes over".
+  const pickOpen = picking?.pick ?? null;
+  useEffect(() => {
+    if (!pickOpen) return;
+    const first = document.querySelector<HTMLButtonElement>('.coupon-pick .stepper button:not(:disabled)');
+    first?.focus();
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelPick(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pickOpen, cancelPick]);
 
   function setCount(key: string, count: number) {
     setPicking(current => (current ? { ...current, counts: { ...current.counts, [key]: count } } : current));
@@ -466,8 +487,13 @@ export default function GateScanner() {
     return () => { stopped = true; window.clearInterval(timer); };
   }, [gate, scanning, faceMode, giving, gateId, gateToken, announce, ledgerLine]);
 
+  // The camera must not restart because the gate's counts were refreshed or the mode
+  // changed: it reads through a ref to whatever submit is current.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const connected = gate !== null;
   useEffect(() => {
-    if (!gate || !scanning) return;
+    if (!connected || !scanning) return;
     let stream: MediaStream | null = null;
     let raf = 0;
     let stopped = false;
@@ -505,7 +531,7 @@ export default function GateScanner() {
             const repeat = found.data === lastCode.current.code && now - lastCode.current.at < 3000;
             if (!repeat) {
               lastCode.current = { code: found.data, at: now };
-              void submit(found.data);
+              void submitRef.current(found.data);
             }
           }
         }
@@ -519,7 +545,7 @@ export default function GateScanner() {
       window.cancelAnimationFrame(raf);
       stream?.getTracks().forEach(track => track.stop());
     };
-  }, [gate, scanning, submit, facing]);
+  }, [connected, scanning, facing]);
 
   function flipCamera() {
     setFacing(current => {
@@ -645,7 +671,7 @@ export default function GateScanner() {
                 <span>{picking.ticket}</span>
                 {/* The time the server will hold this read for, draining. */}
                 <span className="coupon-pick-clock" aria-hidden="true"
-                  style={{ animationDuration: `${Math.max(0, picking.expiresAt - Date.now())}ms` }} />
+                  style={{ animationDuration: `${picking.durationMs}ms` }} />
               </header>
               <ul>
                 {picking.choices.map(choice => {
@@ -731,8 +757,11 @@ export default function GateScanner() {
           {scanning ? '스캔 중지' : '스캔 시작'}
         </button>
         {((gate.grants ?? []).length > 0 || giving) && (
-          <button className={`btn-ghost${giving ? ' btn-mode-on' : ''}`} aria-pressed={giving}
-            onClick={() => { setGiving(value => !value); setPicking(null); restUntil.current = 0; }}>
+          <button className={`btn-ghost${giving ? ' btn-mode-on' : ''}`} aria-pressed={giving} disabled={sending}
+            onClick={() => {
+              modeGeneration.current += 1;
+              setGiving(value => !value); setPicking(null); restUntil.current = 0;
+            }}>
             {giving ? '쿠폰 부여 끝내기' : '쿠폰 부여'}
           </button>
         )}

@@ -41,10 +41,13 @@ public class TransferService {
     private final TicketProperties properties;
     private final TextCipher cipher;
 
+    private final com.plink.ticket.live.LiveEvents live;
+
     public TransferService(TicketRepository tickets, TransferRepository transfers,
             AdmissionRepository admissions,
             PresentationService presentations, TicketService ticketService, EmailSender mail,
-            TicketProperties properties, TextCipher cipher) {
+            TicketProperties properties, TextCipher cipher, com.plink.ticket.live.LiveEvents live) {
+        this.live = live;
         this.tickets = tickets;
         this.transfers = transfers;
         this.admissions = admissions;
@@ -138,6 +141,8 @@ public class TransferService {
         // ticket changes hands.
         tickets.completeTransfer(ticket.id, transfer.toTokenHmac, transfer.toTokenCipher,
             holderId, transfer.toEmail);
+        // The sender's open page stops hearing about the ticket it no longer holds.
+        live.dropTicket(ticket.id);
         // A new holder starts with a clean movement history for this session.
         admissions.resetPresence(ticket.id);
         admissions.append(ticket.id, ticket.sessionId, null, null, "STAFF", "TRANSFERRED",

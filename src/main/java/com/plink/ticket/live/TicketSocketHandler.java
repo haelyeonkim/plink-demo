@@ -21,6 +21,8 @@ import java.util.Map;
 public class TicketSocketHandler extends TextWebSocketHandler {
     static final String SESSION_KEY = "plink.live.sessionId";
     static final String TICKET_KEY = "plink.live.ticketId";
+    /** When this phone's passkey proof runs out; the channel stops carrying news then. */
+    static final String VIEW_UNTIL_KEY = "plink.live.viewUntil";
 
     private final TicketService tickets;
     private final LiveEvents events;
@@ -39,12 +41,26 @@ public class TicketSocketHandler extends TextWebSocketHandler {
         if (parts.length < 5) { socket.close(CloseStatus.BAD_DATA); return; }
         long sessionId;
         Ticket ticket;
+        boolean viaTransfer;
         try {
             sessionId = Long.parseLong(parts[3]);
-            ticket = tickets.resolve(sessionId, parts[4]).ticket;
+            TicketService.Resolved resolved = tickets.resolve(sessionId, parts[4]);
+            ticket = resolved.ticket;
+            viaTransfer = resolved.viaTransfer();
         } catch (RuntimeException refused) {
             socket.close(CloseStatus.POLICY_VIOLATION);
             return;
+        }
+        // A registered ticket's movements and coupons go only to the browser that answered
+        // its passkey; the handshake copied that browser's session attributes here. A
+        // transfer link has proved nothing yet, so it gets no channel at all.
+        if (viaTransfer) { socket.close(CloseStatus.POLICY_VIOLATION); return; }
+        if (ticket.claimed()) {
+            Long until = com.plink.ticket.service.TicketPasskeyService.viewerUntil(
+                socket.getAttributes().get(com.plink.ticket.service.TicketPasskeyService.VIEW_PREFIX + ticket.id),
+                ticket);
+            if (until == null) { socket.close(CloseStatus.POLICY_VIOLATION); return; }
+            socket.getAttributes().put(VIEW_UNTIL_KEY, until);
         }
         socket.getAttributes().put(SESSION_KEY, ticket.sessionId);
         socket.getAttributes().put(TICKET_KEY, ticket.id);

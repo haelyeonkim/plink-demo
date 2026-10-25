@@ -84,6 +84,9 @@ plink:
     # How long a gate's setup link and code can be used. A test environment can keep
     # them open for good; production keeps the window short.
     gate-setup-hours: ${TICKET_GATE_SETUP_HOURS:24}
+    # Where the venue is: an event day turns over at its midnight (or the event's own
+    # closing hour), not the server's, which runs on UTC.
+    venue-zone: ${TICKET_VENUE_ZONE:Asia/Seoul}
     presentation-ttl-seconds: ${TICKET_PRESENTATION_TTL_SECONDS:90}
     code-period-seconds: ${TICKET_CODE_PERIOD_SECONDS:10}
     rebind-max-per-ticket: ${TICKET_REBIND_MAX:2}

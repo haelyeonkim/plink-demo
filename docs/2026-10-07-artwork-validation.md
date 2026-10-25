@@ -17,6 +17,7 @@
 - 연결된 PostgreSQL의 Flyway 이력을 읽기 전용으로 조회한 결과 V30은 `coupon quantities`, V31은 `gate coupon grants`로 이미 적용되어 있었다.
 - 최신 `origin/main` (`34293c3`)을 fast-forward로 통합하고 작품 변경사항을 복원했다. 통합 전 백업은 `artwork-status-before-main-integration-2026-10-07` stash에 보존했다.
 - 작품 마이그레이션은 V32 `artwork sale status`, V33 `shared artwork status`다. 기존 쿠폰 V30·V31과 함께 검증했다.
+  - 2026-10-10 병합 시 운영 DB에 적용된 번호에 맞춰 V33 `artwork sale status`, V34 `shared artwork status`로 파일 이름을 바꿨다 (V32는 테스트 행사). 내용은 같아 체크섬이 운영 이력과 일치한다.
 - 실제 브라우저가 보내는 Origin 헤더 때문에 PATCH가 CORS에서 거부되는 오류를 수정했다. 허용 Origin의 PATCH 및 preflight 성공, 다른 Origin 거부를 회귀 테스트로 확인했다.
 
 ## 검증 결과

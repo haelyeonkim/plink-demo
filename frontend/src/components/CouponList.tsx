@@ -18,8 +18,10 @@ export default function CouponList({ coupons, onOpen }: {
   // one stand are one row that says three, not three rows that say the same thing.
   const rows: { coupon: TicketCoupon; count: number }[] = [];
   for (const coupon of [...live, ...coupons.filter(coupon => coupon.status !== 'ISSUED')]) {
-    const same = rows.find(row => row.coupon.booth === coupon.booth
-      && row.coupon.title === coupon.title && row.coupon.status === coupon.status);
+    // The same promise, not merely the same name: two offers called "음료" that say
+    // different things stay two rows, each opening its own wording.
+    const same = rows.find(row => row.coupon.booth === coupon.booth && row.coupon.title === coupon.title
+      && row.coupon.detail === coupon.detail && row.coupon.status === coupon.status);
     if (same) same.count += 1;
     else rows.push({ coupon, count: 1 });
   }

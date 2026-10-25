@@ -89,6 +89,83 @@ class TicketClaimTest {
                 org.hamcrest.Matchers.containsString("holder@example.com"))));
     }
 
+    /**
+     * A registered ticket's link opened on another phone shows the event and asks for the
+     * passkey; the seat, the address, presence and the face status wait for it.
+     */
+    @Test void aRegisteredTicketShowsNothingUntilItsPasskeyAnswers(
+            @Autowired com.plink.ticket.repository.TicketRepository ticketRows,
+            @Autowired com.plink.ticket.service.TicketPasskeyService passkeys) throws Exception {
+        long ticketId = tickets.resolve(sessionId, token).ticket.id;
+        long holderId = holders.findByEmail("holder@example.com").map(h -> h.id)
+            .orElseGet(() -> holders.create("holder@example.com", tickets.userHandleFor("holder@example.com")));
+        ticketRows.bind(ticketId, holderId, "holder@example.com");
+
+        mvc.perform(get(path()).header("User-Agent", PHONE))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.locked").value(true))
+            .andExpect(jsonPath("$.event.name").value("클레임 테스트 회차"))
+            .andExpect(jsonPath("$.seat").doesNotExist())
+            .andExpect(jsonPath("$.holderEmailMasked").doesNotExist())
+            .andExpect(jsonPath("$.presence").doesNotExist())
+            .andExpect(jsonPath("$.coupons").doesNotExist());
+        mvc.perform(get(path() + "/face").header("User-Agent", PHONE))
+            .andExpect(status().isForbidden());
+        // Nor can the link alone put a face on the ticket, or take one off it: this event
+        // claims without a code, so the mailbox check would have let it through.
+        for (String face : new String[] {"/face/consent", "/face/withdraw"}) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + face)
+                    .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                    .header("User-Agent", PHONE).contentType("application/json").content("{\"agreed\":true}"))
+                .andExpect(status().isForbidden());
+        }
+
+        // The browser that answered the passkey sees the ticket.
+        org.springframework.mock.web.MockHttpSession proven = new org.springframework.mock.web.MockHttpSession();
+        passkeys.markViewer(proven, ticketRows.findById(ticketId).orElseThrow());
+        mvc.perform(get(path()).header("User-Agent", PHONE).session(proven))
+            .andExpect(jsonPath("$.locked").value(false))
+            .andExpect(jsonPath("$.seat").value("D-4"));
+        mvc.perform(get(path() + "/face").header("User-Agent", PHONE).session(proven))
+            .andExpect(status().isOk());
+
+        // And only for a while.
+        org.springframework.mock.web.MockHttpSession stale = new org.springframework.mock.web.MockHttpSession();
+        stale.setAttribute(com.plink.ticket.service.TicketPasskeyService.VIEW_PREFIX + ticketId,
+            (System.currentTimeMillis() - 1) + "|" + holderId + "@"
+                + ticketRows.findById(ticketId).orElseThrow().boundAt.getTime());
+        mvc.perform(get(path()).header("User-Agent", PHONE).session(stale))
+            .andExpect(jsonPath("$.locked").value(true));
+
+        // A wrong guess at the address answers like a right one: the page no longer says
+        // whose ticket this is, and the reply must not either.
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/otp")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{\"email\":\"guess@example.com\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sent").value(true));
+    }
+
+    /** Recovering onto a new phone ends what the old phone could see, at once. */
+    @Test void aRebindEndsTheOldPhonesView(
+            @Autowired com.plink.ticket.repository.TicketRepository ticketRows,
+            @Autowired com.plink.ticket.service.TicketPasskeyService passkeys) {
+        long ticketId = tickets.resolve(sessionId, token).ticket.id;
+        long holderId = holders.findByEmail("holder@example.com").map(h -> h.id)
+            .orElseGet(() -> holders.create("holder@example.com", tickets.userHandleFor("holder@example.com")));
+        ticketRows.bind(ticketId, holderId, "holder@example.com");
+        org.springframework.mock.web.MockHttpSession oldPhone = new org.springframework.mock.web.MockHttpSession();
+        passkeys.markViewer(oldPhone, ticketRows.findById(ticketId).orElseThrow());
+        assertTrue(passkeys.canView(oldPhone, ticketRows.findById(ticketId).orElseThrow()));
+
+        tickets.reissueForConsole(ticketId, false);
+        // bound_at is to the millisecond; a rebind in the same instant is not this test.
+        try { Thread.sleep(5); } catch (InterruptedException ignored) { }
+        ticketRows.bind(ticketId, holderId, "holder@example.com");
+        assertFalse(passkeys.canView(oldPhone, ticketRows.findById(ticketId).orElseThrow()),
+            "새 휴대폰에 다시 등록하면 옛 기기의 확인은 끝납니다");
+    }
+
     @Test void anInAppBrowserIsFlaggedSoThePageCanRedirect() throws Exception {
         mvc.perform(get(path()).header("User-Agent", KAKAO))
             .andExpect(status().isOk())

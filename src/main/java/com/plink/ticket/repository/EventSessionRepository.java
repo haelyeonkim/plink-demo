@@ -50,6 +50,9 @@ public class EventSessionRepository {
         s.tiers = rs.getString("tiers");
         s.crowdBusyPercent = rs.getInt("crowd_busy_percent");
         s.crowdSteadyPercent = rs.getInt("crowd_steady_percent");
+        s.testEvent = rs.getBoolean("test_event");
+        s.dayCloseExit = rs.getBoolean("day_close_exit");
+        s.dayCloseHour = rs.getInt("day_close_hour");
         return s;
     };
 
@@ -81,6 +84,15 @@ public class EventSessionRepository {
             Timestamp gateOpensAt) {
         jdbc.update("UPDATE event_session SET name = ?, venue = ?, starts_at = ?, gate_opens_at = ? "
             + "WHERE id = ?", name, venue, startsAt, gateOpensAt, id);
+    }
+
+    public void updateDayClose(long id, boolean dayCloseExit, int dayCloseHour) {
+        jdbc.update("UPDATE event_session SET day_close_exit = ?, day_close_hour = ? WHERE id = ?",
+            dayCloseExit, dayCloseHour, id);
+    }
+
+    public void updateTestEvent(long id, boolean testEvent) {
+        jdbc.update("UPDATE event_session SET test_event = ? WHERE id = ?", testEvent, id);
     }
 
     public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
