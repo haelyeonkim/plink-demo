@@ -1,6 +1,7 @@
 package com.plink.repository;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.plink.service.ArtworkPrice;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
@@ -13,7 +14,7 @@ import java.util.Map;
 public class ArtworkRepository {
     public record Artwork(long id, long sourceContentId, long position, String image, String artist,
             String title, String year, String medium, String width, String height, String depth,
-            String unit, String description, String price, String saleStatus) {
+            String unit, String description, String price, String saleStatus, ArtworkPrice.Value pricing) {
         public Map<String, String> body() {
             Map<String, String> value = new LinkedHashMap<>();
             value.put("image", text(image)); value.put("artist", text(artist));
@@ -22,6 +23,7 @@ public class ArtworkRepository {
             value.put("height", text(height)); value.put("depth", text(depth));
             value.put("unit", unit == null || unit.isBlank() ? "cm" : unit);
             value.put("description", text(description)); value.put("price", text(price));
+            value.putAll(pricing.fields());
             if (saleStatus != null) value.put("saleStatus", saleStatus);
             return value;
         }
@@ -33,7 +35,10 @@ public class ArtworkRepository {
         rs.getString("image_url"), rs.getString("artist"), rs.getString("title"),
         rs.getString("year_text"), rs.getString("medium"), rs.getString("width_text"),
         rs.getString("height_text"), rs.getString("depth_text"), rs.getString("unit_text"),
-        rs.getString("description"), rs.getString("price_text"), rs.getString("sale_status"));
+        rs.getString("description"), rs.getString("price_text"), rs.getString("sale_status"),
+        new ArtworkPrice.Value(rs.getString("price_mode"), rs.getBigDecimal("price_amount"),
+            rs.getString("price_currency"), rs.getString("price_note"), rs.getBigDecimal("price_krw_rate"),
+            rs.getDate("price_rate_date") == null ? null : rs.getDate("price_rate_date").toLocalDate()));
 
     private final JdbcTemplate jdbc;
 
@@ -47,15 +52,10 @@ public class ArtworkRepository {
     public record Page(List<Map<String, Object>> items, long total, int page, int pageSize) {}
 
     public Page findAll(String search, String status, int page, int pageSize) {
-        return findAll(search, status, page, pageSize, null);
-    }
-
-    public Page findAll(String search, String status, int page, int pageSize, String ownerSub) {
         String from = " FROM artwork a JOIN link_content c ON c.id = a.source_content_id "
             + "LEFT JOIN admin_account u ON a.owner_sub = CONCAT('local:', u.id) "
             + "WHERE c.kind <> 'SELECTION'";
         List<Object> args = new ArrayList<>();
-        if (ownerSub != null) { from += " AND a.owner_sub = ?"; args.add(ownerSub); }
         if (!search.isBlank()) {
             from += " AND (LOWER(a.title) LIKE ? ESCAPE '!' OR LOWER(a.artist) LIKE ? ESCAPE '!' "
                 + "OR LOWER(c.title) LIKE ? ESCAPE '!' OR LOWER(u.email) LIKE ? ESCAPE '!' "
@@ -69,7 +69,7 @@ public class ArtworkRepository {
         long total = jdbc.queryForObject("SELECT COUNT(*)" + from, Long.class, args.toArray());
         args.add(pageSize); args.add((long) page * pageSize);
         List<Map<String, Object>> items = jdbc.query("SELECT a.*, c.title AS content_title, "
-            + "c.source_type, c.updated_at AS content_updated_at, u.email AS owner_email, "
+            + "c.source_type, c.source_ref, c.updated_at AS content_updated_at, u.email AS owner_email, "
             + "u.display_name AS owner_name" + from
             + " ORDER BY c.updated_at DESC, a.source_content_id DESC, a.position, a.id LIMIT ? OFFSET ?",
             (rs, index) -> {
@@ -83,6 +83,7 @@ public class ArtworkRepository {
                 row.put("ownerName", rs.getString("owner_name"));
                 row.put("contentTitle", rs.getString("content_title"));
                 row.put("sourceType", rs.getString("source_type"));
+                row.put("sourceRef", rs.getString("source_ref"));
                 var updated = rs.getTimestamp("content_updated_at");
                 row.put("updatedAt", updated == null ? null : updated.toInstant().toString());
                 return row;
@@ -127,6 +128,7 @@ public class ArtworkRepository {
         jdbc.update("DELETE FROM content_artwork WHERE content_id = ?", contentId);
         for (int index = 0; index < rows.size(); index++) {
             Map<String, String> row = rows.get(index);
+            var price = ArtworkPrice.read(row);
             String title = value(row, "title");
             if (title.isBlank()) title = "제목 없는 작품 " + (index + 1);
             String requestedId = value(row, "artworkId");
@@ -154,6 +156,9 @@ public class ArtworkRepository {
                 id = jdbc.queryForObject("SELECT id FROM artwork WHERE source_content_id = ? AND position = ?",
                     Long.class, contentId, index);
             }
+            jdbc.update("UPDATE artwork SET price_amount=?, price_currency=?, price_mode=?, price_note=?, "
+                + "price_krw_rate=?, price_rate_date=? WHERE id=?", price.amount(), price.currency(),
+                price.mode(), price.note(), price.krwRate(), price.rateDate(), id);
             jdbc.update("INSERT INTO content_artwork (content_id, position, artwork_id) VALUES (?, ?, ?)",
                 contentId, index, id);
         }

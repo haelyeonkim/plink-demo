@@ -1,15 +1,24 @@
+import ArtworkPrice from './ArtworkPrice';
+import { priceText } from '../artworkPrice';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ArtworkRecord } from '../types';
 import { mutate } from '../auth';
-import LegacyArtworkLinks from './LegacyArtworkLinks';
+import AdminArtworkEditor from './AdminArtworkEditor';
 
 interface AdminArtwork extends ArtworkRecord {
   ownerSub: string; ownerEmail: string | null; ownerName: string | null;
-  contentTitle: string; sourceType: string; updatedAt: string | null;
+  contentTitle: string; sourceType: string; sourceRef: string | null; updatedAt: string | null;
   archived: boolean;
 }
 interface ArtworkPage { items: AdminArtwork[]; total: number; page: number; pageSize: number }
+function sourceUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
 const statuses = { unsold: '미판매', hold: '대기', sold: '판매 완료' };
 
 function Thumbnail({ src }: { src: string }) {
@@ -30,6 +39,7 @@ export default function AdminArtworkList() {
   const [revision, setRevision] = useState(0);
   const [saving, setSaving] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
+  const [editing, setEditing] = useState<AdminArtwork | null>(null);
   useEffect(() => setDraft(search), [search]);
   useEffect(() => {
     const controller = new AbortController();
@@ -72,7 +82,6 @@ export default function AdminArtworkList() {
     </h2>
     <p className="section-desc">전체 계정에서 직접 등록하거나 가져온 작품을 확인합니다.</p>
     {notice && <p role="status" className="hint-text">{notice}</p>}
-    <LegacyArtworkLinks />
     <form className="admin-artwork-filters" onSubmit={event => { event.preventDefault(); change(draft.trim(), status); }}>
       <div className="field"><label htmlFor="artwork-search">작품 검색</label>
         <input id="artwork-search" type="search" maxLength={200} value={draft}
@@ -83,6 +92,7 @@ export default function AdminArtworkList() {
           {Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select></div>
       <button className="btn-primary" type="submit">검색</button>
+      <button className="btn-secondary" type="button" onClick={() => { setDraft(''); change('', 'all'); }}>전체 목록</button>
       <button className="btn-secondary" type="button" onClick={() => setRevision(value => value + 1)}>새로고침</button>
     </form>
     {loading ? <p role="status">작품을 불러오고 있어요.</p> : error ? <p className="error-text" role="alert">{error}</p> : result && <>
@@ -94,18 +104,23 @@ export default function AdminArtworkList() {
             <thead><tr><th scope="col">작품</th><th scope="col">작가 / 제작연도</th><th scope="col">가격</th>
               <th scope="col">판매 상태</th><th scope="col">등록 계정</th><th scope="col">컨텐츠 / 출처</th><th scope="col">수정일</th></tr></thead>
             <tbody>{result.items.map(row => <tr key={row.id}>
-              <td><div className="admin-artwork-work"><Thumbnail key={row.image} src={row.image} />
+              <td><button type="button" className="admin-artwork-work admin-artwork-edit-button"
+                aria-label={`${row.title || '제목 없음'} 수정`} onClick={() => setEditing(row)}><Thumbnail key={row.image} src={row.image} />
                 <div><strong>{row.title || '제목 없음'}</strong><small>{row.medium || '재료 미입력'}</small>
-                  {row.archived && <small>원본 목록에서 제거됨 · 기존 링크 유지</small>}</div></div></td>
-              <td>{row.artist || '작가 미입력'}<small>{row.year || '—'}</small></td>
-              <td>{row.price || '—'}</td><td><select className={`artwork-status ${row.saleStatus || 'unsold'}`}
+                  {row.archived && <small>원본 목록에서 제거됨 · 기존 링크 유지</small>}</div></button></td>
+              <td>{row.artist || '작가 미입력'}<small>{row.year || '-'}</small></td>
+              <td>{priceText(row) ? <ArtworkPrice value={row} /> : '-'}</td><td><select className={`artwork-status ${row.saleStatus || 'unsold'}`}
                 aria-label={`${row.title} 판매 상태`} value={row.saleStatus || ''} disabled={saving !== null}
                 onChange={event => void changeStatus(row, event.target.value)}>
                 <option value="">미판매</option><option value="hold">대기</option><option value="sold">판매 완료</option>
               </select></td>
               <td>{row.ownerName || row.ownerEmail || row.ownerSub}<small>{row.ownerName ? row.ownerEmail : ''}</small></td>
-              <td>{row.contentTitle}<small>{row.sourceType === 'URL' ? '웹페이지' : row.sourceType === 'PDF' ? 'PDF' : '직접 작성'}</small></td>
-              <td>{row.updatedAt ? new Date(row.updatedAt).toLocaleDateString('ko-KR') : '—'}</td>
+              <td>{row.contentTitle}<small>{row.sourceType === 'URL'
+                ? sourceUrl(row.sourceRef) ? <a className="admin-artwork-source-link" href={sourceUrl(row.sourceRef)!}
+                  target="_blank" rel="noopener noreferrer" aria-label={`${row.contentTitle} 원본 웹페이지 (새 탭)`}>웹페이지</a>
+                  : <span title="원본 주소가 저장되지 않은 이전 자료입니다.">웹페이지 · 주소 없음</span>
+                : row.sourceType === 'PDF' ? 'PDF' : '직접 작성'}</small></td>
+              <td>{row.updatedAt ? new Date(row.updatedAt).toLocaleDateString('ko-KR') : '-'}</td>
             </tr>)}</tbody>
           </table>
         </div>}
@@ -116,5 +131,7 @@ export default function AdminArtworkList() {
           onClick={() => change(search, status, page + 1)}>다음</button>
       </nav>}
     </>}
+    {editing && <AdminArtworkEditor key={editing.id} artwork={editing} onClose={() => setEditing(null)}
+      onSaved={() => { setEditing(null); setNotice('작품 내용을 저장했습니다.'); setRevision(value => value + 1); }} />}
   </section>;
 }

@@ -132,7 +132,7 @@ function writeQueue(events: Queued[]) {
 /**
  * Gate terminal. One tablet camera handles both jobs: every frame is offered to the QR
  * decoder, and the same stream will feed face matching. Direction is not asked for here
- * — it comes from the terminal's own registration, which is why a scanned code cannot
+ * - it comes from the terminal's own registration, which is why a scanned code cannot
  * claim to be an exit.
  */
 export default function GateScanner() {

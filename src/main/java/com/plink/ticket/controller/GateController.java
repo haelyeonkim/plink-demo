@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * Gate terminal API. Authenticated by the terminal's own token, which also carries the
- * direction — the scanned code never gets to claim whether it is an entry or an exit.
+ * direction - the scanned code never gets to claim whether it is an entry or an exit.
  */
 @RestController
 @RequestMapping("/api/gates")

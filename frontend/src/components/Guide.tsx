@@ -1,4 +1,3 @@
-import Icon from './Icon';
 import { Link } from 'react-router-dom';
 
 /**
@@ -13,7 +12,7 @@ export default function Guide() {
         <p className="eyebrow"><span></span> GUIDE</p>
         <h2>사용자 가이드</h2>
         <p className="section-desc">
-          보호 링크와 입장권은 같은 원리로 움직입니다 — 받는 사람마다 주소를 하나씩 발급하고,
+          보호 링크와 입장권은 같은 원리로 움직입니다 - 받는 사람마다 주소를 하나씩 발급하고,
           그 사람의 패스키에만 열립니다.
         </p>
       </div>
@@ -27,7 +26,7 @@ export default function Guide() {
             원본 주소와 제목, 필요하면 비밀번호·만료 일시·최대 열람 수를 정합니다. 이 단계에서는
             아직 아무에게도 열리지 않습니다.
           </p>
-          <Link to="/links/new">링크 추가 <Icon name="arrow-right" /></Link>
+          <Link to="/links/new">링크 추가</Link>
         </article>
         <article className="guide-card">
           <b>02 · 수신자마다 발급</b>
@@ -36,7 +35,7 @@ export default function Guide() {
             받는 사람의 이메일로 개인 주소를 발급합니다. 메일로 바로 보내거나 주소만 복사해 직접
             전달할 수 있고, 명단이 있으면 CSV로 한 번에 올릴 수 있어요.
           </p>
-          <Link to="/links">링크 관리로 이동 <Icon name="arrow-right" /></Link>
+          <Link to="/links">링크 관리로 이동</Link>
         </article>
         <article className="guide-card">
           <b>03 · 확인하고 끊기</b>
@@ -77,7 +76,7 @@ export default function Guide() {
             행사를 만들고 좌석·등급 목록을 추가한 뒤 이메일로 입장권을 발급합니다. 명단은 CSV로
             한 번에 올릴 수 있어요.
           </p>
-          <Link to="/tickets/admin">입장권 관리로 이동 <Icon name="arrow-right" /></Link>
+          <Link to="/tickets/admin">입장권 관리로 이동</Link>
         </article>
         <article className="guide-card">
           <b>02 · 입장</b>
@@ -93,7 +92,7 @@ export default function Guide() {
           <p>
             태블릿에서 게이트 링크를 열고 인증번호를 입력하면 그 기기 하나에만 묶입니다. 장소를
             지정해 두면 장소별 혼잡도를 볼 수 있어요. 단말 토큰에는 유효기간이 있고, 현장에서 쓰는
-            태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다 — 지난 뒤에는 관리 화면에서
+            태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다 - 지난 뒤에는 관리 화면에서
             <b>유효기간 갱신</b>을 눌러 주세요. 단말을 <b>부스</b>로 등록하면 같은 입장 QR을 읽어
             그 부스의 쿠폰을 사용 처리합니다.
             단말마다 <b>쿠폰 부여 설정</b>에서 줄 수 있는 쿠폰을 정해 두면, 단말의 <b>쿠폰 부여</b> 모드로 QR을

@@ -85,7 +85,7 @@ public class ContentController {
     @Transactional
     public Map<String, Object> create(@RequestBody Map<String, Object> request, Authentication user) {
         String title = title(request.get("title"));
-        Object requestedBody = request.get("body");
+        Object requestedBody = com.plink.service.ArtworkPrice.normalizeBody(request.get("body"));
         String body = body(requestedBody);
         String sourceType = sourceType(request.get("sourceType"));
         String sourceRef = sourceRef(sourceType, request.get("sourceRef"));
@@ -147,7 +147,7 @@ public class ContentController {
     public Map<String, Object> update(@PathVariable long id, @RequestBody Map<String, Object> request,
             Authentication user) {
         LinkContent content = owned(id, user);
-        Object requestedBody = request.get("body");
+        Object requestedBody = com.plink.service.ArtworkPrice.normalizeBody(request.get("body"));
         if ("SELECTION".equals(content.kind)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 전달된 작품 정보는 수정할 수 없습니다.");
         }
@@ -225,9 +225,7 @@ public class ContentController {
         if (ref.isBlank() || ref.length() > 500) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처 정보를 확인해 주세요.");
         }
-        if ("URL".equals(type) && !ref.matches("[0-9a-f]{64}")) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "URL 출처 식별자를 확인해 주세요.");
-        }
+        if ("URL".equals(type)) return com.plink.service.ContentSource.webReference(ref);
         return ref;
     }
 

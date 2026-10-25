@@ -1,3 +1,4 @@
+import ArtworkPrice from './ArtworkPrice';
 import type { ExhibitionBody } from '../types';
 
 /**
@@ -33,7 +34,7 @@ export default function ContentView({ title, body }: { title: string; body: Exhi
                 </span>
               )}
               {artwork.description && <p>{artwork.description}</p>}
-              {artwork.price && <span className="content-price">{artwork.price}</span>}
+              <ArtworkPrice value={artwork} />
             </figcaption>
           </figure>
         ))}

@@ -364,7 +364,7 @@ export default function TicketPage() {
 
         {ticket.transfer && (
           <div className="warn-text" role="status">
-            <b>양도 진행 중</b> — {ticket.transfer.toEmail} 님이 등록을 마치면 이 링크는 사용할 수 없게 됩니다.
+            <b>양도 진행 중</b> - {ticket.transfer.toEmail} 님이 등록을 마치면 이 링크는 사용할 수 없게 됩니다.
             {ticket.role === 'HOLDER' && (
               <button className="btn-tiny" onClick={stopTransfer} disabled={busy}>양도 취소</button>
             )}
@@ -375,7 +375,7 @@ export default function TicketPage() {
           <>
             {faceEnrolled ? (
               <p className="notice-text" role="status">
-                얼굴이 등록되어 있어요. 게이트 카메라를 보고 지나가시면 됩니다 — QR은 필요하지 않아요.
+                얼굴이 등록되어 있어요. 게이트 카메라를 보고 지나가시면 됩니다 - QR은 필요하지 않아요.
               </p>
             ) : !ticket.presence.inside ? (
               <button className="btn-primary" onClick={() => present('IN')} disabled={busy}>입장하기</button>

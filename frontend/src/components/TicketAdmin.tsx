@@ -200,7 +200,7 @@ export default function TicketAdmin() {
   const [booths, setBooths] = useState<BoothRow[]>([]);
   const [gateRole, setGateRole] = useState('ADMISSION');
   // The hand-out sheet: open with a ticket to give to that one person, or with null to
-  // choose the recipients inside. `pickTickets` is that choice — everybody, or a few.
+  // choose the recipients inside. `pickTickets` is that choice - everybody, or a few.
   const [couponSheet, setCouponSheet] =
     useState<{ only: TicketRow | null; boothId?: number } | null>(null);
   const [pickTickets, setPickTickets] = useState(false);
@@ -880,7 +880,7 @@ export default function TicketAdmin() {
             </dl>
             <p className="hint-text">
               발급하면 수신 이메일로 개인 링크가 갑니다. 휴대폰을 넣으면 문자로도 보냅니다.
-              한 이메일에는 한 장만 발급됩니다 — 다시 보내려면 <b>재발송</b>을, 다른 사람에게 주려면
+              한 이메일에는 한 장만 발급됩니다 - 다시 보내려면 <b>재발송</b>을, 다른 사람에게 주려면
               기존 입장권을 삭제하세요. 발급된 목록은 <b>발급 현황</b> 탭에 있어요.
             </p>
 
@@ -1000,7 +1000,7 @@ export default function TicketAdmin() {
           </p>
           <p className="hint-text">
             비활성화하면 링크가 열리지 않고 게이트도 거부합니다. 이미 장내에 있는 사람을 내보내지는
-            않아요 — 입장한 기록은 사실이니까요.
+            않아요 - 입장한 기록은 사실이니까요.
           </p>
         </div>
       )}
@@ -1087,7 +1087,7 @@ export default function TicketAdmin() {
                     ? ` · ${booths.find(booth => booth.boothId === gate.boothId)?.name ?? '부스 없음'}`
                     : gate.zone && ` · ${gate.zone}`}
                   <br />
-                  <code title={gate.setupUrl ?? ''}>{gate.setupUrl ?? '(설정 링크 없음 — 재발급이 필요합니다)'}</code>
+                  <code title={gate.setupUrl ?? ''}>{gate.setupUrl ?? '(설정 링크 없음 - 재발급이 필요합니다)'}</code>
                   {gate.setupCode && <span className="gate-code">인증번호 {gate.setupCode}</span>}
                   <div className="gate-meta">
                     <span className={`pill pill-${validity(gate).tone}`}>{validity(gate).label}</span>
@@ -1128,10 +1128,10 @@ export default function TicketAdmin() {
             ))}
             {gates.length === 0 && <p className="hint-text">등록된 단말이 없어요.</p>}
             <p className="hint-text">
-              태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 — 긴 토큰을 직접 입력할 일은 없어요.
+              태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 - 긴 토큰을 직접 입력할 일은 없어요.
               게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
               장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.
-              단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 —
+              단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 -
               현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다. 건물에 붙박이로 설치한
               단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.
             </p>
@@ -1709,7 +1709,7 @@ export default function TicketAdmin() {
 
             <p className="hint-text">
               부스를 만든 뒤 그 부스 탭에서 <b>쿠폰 종류</b>를 정하세요. 입장권에는 정해 둔 종류 중
-              발급 중인 것만 줄 수 있어요. 쿠폰은 부스 단말에 입장 QR을 비추면 사용됩니다 — 받는
+              발급 중인 것만 줄 수 있어요. 쿠폰은 부스 단말에 입장 QR을 비추면 사용됩니다 - 받는
               사람은 새로 받을 것도, 설치할 것도 없어요.
             </p>
           </div>

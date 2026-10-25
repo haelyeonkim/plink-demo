@@ -80,6 +80,60 @@ class AdminArtworkTest {
             .andExpect(jsonPath("$.total").value(3)).andExpect(jsonPath("$.items.length()").value(1));
     }
 
+    @Test void editsSourceAndLibraryWithoutChangingStatusImageOrSnapshots() throws Exception {
+        long source = contents.insert("other-owner", "Original", "EXHIBITION",
+            "{\"intro\":\"keep\",\"artworks\":[{\"title\":\"Before\",\"saleStatus\":\"sold\",\"image\":\"https://example.com/a.jpg\"},{\"title\":\"Sibling\"}]}");
+        long snapshot = contents.insert("other-owner", "Delivery", "SELECTION",
+            "{\"artworks\":[{\"title\":\"Before\"}]}");
+        mvc.perform(get("/api/admin/artworks").with(admin(true))).andExpect(status().isOk());
+        long id = jdbc.queryForObject("SELECT id FROM artwork WHERE source_content_id = ? AND position = 0", Long.class, source);
+        String path = "/api/admin/artworks/" + id;
+        for (boolean allowed : new boolean[]{false, true}) {
+            mvc.perform(patch(path).with(admin(allowed)).with(csrf()).contentType("application/json")
+                .content("{\"title\":\"After\",\"description\":\"New description\",\"price\":\"100\"}"))
+                .andExpect(allowed ? status().isOk() : status().isForbidden());
+        }
+        org.junit.jupiter.api.Assertions.assertEquals("After", jdbc.queryForObject("SELECT title FROM artwork WHERE id = ?", String.class, id));
+        org.junit.jupiter.api.Assertions.assertEquals("sold", jdbc.queryForObject("SELECT sale_status FROM artwork WHERE id = ?", String.class, id));
+        org.junit.jupiter.api.Assertions.assertEquals("https://example.com/a.jpg", jdbc.queryForObject("SELECT image_url FROM artwork WHERE id = ?", String.class, id));
+        var body = new tools.jackson.databind.ObjectMapper().readTree(contents.findById(source).orElseThrow().body);
+        org.junit.jupiter.api.Assertions.assertEquals("After", body.path("artworks").get(0).path("title").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("Sibling", body.path("artworks").get(1).path("title").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("keep", body.path("intro").asText());
+        org.junit.jupiter.api.Assertions.assertTrue(contents.findById(snapshot).orElseThrow().body.contains("Before"));
+        for (String invalid : new String[]{"{\"title\":\" \"}", "{\"saleStatus\":\"hold\"}", "{\"artist\":123}"}) {
+            mvc.perform(patch(path).with(admin(true)).with(csrf()).contentType("application/json").content(invalid))
+                .andExpect(status().isBadRequest());
+        }
+        mvc.perform(patch("/api/admin/artworks/99999999").with(admin(true)).with(csrf())
+            .contentType("application/json").content("{\"title\":\"Missing\"}")).andExpect(status().isNotFound());
+    }
+
+    @Test void exposesOriginalWebUrlAndRejectsUnsafeSourceLinks() throws Exception {
+        mvc.perform(post("/api/contents").with(oidcLogin()).with(csrf()).contentType("application/json")
+            .content("""
+                {"title":"Web source","sourceType":"URL","sourceRef":"https://example.com/catalog?view=works",
+                 "body":{"artworks":[{"title":"Web work"}]}}
+                """)).andExpect(status().isCreated());
+        mvc.perform(get("/api/admin/artworks").with(admin(true)).param("search", "Web work"))
+            .andExpect(jsonPath("$.items[0].sourceRef").value("https://example.com/catalog?view=works"));
+        long artworkId = jdbc.queryForObject("SELECT id FROM artwork WHERE title='Web work'", Long.class);
+        mvc.perform(patch("/api/admin/artworks/" + artworkId).with(admin(true)).with(csrf())
+            .contentType("application/json").content("{\"sourceRef\":\"https://example.com/restored\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/admin/artworks").with(admin(true)).param("search", "Web work"))
+            .andExpect(jsonPath("$.items[0].sourceRef").value("https://example.com/restored"));
+        mvc.perform(patch("/api/admin/artworks/" + artworkId).with(admin(true)).with(csrf())
+            .contentType("application/json").content("{\"sourceRef\":\"javascript:alert(1)\"}"))
+            .andExpect(status().isBadRequest());
+        for (String ref : new String[]{"javascript:alert(1)", "//example.com", "https://user:pass@example.com"}) {
+            mvc.perform(post("/api/contents").with(oidcLogin()).with(csrf()).contentType("application/json")
+                .content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of(
+                    "title", "Invalid", "sourceType", "URL", "sourceRef", ref, "body", java.util.Map.of()))))
+                .andExpect(status().isBadRequest());
+        }
+    }
+
     @Test void rejectsInvalidPagingAndStatus() throws Exception {
         mvc.perform(get("/api/admin/artworks").with(admin(true)).param("page", "-1")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/artworks").with(admin(true)).param("pageSize", "101")).andExpect(status().isBadRequest());

@@ -1,3 +1,4 @@
+import type { PriceData } from './artworkPrice';
 export interface ProtectedLink {
   id: number;
   shortCode: string;
@@ -108,12 +109,12 @@ export interface ContentImportResult {
   artworkCount: number;
   warnings: string[];
   sourceType: 'URL' | 'PDF';
-  /** SHA-256 for URL imports; original base filename for PDF imports. */
+  /** Original URL (legacy rows may contain a SHA-256); base filename for PDF imports. */
   sourceRef: string;
 }
 
 /** One reusable work saved from an authored or imported content document. */
-export interface ArtworkRecord {
+export interface ArtworkRecord extends PriceData {
   id: number;
   sourceContentId: number;
   saleStatus: 'hold' | 'sold' | null;

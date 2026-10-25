@@ -157,7 +157,7 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
           {result.failed > 0 && (
             <ul className="bulk-errors">
               {result.results.filter(row => !row.ok).map(row => (
-                <li key={row.row}>{row.row}행 {row.email && <code>{row.email}</code>} — {row.error}</li>
+                <li key={row.row}>{row.row}행 {row.email && <code>{row.email}</code>} - {row.error}</li>
               ))}
             </ul>
           )}

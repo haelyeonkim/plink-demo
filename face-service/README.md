@@ -27,7 +27,7 @@ plink.ticket.face.service-token=<FACE_SERVICE_TOKEN와 동일한 값>
 | `POST /embed` | `{vector, quality, algoVersion}` 또는 `{vector: [], reason}` |
 | `POST /liveness` | `{score, basis, configured}` |
 
-요청 본문은 `{"frames": ["<base64 JPEG>", ...], "challenge": "..."}` 이며 프레임은 최대 5장, 장당 400KB입니다. 여러 장을 보내면 **품질 점수가 가장 높은 프레임**을 골라 사용합니다 — 사람에게 가만히 있으라고 하는 것보다 훨씬 싸고, 등록 품질이 이후 인식 정확도의 대부분을 결정합니다.
+요청 본문은 `{"frames": ["<base64 JPEG>", ...], "challenge": "..."}` 이며 프레임은 최대 5장, 장당 400KB입니다. 여러 장을 보내면 **품질 점수가 가장 높은 프레임**을 골라 사용합니다 - 사람에게 가만히 있으라고 하는 것보다 훨씬 싸고, 등록 품질이 이후 인식 정확도의 대부분을 결정합니다.
 
 ## 모델
 
@@ -39,8 +39,8 @@ plink.ticket.face.service-token=<FACE_SERVICE_TOKEN와 동일한 값>
 | `FACE_RECOGNITION_MODEL` | `models/face_recognition_sface.onnx` | 인식 모델 경로 |
 | `FACE_DETECTION_MODEL` | `models/face_detection_yunet.onnx` | 검출 모델 경로 |
 | `FACE_LIVENESS_MODE` | `disabled` | `disabled` 또는 `onnx` |
-| `FACE_LIVENESS_MODEL` | — | 패시브 안티스푸핑 ONNX 경로 |
-| `FACE_SERVICE_TOKEN` | — | 설정하면 `Authorization: Bearer` 필수 |
+| `FACE_LIVENESS_MODEL` | - | 패시브 안티스푸핑 ONNX 경로 |
+| `FACE_SERVICE_TOKEN` | - | 설정하면 `Authorization: Bearer` 필수 |
 | `FACE_MIN_PIXELS` | `112` | 이보다 작은 얼굴은 거절 |
 | `FACE_MIN_DETECTION_SCORE` | `0.85` | 검출 신뢰도 하한 |
 
@@ -59,11 +59,11 @@ plink.ticket.face.service-token=<FACE_SERVICE_TOKEN와 동일한 값>
 
 판정은 세 가지를 합칩니다.
 
-1. **모델 점수** — YuNet으로 찾은 얼굴을 1.5배로 잘라 모델 입력 크기에 레터박스로 맞춰 채점합니다.
-2. **정지 프레임 차단** — 프레임 간 움직임이 사실상 0이면 점수를 0.2로 낮춥니다. 사진을 들이대는 가장 게으른 공격이 여기서 걸립니다(`basis: "static-frames"`).
-3. **임계값** — 입장권 서비스가 `plink.ticket.face.liveness-threshold`(기본 0.7) 미만을 거부합니다.
+1. **모델 점수** - YuNet으로 찾은 얼굴을 1.5배로 잘라 모델 입력 크기에 레터박스로 맞춰 채점합니다.
+2. **정지 프레임 차단** - 프레임 간 움직임이 사실상 0이면 점수를 0.2로 낮춥니다. 사진을 들이대는 가장 게으른 공격이 여기서 걸립니다(`basis: "static-frames"`).
+3. **임계값** - 입장권 서비스가 `plink.ticket.face.liveness-threshold`(기본 0.7) 미만을 거부합니다.
 
-**한계는 그대로입니다.** 인증(iBeta 등)을 받은 오픈 모델은 없습니다. 지금 쓰는 가중치는 CelebA-Spoof로 학습된 MiniFASNet 계열 이진 분류기이고, **저장소에 라이선스 표기가 없습니다** — 평가용으로만 쓰고, 상용 배포 전에 라이선스가 분명한 가중치(예: Apache-2.0인 minivision Silent-Face-Anti-Spoofing을 직접 ONNX로 변환)로 교체하세요. 교체는 `FACE_LIVENESS_MODEL`과 `FACE_LIVENESS_REAL_INDEX` 설정만 바꾸면 됩니다.
+**한계는 그대로입니다.** 인증(iBeta 등)을 받은 오픈 모델은 없습니다. 지금 쓰는 가중치는 CelebA-Spoof로 학습된 MiniFASNet 계열 이진 분류기이고, **저장소에 라이선스 표기가 없습니다** - 평가용으로만 쓰고, 상용 배포 전에 라이선스가 분명한 가중치(예: Apache-2.0인 minivision Silent-Face-Anti-Spoofing을 직접 ONNX로 변환)로 교체하세요. 교체는 `FACE_LIVENESS_MODEL`과 `FACE_LIVENESS_REAL_INDEX` 설정만 바꾸면 됩니다.
 
 정교한 공격(고화질 디스플레이, 3D 마스크)까지 막으려면 여전히 상용 PAD 단말이 필요하고, 그때까지는 **유인 레인**이 안전합니다.
 

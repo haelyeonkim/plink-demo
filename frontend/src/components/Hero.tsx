@@ -17,7 +17,7 @@ export default function Hero() {
             수신자에게 링크를 전달하고, 패스키 수신 확정과 열람을 관리하세요.
           </p>
           <div className="actions">
-            <Link className="primary" to="/links/new">보호 링크 만들기 <b><Icon name="arrow-right" /></b></Link>
+            <Link className="primary" to="/links/new">보호 링크 만들기</Link>
             <Link className="secondary" to="/guide">사용 방법 보기</Link>
           </div>
           <div className="trust">
@@ -48,7 +48,7 @@ export default function Hero() {
               <span><Icon name="clock" /></span>
               <div><small>링크 만료까지</small><b>2일 14시간</b></div>
             </div>
-            <button>안전하게 링크 열기 <span><Icon name="arrow-right" /></span></button>
+            <button>안전하게 링크 열기</button>
             <p className="notice">이 링크는 수신을 확정한 패스키로 열 수 있어요.</p>
           </div>
           <div className="float-card check">

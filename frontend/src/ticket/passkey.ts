@@ -62,7 +62,7 @@ async function coarsePosition(): Promise<Record<string, string>> {
 /**
  * Runs the ceremony for a ticket. With no passkey yet this registers one and binds the
  * ticket; afterwards it authenticates, and what the server does with that assertion
- * depends on the intent — open a presentation grant, or sign off a transfer.
+ * depends on the intent - open a presentation grant, or sign off a transfer.
  */
 export async function runCeremony(
   sessionId: string, token: string,

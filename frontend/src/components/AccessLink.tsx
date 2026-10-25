@@ -91,7 +91,7 @@ export default function AccessLink() {
       <p>다음에도 같은 패스키로 이 공유 링크를 열어 주세요.</p>
       {opened.originalUrl && (
         <a className="btn-primary" href={opened.originalUrl} target="_blank" rel="noopener noreferrer">
-          원본 링크 열기 <Icon name="arrow-right" />
+          원본 링크 열기
         </a>
       )}
     </div></section>

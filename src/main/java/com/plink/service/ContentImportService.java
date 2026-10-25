@@ -18,8 +18,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,7 +50,7 @@ public class ContentImportService {
         byte[] bytes = fetch(uri, 0);
         Map<String, Object> result = fromHtml(new String(bytes, StandardCharsets.UTF_8), uri.toString());
         result.put("sourceType", "URL");
-        result.put("sourceRef", sha256(uri.toString()));
+        result.put("sourceRef", uri.toString());
         return result;
     }
 
@@ -362,13 +360,4 @@ public class ContentImportService {
         return name.length() > 255 ? name.substring(name.length() - 255) : name;
     }
 
-    private static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                .digest(value.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is unavailable", impossible);
-        }
-    }
 }

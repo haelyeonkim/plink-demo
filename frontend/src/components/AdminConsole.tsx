@@ -123,7 +123,7 @@ export default function AdminConsole() {
       <h2>관리자</h2>
       <div className="picked-bar">
         <span className="picked-meta">전체 계정에서 등록한 작품을 확인합니다.</span>
-        <Link className="btn-secondary" to="/admin/artworks">작품 목록 <Icon name="arrow-right" /></Link>
+        <Link className="btn-secondary" to="/admin/artworks">작품 목록</Link>
       </div>
 
       {notice && <p className="notice-text" role="status">{notice}</p>}

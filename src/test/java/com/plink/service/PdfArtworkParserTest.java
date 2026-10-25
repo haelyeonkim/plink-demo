@@ -111,7 +111,7 @@ class PdfArtworkParserTest {
             
             작가: 홍길동
             작품명: 풍경
-            제작연도: 2024–2026
+            제작연도: 2024\u20132026
             재료: 종이에 연필
             규격: 30 x 20 cm
             가격: 가격 문의
@@ -121,7 +121,7 @@ class PdfArtworkParserTest {
             .containsEntry("year", "").containsEntry("price", "")
             .containsEntry("width", "").containsEntry("height", "")
             .containsEntry("description", "W 50 x H 80 cm\n2/7");
-        assertThat(works.get(1)).containsEntry("year", "2024–2026")
+        assertThat(works.get(1)).containsEntry("year", "2024\u20132026")
             .containsEntry("price", "가격 문의").containsEntry("width", "20");
     }
 

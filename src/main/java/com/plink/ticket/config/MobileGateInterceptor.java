@@ -12,7 +12,7 @@ import java.util.Locale;
 /**
  * Layer 1 of the mobile-only policy: advice, not proof. A user agent is trivially
  * forged, so ENFORCE here only stops someone opening the ticket on a desktop by
- * habit — the real device binding comes from the platform authenticator at
+ * habit - the real device binding comes from the platform authenticator at
  * registration and from the grant secret never leaving that browser.
  *
  * <p>Applied to holder routes only. Gate terminals and the organiser console are

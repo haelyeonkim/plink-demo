@@ -107,7 +107,10 @@ class ContentPersistenceTest {
         long id = new ObjectMapper().readTree(response).get("id").asLong();
         org.assertj.core.api.Assertions.assertThat(artworks.findByOwner("content-owner")
             .stream().filter(row -> row.sourceContentId() == id)).singleElement()
-            .satisfies(row -> org.assertj.core.api.Assertions.assertThat(row.body()).isEqualTo(work));
+            .satisfies(row -> org.assertj.core.api.Assertions.assertThat(row.body()).containsAllEntriesOf(work)
+                .containsEntry("priceMode", "amount").containsEntry("priceAmount", "5000000")
+                .containsEntry("priceCurrency", "KRW").containsEntry("priceKrwRate", "")
+                .containsEntry("priceRateDate", ""));
 
         mvc.perform(get("/api/contents").with(owner))
             .andExpect(status().isOk()).andExpect(jsonPath("$[*].title", hasItem("Imported " + type)));

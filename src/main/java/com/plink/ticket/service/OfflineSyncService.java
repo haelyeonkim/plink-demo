@@ -17,7 +17,7 @@ import java.util.Map;
  * Replays movements a terminal recorded while it could not reach the server.
  *
  * <p>Presence is global state, so an offline terminal cannot decide whether an entry is
- * legitimate — it lets people through and queues what it saw. Replay is where the truth
+ * legitimate - it lets people through and queues what it saw. Replay is where the truth
  * is worked out: events are applied in capture order, and anything that contradicts the
  * ledger is recorded as a flagged refusal rather than being forced into the state. That
  * is the honest trade an offline mode makes, and the flags are what operations chase.

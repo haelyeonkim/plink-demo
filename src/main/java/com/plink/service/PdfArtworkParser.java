@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 /** Caption parsing deliberately excludes prose that merely mentions a year or size. */
 final class PdfArtworkParser {
-    private static final String YEAR = "(?:18|19|20)\\d{2}(?:\\s*[-–]\\s*(?:(?:18|19|20)\\d{2}|\\d{2}))?";
+    private static final String YEAR = "(?:18|19|20)\\d{2}(?:\\s*[-\u2013]\\s*(?:(?:18|19|20)\\d{2}|\\d{2}))?";
     private static final String NUMBER = "\\d+(?:[.,]\\d+)?";
     private static final String DIMENSIONS = "(" + NUMBER + ")\\s*[x×X]\\s*(" + NUMBER
         + ")(?:\\s*[x×X]\\s*(" + NUMBER + "))?\\s*(inches|inch|cm|mm|in)\\b";

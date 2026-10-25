@@ -1,9 +1,12 @@
+import ArtworkPriceFields from './ArtworkPriceFields';
+import ArtworkPrice from './ArtworkPrice';
+import { priceDraft, type PriceDraft } from '../artworkPrice';
 import Icon from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { fetchContent, importContentPdf, importContentUrl, saveContent, uploadContentImage } from '../api';
 
-interface Artwork {
+interface Artwork extends PriceDraft {
   artworkId?: string;
   image: string; artist: string; title: string; year: string; medium: string;
   width: string; height: string; depth: string; unit: 'cm' | 'inch';
@@ -11,7 +14,7 @@ interface Artwork {
 }
 
 const empty = (): Artwork => ({
-  image: '', artist: '', title: '', year: '', medium: '',
+  ...priceDraft(), image: '', artist: '', title: '', year: '', medium: '',
   width: '', height: '', depth: '', unit: 'cm', description: '', price: '',
 });
 
@@ -83,7 +86,7 @@ export default function ContentCreate() {
       setSourceType(document.sourceType === 'URL' || document.sourceType === 'PDF'
         ? document.sourceType : 'MANUAL');
       setSourceRef(document.sourceRef);
-      const rows = (document.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
+      const rows = (document.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork));
       setArtworks(rows.length > 0 ? rows : [empty()]);
     }).catch(() => { if (live) setError('컨텐츠를 불러오지 못했어요.'); });
     return () => { live = false; };
@@ -95,7 +98,7 @@ export default function ContentCreate() {
     try {
       const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
         { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) }, sourceType, sourceRef);
-      setArtworks((document.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork)));
+      setArtworks((document.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork)));
       setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
       if (!editing) navigate(`/contents/${document.id}/edit`, { replace: true });
     } catch (err) {
@@ -113,7 +116,7 @@ export default function ContentCreate() {
       setExhibition(result.title);
       setIntro(result.body.intro ?? '');
       setColumns(result.body.columns ?? '2');
-      const rows = (result.body.artworks ?? []).map(row => ({ ...empty(), ...row } as Artwork));
+      const rows = (result.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork));
       setArtworks(rows.length ? rows : [empty()]);
       setWarnings(result.warnings ?? []);
       setSourceType(result.sourceType);
@@ -159,15 +162,15 @@ export default function ContentCreate() {
         </div>
         <div className="content-source-grid">
           <Link to="/contents/new?source=manual" className="content-source-card">
-            <span className="source-icon"><Icon name="edit" /></span><h3>직접 작성</h3>
+            <h3>직접 작성</h3>
             <p>전시와 작품 정보를 하나씩 입력하고 바로 미리봅니다.</p><b>작성 시작</b>
           </Link>
           <Link to="/contents/new?source=url" className="content-source-card">
-            <span className="source-icon"><Icon name="external" /></span><h3>웹페이지에서 가져오기</h3>
+            <h3>웹페이지에서 가져오기</h3>
             <p>공개 뷰잉룸 URL을 분석해 작품 정보 초안을 만듭니다.</p><b>URL 입력</b>
           </Link>
           <Link to="/contents/new?source=pdf" className="content-source-card">
-            <span className="source-icon"><Icon name="document" /></span><h3>PDF에서 가져오기</h3>
+            <h3>PDF에서 가져오기</h3>
             <p>작품 목록 PDF의 텍스트를 분석해 편집 가능한 초안을 만듭니다.</p><b>파일 선택</b>
           </Link>
         </div>
@@ -238,6 +241,13 @@ export default function ContentCreate() {
       {warnings.length > 0 && <div className="import-warnings" role="status">
         <b>가져오기 결과 확인</b>
         <ul>{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+      </div>}
+
+      {sourceType === 'URL' && <div className="field">
+        <label htmlFor="content-source-url">원본 웹페이지 주소</label>
+        <input id="content-source-url" type="url" maxLength={500}
+          value={sourceRef && !/^[0-9a-f]{64}$/.test(sourceRef) ? sourceRef : ''}
+          placeholder="https://" onChange={event => setSourceRef(event.target.value)} />
       </div>}
 
       <div className="tab-panel tab-split content-split">
@@ -363,11 +373,8 @@ export default function ContentCreate() {
                 <textarea id={`art-desc-${index}`} rows={3} value={artwork.description}
                   onChange={event => update(index, 'description', event.target.value)} />
               </div>
-              <div className="field">
-                <label htmlFor={`art-price-${index}`}>가격 또는 문의 문구</label>
-                <input id={`art-price-${index}`} value={artwork.price} placeholder="가격 문의"
-                  onChange={event => update(index, 'price', event.target.value)} />
-              </div>
+              <ArtworkPriceFields id={`art-price-${index}`} value={artwork}
+                onChange={price => setArtworks(items => items.map((item, i) => i === index ? { ...item, ...price } : item))} />
               </div>
             </div>
           ))}
@@ -391,7 +398,7 @@ export default function ContentCreate() {
                   <h4>{artwork.title || '작품 제목'}{artwork.year ? `, ${artwork.year}` : ''}</h4>
                   <small>{artwork.medium || '재료'} · {size ? `${size} ${artwork.unit}` : '크기'}</small>
                   {artwork.description && <p>{artwork.description}</p>}
-                  {artwork.price && <em>{artwork.price}</em>}
+                  <ArtworkPrice value={artwork} />
                 </article>
               );
             })}

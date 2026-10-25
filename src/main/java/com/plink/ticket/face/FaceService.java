@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * Face enrolment and matching.
  *
- * <p>Three rules shape everything here. Frames are never stored — only the encrypted
+ * <p>Three rules shape everything here. Frames are never stored - only the encrypted
  * feature vector. Consent is recorded separately and withdrawing it destroys the
  * template on the spot. And the liveness verdict is reached on the server: a browser
  * that scores its own capture would simply be rewritten.

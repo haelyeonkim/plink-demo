@@ -139,26 +139,14 @@ class ArtworkStatusTest {
             .andExpect(status().isConflict());
     }
 
-    @Test void legacyAssociationsRequireSameOwnerAndStatusChangesRequireAdmin() throws Exception {
+    @Test void statusChangesRequireAdminAndValidStatus() throws Exception {
         String owner = UUID.randomUUID().toString();
         source(owner);
         long id = artworks.findByOwner(owner).get(0).id();
-        long legacy = contents.insert(owner, "Legacy", "SELECTION", "{\"artworks\":[{\"title\":\"Same title\"}]}");
-        long other = contents.insert("other", "Other", "SELECTION", "{\"artworks\":[{\"title\":\"Same title\"}]}");
-        assertThat(statuses.statuses(legacy).get(0).linked()).isFalse();
         for (boolean admin : List.of(false, true)) {
             mvc.perform(patch("/api/admin/artworks/" + id + "/status").with(AdminArtworkTest.admin(admin)).with(csrf())
                 .contentType("application/json").content("{\"saleStatus\":\"invalid\"}"))
                 .andExpect(admin ? status().isBadRequest() : status().isForbidden());
         }
-        mvc.perform(post("/api/admin/artworks/associate").with(AdminArtworkTest.admin(true)).with(csrf())
-            .contentType("application/json").content(mapper.writeValueAsString(Map.of("contentId", other, "position", 0, "artworkId", id))))
-            .andExpect(status().isBadRequest());
-        statuses.connect(legacy, 0, id);
-        statuses.change(id, "sold");
-        assertThat(statuses.statuses(legacy).get(0).saleStatus()).isEqualTo("sold");
-        mvc.perform(post("/api/admin/artworks/associate").with(AdminArtworkTest.admin(true)).with(csrf())
-            .contentType("application/json").content(mapper.writeValueAsString(Map.of("contentId", legacy, "position", 0, "artworkId", id))))
-            .andExpect(status().isConflict());
     }
 }

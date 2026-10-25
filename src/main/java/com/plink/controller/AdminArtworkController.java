@@ -20,12 +20,21 @@ public class AdminArtworkController {
     private final ContentRepository contents;
     private final ContentImageService images;
     private final com.plink.service.ArtworkStatusService statuses;
+    private final com.plink.service.AdminArtworkEditService editor;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public AdminArtworkController(ArtworkRepository artworks, ContentRepository contents,
-            ContentImageService images, com.plink.service.ArtworkStatusService statuses) {
+            ContentImageService images, com.plink.service.ArtworkStatusService statuses,
+            com.plink.service.AdminArtworkEditService editor) {
         this.artworks = artworks; this.contents = contents; this.images = images;
-        this.statuses = statuses;
+        this.statuses = statuses; this.editor = editor;
+    }
+
+    @PatchMapping("/{id}")
+    public java.util.Map<String, Object> edit(@PathVariable long id,
+            @RequestBody java.util.Map<String, Object> body) {
+        editor.update(id, body);
+        return java.util.Map.of("updated", true);
     }
 
     @PatchMapping("/{id}/status")
@@ -34,26 +43,6 @@ public class AdminArtworkController {
         if (!body.containsKey("saleStatus")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         statuses.change(id, body.get("saleStatus"));
         return java.util.Map.of("updated", true);
-    }
-
-    @GetMapping("/unlinked")
-    public com.plink.service.ArtworkStatusService.PendingPage unlinked(@RequestParam(defaultValue = "0") int page) {
-        if (page < 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        return statuses.pending(page);
-    }
-
-    public record Association(long contentId, int position, long artworkId) {}
-    @GetMapping("/candidates/{contentId}")
-    public ArtworkRepository.Page candidates(@PathVariable long contentId,
-            @RequestParam(defaultValue = "") String search, @RequestParam(defaultValue = "0") int page) {
-        if (page < 0 || search.length() > 200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-        var content = contents.findById(contentId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        return artworks.findAll(search.trim(), "all", page, 10, content.ownerSub);
-    }
-    @PostMapping("/associate")
-    public java.util.Map<String, Object> associate(@RequestBody Association body) {
-        statuses.connect(body.contentId(), body.position(), body.artworkId());
-        return java.util.Map.of("connected", true);
     }
 
     @GetMapping

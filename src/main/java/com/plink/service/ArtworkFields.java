@@ -29,6 +29,7 @@ public final class ArtworkFields {
                     && !saleStatus.equals("hold") && !saleStatus.equals("sold")) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "판매 상태를 확인해 주세요.");
             }
+            row.putAll(ArtworkPrice.read(fields).fields());
             row.put("saleStatus", saleStatus == null ? "" : saleStatus.toString());
             result.add(row);
         }

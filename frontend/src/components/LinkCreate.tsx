@@ -55,7 +55,6 @@ export default function LinkCreate() {
       if (target === 'content' && !contentId) throw new Error('연결할 컨텐츠를 선택해 주세요.');
       const options = {
         title: String(data.get('title') || '') || undefined,
-        password: String(data.get('password') || '') || undefined,
         expiresAt: expiresAt ? `${expiresAt.replace('T', ' ')}:00` : undefined,
         maxViews: Number(data.get('maxViews') || 0) || undefined,
       };
@@ -108,9 +107,9 @@ export default function LinkCreate() {
           <label htmlFor="link-target">무엇을 열까요</label>
           <select id="link-target" value={target}
             onChange={event => setTarget(event.target.value as 'url' | 'content' | 'artworks')}>
-            <option value="url">외부 주소 · 이미 올려 둔 문서나 페이지</option>
+            <option value="url">외부 주소 (이미 올려 둔 문서나 페이지)</option>
             <option value="content">여기서 만든 컨텐츠</option>
-            <option value="artworks">작품 선택 · 수신자별 맞춤 작품 목록</option>
+            <option value="artworks">작품 선택 (수신자별 맞춤 작품 목록)</option>
           </select>
         </div>
         {target === 'url' ? (
@@ -119,7 +118,7 @@ export default function LinkCreate() {
             <input id="originalUrl" name="originalUrl" type="url" required
               placeholder="https://example.com/my-document" aria-describedby="original-url-notice" />
             <p id="original-url-notice" className="error-text">
-              외부 주소는 수신자가 링크를 열면 원본 주소가 노출될 수 있습니다.
+              받는 사람이 문서나 페이지를 열면, 원래 주소도 볼 수 있습니다.
             </p>
           </div>
         ) : target === 'content' ? (
@@ -136,13 +135,13 @@ export default function LinkCreate() {
               {contents.length === 0
                 ? '아직 만든 컨텐츠가 없어요. '
                 : '여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다. '}
-              <Link to="/contents/new">컨텐츠 만들기 <Icon name="arrow-right" /></Link>
+              <Link to="/contents/new">컨텐츠 만들기</Link>
             </p>
           </div>
         ) : <div className="field">
           <label id="artwork-picker-label">전달할 작품 ({selectedWorks.length}점 선택)</label>
           {artworks.length === 0 ? <p className="hint-text">
-            저장된 작품이 없어요. <Link to="/contents/new">URL 또는 PDF에서 작품 가져오기 <Icon name="arrow-right" /></Link>
+            저장된 작품이 없어요. <Link to="/contents/new">URL 또는 PDF에서 작품 가져오기</Link>
           </p> : <div className="artwork-picker" role="group" aria-labelledby="artwork-picker-label">
             {artworks.map(artwork => {
               const checked = selectedWorks.includes(artwork.id);
@@ -163,21 +162,23 @@ export default function LinkCreate() {
           <label htmlFor="title">제목</label>
           <input id="title" name="title" placeholder="예: Q3 브랜드 리뉴얼 제안서" />
         </div>
-        <div className="form-row">
-          <div className="field">
-            <label htmlFor="password">비밀번호 (선택)</label>
-            <input id="password" name="password" type="password" autoComplete="new-password" />
-          </div>
-          <div className="field">
-            <label htmlFor="maxViews">최대 열람</label>
-            <input id="maxViews" name="maxViews" type="number" min={0} placeholder="0 = 제한 없음" />
-          </div>
+        <div className="field">
+          <label htmlFor="maxViews">최대 열람</label>
+          <input id="maxViews" name="maxViews" type="number" min={0} placeholder="0 = 제한 없음" />
         </div>
         <div className="field">
           <label htmlFor="expiresAt">만료 일시</label>
-          <input id="expiresAt" type="datetime-local" value={expiresAt}
-            onChange={event => setExpiresAt(event.target.value)} />
-          <p className="hint-text">비워 두면 만료되지 않습니다.</p>
+          <div className="expiry-input">
+            <input id="expiresAt" type="datetime-local" value={expiresAt}
+              aria-describedby="expiry-help"
+              onChange={event => setExpiresAt(event.target.value)} />
+            <button type="button" className="expiry-clear" aria-label="만료 일시 지우기"
+              title="만료 일시 지우기" disabled={!expiresAt}
+              onClick={() => setExpiresAt('')}>
+              <Icon name="close" />
+            </button>
+          </div>
+          <p className="hint-text" id="expiry-help">비워 두면 만료되지 않습니다.</p>
         </div>
         <div className="field">
           <label htmlFor="recipients">수신자 이메일 (선택)</label>

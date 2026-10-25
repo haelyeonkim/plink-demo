@@ -458,7 +458,7 @@ export default function LinkAdmin() {
                   ))}
                 </select>
                 <p className="hint-text">
-                  <Link to="/contents">컨텐츠 만들기·편집 <Icon name="arrow-right" /></Link>
+                  <Link to="/contents">컨텐츠 만들기·편집</Link>
                 </p>
               </div>
             )}

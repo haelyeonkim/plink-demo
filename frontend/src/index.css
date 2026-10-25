@@ -489,7 +489,7 @@ a { color: inherit; text-decoration: none; }
 .tabs button.active { color: var(--blue); border-bottom-color: var(--blue); }
 .tab-panel { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
 .tab-panel h3 { font-size: 16px; margin-bottom: 10px; }
-/* A form ends on its button. What follows — the next form, a note — starts after a
+/* A form ends on its button. What follows - the next form, a note - starts after a
    gap rather than pressed against it. */
 .tab-panel form > .btn-primary { margin-bottom: 24px; }
 .tab-panel form > .btn-primary:only-child { margin-bottom: 0; }
@@ -777,6 +777,17 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
+.expiry-input { display: flex; align-items: stretch; gap: 4px; }
+.expiry-input input { flex: 1; min-width: 0; }
+.expiry-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 44px; height: 46px; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: white; color: #3d4663; cursor: pointer;
+}
+.expiry-clear:hover:not(:disabled) { background: #eef3ff; }
+.expiry-clear:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.expiry-clear:disabled { opacity: 0.4; cursor: default; }
 
 /* ---- Result Card ---- */
 .result-card {
@@ -1608,6 +1619,30 @@ body:has(.gate-screen) .header-plain { display: none; }
 .field textarea { resize: vertical; min-height: 72px; }
 .field select, .field textarea { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 14px; outline: none; font-family: inherit; }
 .field select:focus { border-color: var(--blue); }
+select, .field select, select.artwork-status {
+  --select-arrow-size: 1em;
+  --select-block-padding: 12px;
+  /* Keep the arrow inset proportional to the control height, including padding. */
+  --select-arrow-inset: calc((1.4em + 2 * var(--select-block-padding)) * 0.18);
+  --select-arrow-gap: 0.5em;
+  line-height: 1.4;
+  padding-block: var(--select-block-padding);
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: calc(var(--select-arrow-inset) + var(--select-arrow-size) + var(--select-arrow-gap));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d4663' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--select-arrow-inset) center;
+  background-size: var(--select-arrow-size) var(--select-arrow-size);
+}
+select.artwork-status {
+  --select-arrow-size: 0.85em;
+  --select-block-padding: 0.4167em;
+  --select-arrow-gap: 0.4em;
+}
+@media (forced-colors: active) {
+  select, .field select, select.artwork-status { appearance: auto; background-image: none; }
+}
 .field-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3d4663; margin-bottom: 20px; }
 .field-inline input { width: auto; }
 
@@ -2304,12 +2339,29 @@ body:has(.gate-screen) .header-plain { display: none; }
 .admin-artwork-work { display: flex; align-items: center; gap: 12px; min-width: 200px; }
 .admin-artwork-work img, .admin-artwork-placeholder { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: var(--bg-section); flex-shrink: 0; }
 .admin-artwork-placeholder { display: grid; place-items: center; font-size: 10px; color: #68708a; }
-.artwork-status { display: inline-block; white-space: nowrap; padding: 5px 9px; border-radius: 20px; background: #edf5ef; color: #356447; font-size: 12px; }
-.artwork-status.hold { background: #fff3d7; color: #795812; }
-.artwork-status.sold { background: #edf0f5; color: #5b647a; }
+.artwork-status { display: inline-block; white-space: nowrap; padding: 5px 9px; border-radius: 20px; background-color: #edf5ef; color: #356447; font-size: 12px; }
+.artwork-status.hold { background-color: #fff3d7; color: #795812; }
+.artwork-status.sold { background-color: #edf0f5; color: #5b647a; }
 .admin-artwork-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 24px; }
 .admin-artwork-pagination .btn-secondary { width: auto; margin: 0; }
-.legacy-artwork-links { margin: 20px 0; }
-.legacy-artwork-links > summary { cursor: pointer; font-size: 14px; font-weight: 600; }
-.legacy-artwork-picker { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
 .content-view .artwork-status { align-self: flex-start; }
+
+.admin-artwork-edit-button { border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 4px; border-radius: 6px; }
+.admin-artwork-edit-button strong { text-decoration: underline; text-underline-offset: 3px; }
+.admin-artwork-edit-button:hover { background: var(--bg-section); }
+.admin-artwork-edit-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.admin-artwork-editor { margin: auto; width: min(640px, calc(100% - 32px)); max-height: 90dvh; overflow-y: auto; padding: 24px; border: 1px solid var(--line); border-radius: 16px; }
+.admin-artwork-editor::backdrop { background: rgb(0 0 0 / 45%); }
+.admin-artwork-edit-preview { display: block; max-width: 100%; height: 140px; object-fit: contain; margin: 16px auto; }
+.admin-artwork-edit-fields { border: 0; padding: 0; margin: 16px 0; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.admin-artwork-edit-fields .field:has(textarea) { grid-column: 1 / -1; }
+@media (max-width: 480px) { .admin-artwork-edit-fields { grid-template-columns: minmax(0, 1fr); } }
+
+.artwork-price-fields { grid-column: 1 / -1; min-width: 0; }
+.artwork-price { display: inline-flex; flex-direction: column; gap: 4px; }
+.artwork-price > small { color: #697590; font-size: 12px; font-weight: 400; }
+.content-view .artwork-price, .content-preview .artwork-price { color: var(--blue); font-weight: 700; }
+
+.admin-artwork-source-link { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+
+.artwork-source-field { grid-column: 1 / -1; }

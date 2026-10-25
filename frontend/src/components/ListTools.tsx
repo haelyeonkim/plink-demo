@@ -18,7 +18,7 @@ export function useDebounced<T>(value: T, delay = 280): T {
 /**
  * Where this page sits in the whole list, and the way to the next one.
  *
- * <p>Says the range in words ("1,248장 중 51–100") because that is what an operator
+ * <p>Says the range in words ("1,248장 중 51-100") because that is what an operator
  * reads out to a colleague, and hides itself when everything fits on one page.
  */
 export function Pager({ page, unit = '건', onPage }: {
@@ -33,7 +33,7 @@ export function Pager({ page, unit = '건', onPage }: {
   return (
     <nav className="pager" aria-label="쪽 이동">
       <span className="pager-count">
-        {page.total.toLocaleString()}{unit} 중 <b>{from.toLocaleString()}–{to.toLocaleString()}</b>
+        {page.total.toLocaleString()}{unit} 중 <b>{from.toLocaleString()}-{to.toLocaleString()}</b>
       </span>
       <span className="pager-steps">
         <button type="button" className="btn-tiny" disabled={page.page === 0}

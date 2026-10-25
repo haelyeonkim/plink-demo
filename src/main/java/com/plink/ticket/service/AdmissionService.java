@@ -29,7 +29,7 @@ import java.util.Map;
  *
  * <p>Re-entry replaces "one ticket, one admission" with a presence invariant: IN only
  * succeeds from OUTSIDE and OUT only from INSIDE, and every transition is serialised by
- * a row lock. That is what keeps a forwarded QR useless — the ticket is already INSIDE,
+ * a row lock. That is what keeps a forwarded QR useless - the ticket is already INSIDE,
  * so a second entry cannot happen while the holder is in the venue.
  */
 @Service
