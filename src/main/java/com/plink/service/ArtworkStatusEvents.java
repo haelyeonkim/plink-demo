@@ -13,7 +13,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Push changed status only; recheck the passkey grant throughout the stream. */
+/** Push current artwork details and status; recheck the passkey grant throughout the stream. */
 @Service
 public class ArtworkStatusEvents {
     private final LinkRepository links;

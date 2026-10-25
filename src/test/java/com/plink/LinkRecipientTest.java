@@ -335,6 +335,8 @@ class LinkRecipientTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.body.artworks.length()").value(1))
             .andExpect(jsonPath("$.body.artworks[0].title").value("보낼 작품"))
-            .andExpect(jsonPath("$.body.artworks[0].price").value("USD 1,000"));
+            .andExpect(jsonPath("$.body.artworks[0].price").value("USD 1000"))
+            .andExpect(jsonPath("$.body.artworks[0].priceAmount").value("1000"))
+            .andExpect(jsonPath("$.body.artworks[0].priceCurrency").value("USD"));
     }
 }

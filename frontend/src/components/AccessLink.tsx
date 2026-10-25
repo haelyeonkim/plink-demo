@@ -40,23 +40,23 @@ export default function AccessLink() {
     setStatusNotice('');
     stream.addEventListener('statuses', event => {
       try {
-        const updates: Array<{ position: number; saleStatus: 'hold' | 'sold' | null; linked: boolean }> = JSON.parse(event.data);
+        const updates: Array<{ position: number; saleStatus: 'hold' | 'sold' | null; linked: boolean; fields?: Record<string, string> }> = JSON.parse(event.data);
         const byPosition = new Map(updates.map(row => [row.position, row]));
         setOpened(current => current?.content ? { ...current, content: { ...current.content,
           artworks: current.content.artworks?.map((row, index) => {
             const state = byPosition.get(index);
-            return state ? { ...row, saleStatus: state.saleStatus || '', saleStatusLinked: String(state.linked) } : row;
+            return state ? { ...row, ...state.fields, saleStatus: state.saleStatus || '', saleStatusLinked: String(state.linked) } : row;
           }),
         } } : current);
         setStatusNotice('');
-      } catch { setStatusNotice('판매 상태를 확인하지 못했어요. 링크를 다시 열어 주세요.'); }
+      } catch { setStatusNotice('작품 정보를 확인하지 못했어요. 링크를 다시 열어 주세요.'); }
     });
     stream.addEventListener('unavailable', () => {
       stream.close(); setOpened(null);
-      setError('판매 상태 확인 권한이 만료되었습니다. 패스키로 링크를 다시 열어 주세요.');
+      setError('작품 정보 확인 권한이 만료되었습니다. 패스키로 링크를 다시 열어 주세요.');
     });
     stream.onopen = () => setStatusNotice('');
-    stream.onerror = () => setStatusNotice('판매 상태 연결을 다시 시도하고 있어요. 표시된 상태가 최신이 아닐 수 있습니다.');
+    stream.onerror = () => setStatusNotice('작품 정보 연결을 다시 시도하고 있어요. 표시된 상태가 최신이 아닐 수 있습니다.');
     return () => stream.close();
   }, [opened?.statusEventsUrl]);
 

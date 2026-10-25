@@ -91,6 +91,18 @@ public class ArtworkRepository {
         return new Page(items, total, page, pageSize);
     }
 
+    /** Resolve only works belonging to the content owner, including archived linked works. */
+    public Map<Integer, Artwork> findLinked(long contentId) {
+        Map<Integer, Artwork> result = new LinkedHashMap<>();
+        jdbc.query("SELECT a.*, r.position AS link_position FROM content_artwork r "
+            + "JOIN link_content c ON c.id = r.content_id "
+            + "JOIN artwork a ON a.id = r.artwork_id AND a.owner_sub = c.owner_sub "
+            + "WHERE r.content_id = ?", rs -> {
+                result.put(rs.getInt("link_position"), MAPPER.mapRow(rs, 0));
+            }, contentId);
+        return result;
+    }
+
     public int countByContent(long contentId) {
         Integer count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM artwork WHERE source_content_id = ?", Integer.class, contentId);

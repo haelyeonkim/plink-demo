@@ -17,38 +17,40 @@ import java.util.*;
 @Service
 public class ArtworkStatusService {
     public record Changed() {}
-    public record Status(int position, Long artworkId, String saleStatus, boolean linked) {}
+    public record Status(int position, Long artworkId, String saleStatus, boolean linked, Map<String, String> fields) {}
+    private final com.plink.repository.ArtworkRepository artworks;
     private final JdbcTemplate jdbc;
     private final ContentRepository contents;
     private final ApplicationEventPublisher events;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public ArtworkStatusService(JdbcTemplate jdbc, ContentRepository contents, ApplicationEventPublisher events) {
-        this.jdbc = jdbc; this.contents = contents; this.events = events;
+    public ArtworkStatusService(JdbcTemplate jdbc, ContentRepository contents, ApplicationEventPublisher events, com.plink.repository.ArtworkRepository artworks) {
+        this.artworks = artworks; this.jdbc = jdbc; this.contents = contents; this.events = events;
     }
 
     public List<Status> statuses(long contentId) {
         LinkContent content = contents.findById(contentId).orElseThrow(this::missing);
         var rows = mapper.readTree(content.body).path("artworks");
         Map<Integer, Status> linked = new HashMap<>();
-        jdbc.query("SELECT r.position, a.id, a.sale_status FROM content_artwork r "
-            + "LEFT JOIN artwork a ON a.id = r.artwork_id WHERE r.content_id = ?", rs -> {
-                long id = rs.getLong("id");
-                boolean found = !rs.wasNull();
-                int position = rs.getInt("position");
-                linked.put(position, new Status(position, found ? id : null, rs.getString("sale_status"), found));
-            }, contentId);
+        artworks.findLinked(contentId).forEach((position, artwork) -> {
+            Map<String, String> fields = new LinkedHashMap<>(artwork.body());
+            // Images retain their delivery-specific access grants and references.
+            fields.remove("image");
+            fields.put("price", artwork.pricing().display());
+            linked.put(position, new Status(position, artwork.id(), artwork.saleStatus(), true, fields));
+        });
         List<Status> result = new ArrayList<>();
-        for (int i = 0; i < rows.size(); i++) result.add(linked.getOrDefault(i, new Status(i, null, null, false)));
+        for (int i = 0; i < rows.size(); i++) result.add(linked.getOrDefault(i, new Status(i, null, null, false, Map.of())));
         return result;
     }
 
-    /** Overlay only identity/status; snapshot descriptions and prices remain unchanged. */
+    /** Resolve current linked artwork details without rewriting stored delivery snapshots. */
     public JsonNode body(LinkContent content) {
         JsonNode body = mapper.valueToTree(ArtworkPrice.normalizeBody(mapper.readValue(content.body, Object.class), false));
         var rows = body.path("artworks");
         for (Status status : statuses(content.id)) {
             if (!(rows.path(status.position()) instanceof ObjectNode row)) continue;
+            status.fields().forEach(row::put);
             row.put("saleStatus", status.saleStatus() == null ? "" : status.saleStatus());
             row.put("saleStatusLinked", Boolean.toString(status.linked()));
             if (status.artworkId() != null) row.put("artworkId", status.artworkId().toString());

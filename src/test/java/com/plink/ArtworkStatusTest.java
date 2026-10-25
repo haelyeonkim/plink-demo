@@ -26,6 +26,7 @@ class ArtworkStatusTest {
     @Autowired ArtworkRepository artworks;
     @Autowired ContentRepository contents;
     @Autowired ArtworkDeliveryService deliveries;
+    @Autowired LinkService links;
     @Autowired ArtworkStatusService statuses;
     @Autowired ArtworkStatusEvents events;
     @Autowired ContentImageService images;
@@ -74,6 +75,45 @@ class ArtworkStatusTest {
         for (var result : results) assertThat(result.getResponse().getContentAsString()).contains("event:unavailable");
     }
 
+    @Test void databaseDetailsReachSelectionAndSourceLinksAndOpenStreams() throws Exception {
+        String owner = UUID.randomUUID().toString();
+        long source = source(owner);
+        long id = artworks.findByOwner(owner).get(0).id();
+        var delivery = deliveries.create(owner, List.of(id), "reader@example.com", "", "Copy", null, null, 0, false);
+        var direct = links.createLink(null, source, "Source", null, null, null, 0, owner);
+        var recipient = links.issue(direct.getId(), "direct@example.com", "");
+        String stored = contents.findById(delivery.link().getContentId()).orElseThrow().body;
+        var results = new ArrayList<org.springframework.test.web.servlet.MvcResult>();
+        for (var pair : List.of(Map.entry(delivery.link(), delivery.recipient()), Map.entry(direct, recipient))) {
+            var session = new MockHttpSession();
+            images.grant(session, pair.getKey(), pair.getValue());
+            results.add(mvc.perform(get("/api/links/s/" + pair.getValue().shortCode + "/artwork-status/events")
+                .session(session)).andExpect(status().isOk()).andExpect(request().asyncStarted()).andReturn());
+        }
+        // Direct database writes have no application event; the periodic refresh must detect them.
+        jdbc.update("UPDATE artwork SET title='Updated work', price_mode='amount', price_amount=1234.50, "
+            + "price_currency='EUR', price_krw_rate=1500, price_rate_date=DATE '2026-10-25' WHERE id=?", id);
+        events.refreshAll();
+        for (long contentId : List.of(source, delivery.link().getContentId())) {
+            var rows = statuses.body(contents.findById(contentId).orElseThrow()).path("artworks");
+            var row = java.util.stream.StreamSupport.stream(rows.spliterator(), false)
+                .filter(r -> r.path("artworkId").asLong() == id).findFirst().orElseThrow();
+            assertThat(row.path("title").asText()).isEqualTo("Updated work");
+            assertThat(row.path("priceAmount").asText()).isEqualTo("1234.5");
+            assertThat(row.path("priceCurrency").asText()).isEqualTo("EUR");
+            assertThat(row.path("priceKrwRate").asText()).isEqualTo("1500");
+        }
+        for (var result : results) assertThat(result.getResponse().getContentAsString())
+            .contains("Updated work", "\"priceAmount\":\"1234.5\"", "\"priceCurrency\":\"EUR\"");
+        mvc.perform(patch("/api/admin/artworks/" + id).with(AdminArtworkTest.admin(true)).with(csrf())
+            .contentType("application/json").content("{\"priceMode\":\"hidden\"}"))
+            .andExpect(status().isOk());
+        events.refreshAll();
+        for (var result : results) assertThat(result.getResponse().getContentAsString())
+            .contains("\"priceMode\":\"hidden\"", "\"priceAmount\":\"\"", "\"priceKrwRate\":\"\"");
+        assertThat(contents.findById(delivery.link().getContentId()).orElseThrow().body).isEqualTo(stored);
+    }
+
     @Test void browserCanPreflightStatusChangesOnlyFromConfiguredOrigin() throws Exception {
         mvc.perform(options("/api/admin/artworks/1/status")
                 .header("Origin", "http://localhost:3000")
@@ -115,7 +155,7 @@ class ArtworkStatusTest {
         }
     }
 
-    @Test void identitySurvivesReorderingRemovalAndStaleEditsWithoutChangingSnapshot() throws Exception {
+    @Test void identitySurvivesReorderingRemovalAndStaleEditsWithCurrentDetails() throws Exception {
         String owner = UUID.randomUUID().toString();
         long source = source(owner);
         var rows = artworks.findByOwner(owner);
@@ -129,8 +169,8 @@ class ArtworkStatusTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.body.artworks[1].artworkId").value(Long.toString(first)))
             .andExpect(jsonPath("$.body.artworks[1].saleStatus").value("sold"));
         var snapshot = statuses.body(contents.findById(delivery.link().getContentId()).orElseThrow()).path("artworks").get(0);
-        assertThat(snapshot.path("title").asText()).isEqualTo("Same title");
-        assertThat(snapshot.path("price").asText()).isEqualTo(rows.get(0).price());
+        assertThat(snapshot.path("title").asText()).isEqualTo("Changed");
+        assertThat(snapshot.path("price").asText()).isEqualTo("USD 999");
         artworks.replace(source, owner, List.of(edited.get(0)));
         assertThat(statuses.statuses(delivery.link().getContentId()).get(0).artworkId()).isEqualTo(first);
         statuses.change(first, "hold");

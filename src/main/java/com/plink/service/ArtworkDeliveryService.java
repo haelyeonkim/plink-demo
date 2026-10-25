@@ -16,7 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-/** Builds an immutable content snapshot and one personal address from selected works. */
+/** Stores a delivery snapshot and links selected works for current details at read time. */
 @Service
 public class ArtworkDeliveryService {
     public record Delivery(ProtectedLink link, LinkRecipient recipient, String url, boolean delivered) {}
