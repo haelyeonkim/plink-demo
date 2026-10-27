@@ -8,6 +8,9 @@ target/
 logs/
 # The stage copy's build, env and logs (scripts/run-stage.sh).
 .stage/
+# Production's frontend build, served on :10000; kept apart from frontend/dist so a local
+# build never changes what production serves.
+.prod/
 data/content-images/
 
 frontend/node_modules/
