@@ -62,11 +62,13 @@ bash scripts/run-dev.sh
 bash scripts/run-dev.sh stop
 ```
 
-`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고, 시작 메시지와 헬스체크 결과를 현재 터미널에 직접 출력한 뒤 프롬프트를 돌려줍니다. 서비스 로그는 `logs/backend.log`, `logs/frontend.log`에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩하고 `lyuni.ddak.app`을 허용해 Nginx가 도메인 Host 헤더로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
+`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고, 시작 메시지와 헬스체크 결과를 현재 터미널에 직접 출력한 뒤 프롬프트를 돌려줍니다. 서비스 로그는 `logs/backend.log`, `logs/frontend.log`(링크 앱), `logs/ticket.log`(입장권 앱)에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩하고 `lyuni.ddak.app`을 허용해 Nginx가 도메인 Host 헤더로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
 
 `run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다. 스크립트가 종료되어도 두 서비스는 백그라운드에서 계속 실행됩니다.
 
-포트 변경은 `--backend-port 9090 --frontend-port 5173` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
+프론트엔드는 링크 앱(`3000`)과 입장권 앱(`3001`, 프론트엔드 포트 + 1) 두 개의 Vite 서버로 뜨며, 링크 앱 서버가 `/tickets` 요청을 입장권 앱으로 넘기므로 브라우저에서는 `3000` 하나만 사용합니다.
+
+포트 변경은 `--backend-port 9090 --frontend-port 5173 --ticket-port 5174` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
 
 `80` 또는 `443`은 공개 서비스의 외부 포트입니다. 운영 서버에서는 Nginx 같은 리버스 프록시가 `lyuni.ddak.app`의 HTTPS 요청을 받아 프론트엔드와 백엔드로 전달합니다. `run-dev.sh`가 사용하는 `3000`과 `8080`은 서버 내부 개발 포트이므로 공개 URL에 포트 번호를 붙이지 않습니다.
 
@@ -83,10 +85,11 @@ bash scripts/run-dev.sh stop
 ```bash
 cd frontend
 npm ci
-npm run dev
+npm run dev:ticket   # 입장권 앱 (:3001)
+npm run dev          # 링크 앱 (:3000, /tickets는 :3001로 전달)
 ```
 
-빌드는 프로젝트 루트에서 `./mvnw package`, `frontend/`에서 `npm run build`로 실행합니다. 최초 Maven 빌드에는 Maven Central에서 의존성을 다운로드할 수 있는 네트워크가 필요합니다. 프론트엔드 결과물은 `frontend/dist/`, 백엔드 JAR은 `target/`에 생성됩니다. 현재 백엔드 JAR에 프론트엔드가 자동 포함되지는 않습니다.
+빌드는 프로젝트 루트에서 `./mvnw package`, `frontend/`에서 `npm run build`로 실행합니다. 최초 Maven 빌드에는 Maven Central에서 의존성을 다운로드할 수 있는 네트워크가 필요합니다. 프론트엔드 결과물은 `frontend/dist/`(입장권 앱은 `frontend/dist/tickets/`), 백엔드 JAR은 `target/`에 생성됩니다. 현재 백엔드 JAR에 프론트엔드가 자동 포함되지는 않습니다.
 
 ## 입장권 (Phase 0-1)
 
@@ -325,10 +328,13 @@ plink/
 │   ├── application.yml
 │   ├── schema.sql
 │   └── data.sql                     # 데모 데이터
-├── frontend/                        # Vite + React
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── src/
+├── frontend/                        # Vite + React, 앱 두 개가 한 도메인을 나눠 씀
+│   ├── package.json                 # 의존성·스크립트 공용
+│   ├── vite.common.ts               # 백엔드 프록시, 빌드 위치 공용 설정
+│   ├── shared/src/                  # 공용: 인증, 헤더·푸터, 대화상자, base.css (@shared/...)
+│   ├── apps/link/                   # 링크 앱: /, /links, /contents, /s, /admin, /login …
+│   ├── apps/ticket/                 # 입장권 앱: /tickets 아래 전부 (base /tickets/)
+│   └── public/                      # 로고·아이콘 (링크 앱이 사이트 루트에서 제공)
 ├── index.html                       # 정적 랜딩 페이지
 └── app/globals.css
 ```

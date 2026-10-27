@@ -1,0 +1,947 @@
+:root {
+  --ink: #122145;
+  /* Secondary text. 5.3:1 on white, 4.9:1 on the section tint: quiet, still readable. */
+  --muted: #646c7e;
+  --blue: #315cf4;
+  --mint: #47d8aa;
+  --line: #e6e9f1;
+  --bg: #fffdf9;
+  --bg-section: #f7f8fc;
+  --radius: 12px;
+  --shadow: 0 12px 35px rgba(35, 49, 95, 0.14);
+  /* Every page - the landing page included - is this wide, so the logo and the first
+     column of content stay put as you move between them. */
+  --page-width: min(1600px, 96vw);
+}
+
+* { box-sizing: border-box; margin: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, "Apple SD Gothic Neo", Arial, sans-serif;
+  line-height: 1.6;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ---- Header ---- */
+.header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  max-width: var(--page-width);
+  margin: auto;
+  padding: 0 24px;
+  gap: 48px;
+}
+/* The home page used to sit at 1100px while a console sat at 1600, so moving between
+   them shifted the logo and every left edge. One width now, everywhere. */
+
+.logo {
+  display: flex;
+  align-items: center;
+}
+.logo img { display: block; }
+.header nav {
+  display: flex;
+  gap: 32px;
+  font-size: 14px;
+  font-weight: 700;
+  flex: 1;
+}
+.header nav a:hover { color: var(--blue); }
+.login {
+  font-size: 13px;
+  border: 1px solid #d8dce7;
+  padding: 10px 19px;
+  border-radius: 22px;
+  background: white;
+}
+
+/* ---- Eyebrow ---- */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--blue);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.eyebrow span {
+  width: 22px;
+  height: 2px;
+  background: var(--mint);
+}
+.lock {
+  width: 58px;
+  height: 58px;
+  margin: 8px auto 3px;
+  background: #eef2ff;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+  border: 10px solid #f7f8ff;
+}
+.check { left: 2px; top: 116px; }
+.check span { background: #e5fff4; color: #2cb68c; }
+.shield { right: 0; bottom: 63px; }
+.shield span { background: #edf0ff; color: var(--blue); }
+.center { justify-content: center; }
+
+/* ---- Buttons ---- */
+.btn-primary {
+  display: inline-block;
+  background: var(--blue);
+  color: white;
+  padding: 14px 24px;
+  border-radius: var(--radius);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(49, 92, 244, 0.2);
+  transition: transform 0.15s;
+}
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary b { margin-left: 16px; }
+
+.btn-secondary {
+  display: inline-block;
+  background: white;
+  color: var(--ink);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  margin-left: 12px;
+}
+.btn-secondary:hover { border-color: var(--blue); color: var(--blue); }
+
+.btn-tiny {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.btn-tiny:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ---- Page Section ---- */
+.page-section {
+  /* One width for every application page. A console, the form that feeds it and the
+     pages beside them used to sit at three different left edges, so the content jumped
+     as you moved between them. Readable content is capped per page instead. */
+  max-width: var(--page-width);
+  margin: 0 auto;
+  /* The bar above already separates the title from the top of the window. */
+  padding: 14px 24px 48px;
+}
+/* The console title, which stands on its own rather than in a .section-header. The
+   name beside it is set smaller, so the row is centred rather than sat on a baseline
+   the two sizes do not share. */
+.page-section > h2, .page-head > h2 {
+  font-size: 26px; letter-spacing: -1px; margin: 0 0 2px;
+  display: flex; align-items: center; flex-wrap: wrap;
+}
+/* A list's title and the one thing you come to it to do, on the same line: the add
+   button used to sit on a row of its own, in the quiet style, a screen's width away. */
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.page-head > h2 { margin: 0; min-width: 0; }
+/* When the line under the title describes it, it stays close to it. */
+.page-head:has(+ .picked-bar) { margin-bottom: 4px; }
+.page-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.page-actions .btn-primary, .page-actions .btn-secondary { width: auto; margin: 0; padding: 11px 18px; font-size: 14px; }
+.page-actions .btn-primary { box-shadow: 0 6px 16px rgba(49, 92, 244, 0.2); }
+
+/* Kept as the marker the header follows; the width now comes from .page-section. */
+.page-wide { max-width: var(--page-width); }
+/* A form is read left to right: it stays narrow inside the wide page. */
+.page-section > .create-form { max-width: 640px; }
+.page-section > h2 + .create-form { margin-top: 24px; }
+.tab-split { min-width: 0; }
+.tab-split > * { min-width: 0; }
+
+/* One task per tab beats five panels competing for the same screen. */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 14px 0 16px; flex-wrap: wrap; }
+.tabs button {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 10px 18px; font: inherit; font-weight: 700; font-size: 14px;
+  color: #697590; cursor: pointer; margin-bottom: -1px;
+}
+.tabs button:hover { color: var(--blue); }
+.tabs button.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab-panel { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+.tab-panel h3 { font-size: 16px; margin-bottom: 10px; }
+/* A form ends on its button. What follows - the next form, a note - starts after a
+   gap rather than pressed against it. */
+.tab-panel form > .btn-primary { margin-bottom: 24px; }
+.tab-panel form > .btn-primary:only-child { margin-bottom: 0; }
+/* Pieces that used to stand alone on a page are already inside the panel's card:
+   drop their own frame so the console does not show a card within a card. */
+.tab-panel .link-table { border: none; border-radius: 12px; background: none; }
+/* Sections inside a panel are separated by space and a rule, not by a second card
+   frame: a bordered box inside a bordered box reads as clutter, not as structure. */
+.tab-panel .detail-card { border: none; background: none; border-radius: 0; padding: 0; }
+/* Reading history has nothing to sit beside: on a wide screen it takes the row, and
+   the rule above it is what separates it from the pair of columns. */
+.detail-card.detail-wide {
+  grid-column: 1 / -1;
+  margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line);
+}
+/* A form reads better narrow than stretched across a wide console. */
+.tab-panel .create-form { border: none; padding: 0; background: none; max-width: 620px; }
+.tab-panel .section-desc, .tab-panel .passkey-notice { max-width: 620px; }
+
+/* Entity list: one line per record, meta on a second line. A table needs every row
+   to agree on column widths; a list only needs the row to fit, so it survives a
+   phone without hiding half of what it knows. */
+.entity-list { list-style: none; padding: 0; margin: 0; }
+.entity-list li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 12px; margin: 0 -12px; border-radius: 10px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.entity-list li:last-child { border-bottom: none; }
+/* Only rows that actually open something get the affordance. */
+.entity-list li.openable { cursor: pointer; }
+.entity-list li.openable:hover {
+  background: #f4f7ff; box-shadow: inset 0 0 0 1px rgba(45, 91, 255, 0.18);
+}
+.entity-list li.openable:hover .entity-title { color: var(--blue); }
+.entity-list li.openable:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 1px; background: #f4f7ff;
+}
+.entity-chevron {
+  color: #b9bfcd; font-size: 20px; line-height: 1; flex: none; padding-left: 2px;
+  transition: color 0.12s, transform 0.12s;
+}
+.entity-list li.openable:hover .entity-chevron { color: var(--blue); transform: translateX(2px); }
+.entity-main { flex: 1; min-width: 0; }
+.entity-title {
+  display: block; font-weight: 600; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.entity-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
+  margin-top: 3px; font-size: 12px; color: #8b93a7;
+}
+.entity-meta code {
+  font-size: 12px; background: var(--bg-section); padding: 1px 6px; border-radius: 5px;
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.entity-meta .expired { color: #e74c3c; }
+.entity-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.entity-list li.no-hover { cursor: default; }
+.entity-list li.muted .entity-title { color: var(--muted); font-weight: 600; }
+.content-price { color: var(--blue); font-weight: 700; }
+
+/* The list a console opens on, and the button that lengthens it. */
+.list-more { display: flex; justify-content: center; margin-top: 14px; }
+.list-more .btn-secondary { width: auto; margin: 0; }
+/* Which one is open reads in the title, as a path: "링크 관리 / 이번 주 제안서". */
+.crumb-sep { display: block; flex-shrink: 0; width: 16px; height: 16px; margin: 0 8px; }
+.page-section > h2:has(.crumb-sep) { line-height: 1.2; }
+.page-section > h2:has(.crumb-sep) > .crumb-link,
+.page-section > h2:has(.crumb-sep) > .crumb { padding-block: 4px; }
+.crumb-link:hover, .crumb-link:focus-visible {
+  text-decoration: underline; text-underline-offset: 4px;
+}
+/* The count rides with the title rather than taking a line of its own. */
+.page-section > h2 .count, .page-head > h2 .count { margin-left: 10px; }
+.crumb {
+  color: #5b647a; font-size: 17px; letter-spacing: -0.4px; line-height: 1.2;
+  min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Under the title: what this list or this one thing amounts to. */
+.picked-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+/* With nothing on the left the row would collapse; the button still needs its line. */
+.picked-bar:empty { display: none; }
+.picked-bar .picked-meta { color: #8b93a7; font-size: 12px; }
+.picked-bar .btn-secondary, .picked-bar .btn-tiny { width: auto; margin: 0; }
+.entity-list li.no-hover:hover { background: none; }
+.perm-toggles input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--blue); }
+.tab-panel .result-card { border: none; padding: 8px 0; margin: 8px auto; background: none; }
+.tab-panel .result-card h2 { font-size: 18px; }
+.tab-split { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 32px; align-items: start; }
+@media (max-width: 900px) { .tab-split { grid-template-columns: minmax(0, 1fr); }
+}
+/* min() lets the track shrink under the viewport instead of forcing 180px each. */
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 0 16px; }
+/* The file picker in the page's own words. The real input is kept for the keyboard
+   and the file dialog, just not drawn. */
+.file-pick { position: relative; display: inline-flex; align-items: center; cursor: pointer; margin-left: 0; }
+.file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.file-pick:focus-within { outline: 2px solid rgba(49, 92, 244, 0.35); outline-offset: 2px; }
+.file-pick.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.file-name { font-size: 12.5px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A row's other actions, behind its "⋯". Fixed to the viewport so a scrolling table
+   cannot cut it off. */
+.row-menu-button { font-size: 15px; line-height: 1; letter-spacing: 1px; min-width: 34px; }
+
+/* ---- Touch ----
+   On a phone the console's small buttons were 21px tall, fifty of them to a screen.
+   Anything tapped gets at least 36px of height, checkboxes a finger's worth. */
+@media (pointer: coarse), (max-width: 620px) {
+  .btn-tiny { min-height: 36px; padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+  .perm-toggles input[type="checkbox"], .pick-row input[type="checkbox"],
+  .field-check input[type="checkbox"], label > input[type="checkbox"] { width: 20px; height: 20px; }
+  .footer-link { display: inline-block; padding: 10px 0; }
+}
+.section-desc { color: #788197; font-size: 15px; }
+.loading, .empty { text-align: center; color: var(--muted); padding: 32px 0; }
+
+/* ---- Create Form ---- */
+.create-form {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 32px;
+}
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #3d4663;
+}
+.field input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus { border-color: var(--blue); }
+/* Date and time inputs bring their own platform sizing: iOS lays the value and the
+   picker button out at their intrinsic width and ignores the box unless appearance
+   is reset, which is what pushed the field out of the form on a phone. */
+.field input[type="datetime-local"], .field input[type="date"], .field input[type="time"] {
+  -webkit-appearance: none; appearance: none;
+  min-width: 0; max-width: 100%; height: 46px; font-family: inherit;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* ---- Result Card ---- */
+.result-card {
+  text-align: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 48px 32px;
+  max-width: 480px;
+  margin: 40px auto;
+}
+.result-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  background: #e5fff4;
+  color: #29a77f;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: bold;
+}
+.result-card h2 { font-size: 22px; margin-bottom: 20px; }
+.result-code { margin: 20px 0; }
+.result-code label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 8px; }
+.code-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.code-display code {
+  background: var(--bg-section);
+  padding: 12px 24px;
+  border-radius: var(--radius);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.code-display button {
+  padding: 10px 16px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+.code-display button:hover { border-color: var(--blue); color: var(--blue); }
+.result-hint { font-size: 13px; color: var(--muted); margin: 16px 0 24px; }
+.result-actions { display: flex; justify-content: center; gap: 12px; }
+
+/* ---- Link Table ---- */
+.link-table {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.6fr 0.8fr 0.5fr 0.4fr;
+  align-items: center;
+  padding: 14px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-section);
+}
+.table-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.6fr 0.8fr 0.5fr 0.4fr;
+  padding: 16px 20px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.15s;
+  align-items: center;
+}
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: #fafbff; }
+.cell-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cell-code {
+  display: flex;
+  align-items: center;
+}
+.cell-code code {
+  font-size: 12px;
+  background: var(--bg-section);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.cell-views { font-weight: 600; }
+.cell-expires { font-size: 13px; color: #697590; }
+.cell-expires.expired { color: #e74c3c; }
+.cell-lock { font-size: 16px; }
+
+/* ---- Detail ---- */
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.detail-header h2 {
+  font-size: 28px;
+  letter-spacing: -1.5px;
+}
+.detail-meta { display: flex; gap: 8px; }
+.status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.status-active { background: #e5fff4; color: #29a77f; }
+.status-expired { background: #fff0ed; color: #e74c3c; }
+.status-lock { background: #edf0ff; color: var(--blue); }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 36px;
+  align-items: start;
+}
+.detail-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+}
+.detail-card h3 {
+  font-size: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.count {
+  font-size: 12px;
+  color: var(--blue);
+  background: #edf0ff;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+/* The label/value list, but not the stat tiles that also happen to be a <dl>. */
+.detail-card dl:not(.stat-grid) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 16px;
+}
+.detail-card dt {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.detail-card dd {
+  font-size: 13px;
+  word-break: break-all;
+}
+.detail-card dd a { color: var(--blue); }
+.detail-card dd code {
+  background: var(--bg-section);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.view-list {
+  list-style: none;
+  padding: 0;
+}
+.view-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.view-list li:last-child { border-bottom: none; }
+.viewer-avatar.viewer-open { background: var(--bg-section); color: var(--muted); }
+.viewer-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #eceeff;
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.view-list b { font-size: 13px; }
+.view-list small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ---- Access Card ---- */
+.access-card {
+  /* The seal and the gate's verdict are laid over this card, not squeezed into it. */
+  position: relative;
+  text-align: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 48px 36px;
+  max-width: 400px;
+  margin: 40px auto;
+  box-shadow: var(--shadow);
+}
+.access-card h2 {
+  font-size: 22px;
+  margin-bottom: 24px;
+}
+.access-card form { text-align: left; }
+.access-card .field { margin-bottom: 16px; }
+.access-card .btn-primary {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.access-card .btn-secondary {
+  width: 100%;
+  margin: 0;
+  text-align: center;
+}
+.error-icon { background: #fff0ed; color: #e74c3c; }
+.error-text { color: #e74c3c; font-size: 13px; margin: 8px 0 16px; }
+
+/* ---- Footer ---- */
+.footer {
+  border-top: 1px solid var(--line);
+  padding: 32px 24px;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: var(--muted);
+}
+.footer .logo img { height: 20px; }
+.footer p { font-size: 11px; flex: 1; }
+.footer small { font-size: 10px; }
+
+/* The settings tab's own tabs: the same bar, quieter, so the two levels do not read as
+   one row of eight. */
+.tabs-inner { margin: 0 0 18px; }
+.tabs-inner button { font-size: 13px; padding: 8px 12px; }
+.summary-table { width: 100%; border-collapse: collapse; }
+.summary-table th, .summary-table td {
+  text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.summary-table tr:last-child th, .summary-table tr:last-child td { border-bottom: none; }
+.summary-table th { width: 160px; color: #8b93a7; font-weight: 600; white-space: nowrap; }
+.summary-table td { font-weight: 600; }
+.settings-panel .tabs-inner { margin-top: 0; }
+
+/* ---- Responsive ---- */
+@media (max-width: 800px) {
+  .header { height: 70px; gap: 0; justify-content: space-between; }
+  /* Every side gutter costs a phone about 12% of its width, and the panel's own
+     padding sits inside the page's. One of the two is enough. */
+  .page-section { padding: 10px 16px 28px; }
+  /* 96vw leaves an 8px margin a phone cannot spare, and it pushed the content out of
+     line with the header. */
+  .page-section, .page-wide { max-width: 100%; }
+  /* The bar shares the page's gutter so the logo lines up with the panel below it. */
+  .header, .footer, body:has(.page-section) .header, body:has(.page-section) .footer {
+    max-width: 100%; padding-left: 16px; padding-right: 16px;
+  }
+  .page-section > h2, .page-head > h2 { font-size: 22px; }
+  .tabs { margin: 10px 0 12px; }
+  .tabs button { padding: 9px 12px; }
+  .tab-panel { padding: 14px; border-radius: 12px; }
+  .detail-card { padding: 14px; }
+  .loading, .empty { padding: 22px 0; }
+  /* The links move into the toggle panel rather than disappearing: the console and the
+     gate terminal are reached from here, and on a phone there was no other way in. */
+  .header nav { display: none; }
+  .header .header-account { display: none; }
+  .header .header-account-guest {
+    display: flex; margin-left: auto; margin-right: 12px; flex-shrink: 0;
+  }
+  .header-account-guest .login {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 19px; border-color: var(--line);
+  }
+  .header .menu-toggle { display: inline-flex; }
+  /* Three columns squeezed into 390px left the tagline in a two-word ribbon. */
+  .footer { flex-direction: column; align-items: flex-start; gap: 10px; text-align: left; }
+  .footer p { flex: none; }
+  /* minmax(0, …): a bare 1fr keeps the column at its content's minimum, and the
+     issue form inside it is wider than a phone. */
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  /* A label column this narrow breaks URLs mid-word; stack instead. */
+  .detail-card dl:not(.stat-grid) { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .detail-card dd { margin-bottom: 10px; }
+  .field-row { grid-template-columns: minmax(0, 1fr); }
+  /* Under 16px iOS zooms the page in on focus and never zooms back out. */
+  .field input, .field select, .field textarea { font-size: 16px; }
+  /* The share code needs more room than a phone has; the row keeps the title and
+     the count, and the code with its copy buttons waits in the detail view.
+     minmax(0, …) so the title track may shrink instead of overflowing the row. */
+  .table-header, .table-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .cell-expires, .cell-lock, .cell-code { display: none; }
+}
+
+/* Google account */
+.header-account { display: flex; align-items: center; gap: 12px; position: relative; }
+.header-account button { color: var(--ink); font-family: inherit; cursor: pointer; }
+.admin-link { font-size: 13px; font-weight: 700; color: #697590; }
+.admin-link:hover { color: var(--blue); }
+.account-name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.account-error { position: absolute; top: 100%; right: 0; width: 240px; font-size: 12px; color: #b42318; background: white; padding: 8px; z-index: 5; }
+.login-description { color: #66708b; margin-bottom: 32px; }
+.cell-code code { font-size: 11px; }
+.code-display code { overflow-wrap: anywhere; min-width: 0; font-size: 15px; }
+
+/* The holder's ticket is meant to be read at a glance in a queue, so it is built to
+   sit inside one screen: the card centres itself in what is left under the header and
+   everything that is not "get me through the door" folds away behind one button. */
+/* The bare footer under a holder's ticket: one link, and out of the way. */
+.footer-bare { padding: 8px 24px 14px; border-top: none; justify-content: center; }
+.footer-bare .footer-link { font-size: 12px; }
+/* Under the ticket the one link keeps its touch height without adding to the page. */
+@media (pointer: coarse), (max-width: 620px) {
+  .footer-bare { padding-top: 0; padding-bottom: 4px; }
+  .footer-bare .footer-link { padding: 8px 0; }
+}
+
+.notice-text { color: #2f6fd0; font-size: 13px; margin: 8px 0 16px; }
+.warn-text { color: #8a5a00; background: #fff7e6; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin: 8px 0 16px; text-align: left; }
+.hint-text { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+/* The room's light still changes with the verdict even though the terminal itself is
+   only as wide as it needs to be. */
+body:has(.gate-admit) { background: #04201a; }
+body:has(.gate-exit) { background: #061a33; }
+body:has(.gate-repeat) { background: #241803; }
+body:has(.gate-deny) { background: #290c0b; }
+/* The panel takes the same colour as the page behind it, which keeps the verdict
+   readable where :has() is not understood. */
+.gate-admit { background: #04201a; }
+.gate-exit { background: #061a33; }
+.gate-repeat { background: #241803; }
+.gate-deny { background: #290c0b; }
+.gate-in { color: #46d6a8; background: rgba(70, 214, 168, 0.12); }
+.gate-out { color: #7aa5ff; background: rgba(122, 165, 255, 0.12); }
+.gate-bidirectional { color: #b3a6ff; background: rgba(179, 166, 255, 0.12); }
+
+/* Organiser console */
+.session-list { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.session-list button { width: 100%; text-align: left; background: var(--bg-section); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 2px; }
+.session-list button.chosen { border-color: var(--blue); background: #eef3ff; }
+.session-list span { font-size: 11px; color: var(--muted); }
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.stat-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 700px) { .stat-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Wide enough for two columns of history once the section spans the panel. */
+.view-list-wide { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 0 24px; max-height: 260px; overflow-y: auto; }
+.stat-grid > div { background: var(--bg-section); border-radius: var(--radius); padding: 10px 14px; }
+.stat-grid dt { font-size: 12px; color: var(--muted); font-weight: 600; }
+.stat-grid dd { margin: 0; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* A seven-column table cannot fit a phone, so the table scrolls rather than the page. */
+.table-scroll { overflow-x: auto; margin-top: 12px; -webkit-overflow-scrolling: touch; }
+.ticket-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table-scroll .ticket-table { min-width: 560px; }
+.ticket-table th, .ticket-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.ticket-table th { font-size: 12px; letter-spacing: 0.2px; color: var(--muted); font-weight: 700; }
+
+@media (max-width: 800px) {
+  /* A table needs every row to agree on eight column widths; a phone has room for
+     about three. Each row becomes a block and each cell carries its own label, so the
+     buttons stay reachable instead of hiding behind a sideways scroll. */
+  .table-scroll { overflow-x: visible; }
+  /* Beats .table-scroll .ticket-table's 560px floor, which is what the table needs
+     only while it is still a table. */
+  .table-scroll .ticket-table, .ticket-table {
+    display: block; min-width: 0; width: 100%; font-size: 13px;
+  }
+  .ticket-table thead { display: none; }
+  .ticket-table tbody, .ticket-table tr, .ticket-table td { display: block; width: auto; }
+  .ticket-table tr {
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px; background: white;
+  }
+  .ticket-table td {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 3px 0; border: none; text-align: left;
+  }
+  .ticket-table td::before {
+    content: attr(data-label); flex: none; width: 58px;
+    font-size: 11px; font-weight: 700; color: var(--muted);
+  }
+  .ticket-table td[data-label="참조"] { font-weight: 700; font-size: 14px; }
+  .ticket-table td[colspan]::before { content: none; }
+  /* A full-width cell - the link just issued - is a block, not a label-and-value row.
+     As a flex item it would refuse to shrink under a long URL and take the page
+     sideways with it, which is what pushed the console off the screen on a phone. */
+  .ticket-table td[colspan] { display: block; min-width: 0; padding-top: 10px; }
+}
+.field textarea { resize: vertical; min-height: 72px; }
+.field select, .field textarea { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); font-size: 14px; outline: none; font-family: inherit; }
+.field select:focus { border-color: var(--blue); }
+select, .field select, select.artwork-status {
+  --select-arrow-size: 1em;
+  --select-block-padding: 12px;
+  /* Keep the arrow inset proportional to the control height, including padding. */
+  --select-arrow-inset: calc((1.4em + 2 * var(--select-block-padding)) * 0.18);
+  --select-arrow-gap: 0.5em;
+  line-height: 1.4;
+  padding-block: var(--select-block-padding);
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: calc(var(--select-arrow-inset) + var(--select-arrow-size) + var(--select-arrow-gap));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d4663' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--select-arrow-inset) center;
+  background-size: var(--select-arrow-size) var(--select-arrow-size);
+}
+@media (forced-colors: active) {
+  select, .field select, select.artwork-status { appearance: auto; background-image: none; }
+}
+.field-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3d4663; margin-bottom: 20px; }
+.field-inline input { width: auto; }
+
+/* Link handed back once after issuing or re-issuing. */
+.issued-link {
+  /* Long tokens must not set the width of whatever holds this. */
+  min-width: 0; max-width: 100%; overflow: hidden;
+  background: var(--bg-section);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+/* The copy button carries the whole URL, so the display can be cut to one line
+   instead of wrapping into a four-line block of token. */
+.issued-link code {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-danger { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+
+/* Holder and terminal screens: the mark, and nothing that invites an operator action.
+   A phone held at a gate should open on the ticket, not on empty space. */
+.header-plain { justify-content: center; gap: 0; height: 56px; }
+
+/* Destructive confirmation */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(18, 33, 69, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 50;
+}
+.modal {
+  background: white; border-radius: 18px; padding: 28px; max-width: 460px; width: 100%;
+  box-shadow: 0 24px 60px rgba(18, 33, 69, 0.3);
+}
+.modal h3 { font-size: 18px; margin-bottom: 10px; }
+.modal-message { font-size: 14px; color: #3d4663; margin-bottom: 16px; }
+.modal-details {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px;
+  background: var(--bg-section); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+}
+.modal-details > div { display: contents; }
+.modal-details dt { font-size: 12px; color: var(--muted); font-weight: 600; }
+.modal-details dd { margin: 0; font-size: 13px; font-weight: 600; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.btn-danger {
+  background: #e05252; color: white; border: none; border-radius: var(--radius);
+  padding: 12px 20px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.btn-danger:hover { background: #cf4242; }
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.danger-zone { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+/* When it stands at the top of its own column there is nothing above to divide from. */
+.tab-split > .danger-zone:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.danger-zone h3 { color: #c0392b; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.panel-head h3 { margin: 0; }
+.session-bar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.session-bar .field { flex: 1 1 220px; min-width: 0; max-width: 460px; margin-bottom: 0; }
+.session-bar .btn-secondary { margin: 0; }
+
+/* Mobile navigation */
+.menu-toggle {
+  /* Shown only under the mobile breakpoint; see the .header .menu-toggle rule there. */
+  display: none;
+  align-items: center; justify-content: center; padding: 0; flex-shrink: 0;
+  background: none; border: 1px solid var(--line); border-radius: 10px;
+  width: 40px; height: 40px; cursor: pointer; color: var(--ink);
+}
+.menu-toggle:hover { border-color: var(--blue); color: var(--blue); }
+.mobile-menu {
+  border-bottom: 1px solid var(--line); background: white;
+  padding: 8px 24px 16px; display: flex; flex-direction: column; gap: 4px;
+}
+.mobile-menu nav { display: flex; flex-direction: column; }
+.mobile-menu nav a {
+  padding: 13px 4px; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--line);
+}
+.mobile-menu nav a:last-child { border-bottom: none; }
+.mobile-account {
+  display: flex; align-items: center; gap: 12px; padding-top: 12px;
+  border-top: 1px solid var(--line); margin-top: 8px;
+}
+/* The button sits against the right edge; a long address gives way rather than
+   pushing it off the screen. */
+.mobile-account .account-name {
+  /* The drawer has room the header bar does not: show the whole address. */
+  max-width: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mobile-account .login { margin-left: auto; flex: none; }
+.hint-text.center { text-align: center; }
+.artwork-grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
+.artwork-grid-1 { grid-template-columns: minmax(0, 1fr); }
+.field textarea { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); font: inherit; font-size: 14px; outline: none; resize: vertical; }
+.field textarea:focus { border-color: var(--blue); }
+.footer-link { font-size: 12px; color: var(--muted); }
+.footer-link:hover { color: var(--blue); }
+
+/* Bulk import from a spreadsheet */
+.bulk-import { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 18px; }
+.bulk-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.bulk-actions input[type="file"] { font-size: 12px; max-width: 100%; min-width: 0; }
+.bulk-text {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; outline: none;
+  resize: vertical;
+}
+.bulk-text:focus { border-color: var(--blue); }
+.bulk-preview { overflow-x: auto; margin: 12px 0; }
+.bulk-preview table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.bulk-preview th, .bulk-preview td {
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+  white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+}
+.bulk-preview th { font-size: 12px; letter-spacing: 0.2px; color: var(--muted); font-weight: 700; }
+.bulk-preview tr.row-bad td { color: #c0392b; }
+.bulk-result { margin-top: 12px; }
+.bulk-errors { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px; color: #c0392b; }
+.bulk-errors li { padding: 3px 0; }
+.bulk-errors code { background: var(--bg-section); padding: 1px 6px; border-radius: 5px; }
+.catalog-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.catalog-add input {
+  flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: var(--radius); font-size: 14px; outline: none;
+}
+.catalog-add input:focus { border-color: var(--blue); }
+.catalog-add .btn-secondary { margin: 0; white-space: nowrap; }
+/* State at a glance: what the ticket is, and where its holder is. */
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.pill-ok { background: #e5fff4; color: #1c8a67; }
+.pill-in { background: #e8f0ff; color: #2d5bff; }
+.pill-out { background: #f2f4f8; color: #5b647a; }
+.pill-warn { background: #fff4e5; color: #b26a00; }
+
+/* ---- Showing the check happen ----
+   Four screens share this vocabulary: the gate's verdict, the holder's spent code, the
+   passkey ceremony, and the seal mark itself. The rule they all follow is that the
+   animation carries information - a lock opening, a code burning, a ledger line being
+   written - and never the verdict on its own: every tone has its own glyph and its own
+   words, and reduced motion gets the same screen without the movement. ---- */
+
+/* One tone per verdict, in three weights: the colour itself, a lit one for dark
+   screens, and a deep one the wash falls away to. */
+.verdict-admit { --tone: #14855f; --tone-soft: #e9f9f1; --tone-lit: #46d6a8; --tone-deep: #064434; }
+.verdict-exit { --tone: #2d5bff; --tone-soft: #e8f0ff; --tone-lit: #7aa5ff; --tone-deep: #0f2a72; }
+.verdict-repeat { --tone: #ad6500; --tone-soft: #fff7e6; --tone-lit: #ffcf7a; --tone-deep: #5e3800; }
+.verdict-deny { --tone: #bf3226; --tone-soft: #fdeeee; --tone-lit: #ff9d95; --tone-deep: #61170f; }
+.seal-working { color: #3d4663; }
+.seal-admit { color: #1c8a67; }
+.seal-exit { color: var(--blue); }
+.seal-repeat { color: #b26a00; }
+.seal-deny { color: #c0392b; }
+
+/* SVG image icons inherit the surrounding text color, including hover states. */
+.ui-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: var(--icon-url) center / contain no-repeat;
+  mask: var(--icon-url) center / contain no-repeat;
+}
+.source-icon .ui-icon { font-size: 24px; }
+.lock .ui-icon { font-size: 24px; }

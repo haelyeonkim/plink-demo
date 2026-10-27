@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "dev": "vite -c apps/link/vite.config.ts",
+    "dev:ticket": "vite -c apps/ticket/vite.config.ts",
+    "build": "tsc -b && vite build -c apps/link/vite.config.ts && vite build -c apps/ticket/vite.config.ts",
+    "preview": "vite preview -c apps/link/vite.config.ts"
   },
   "dependencies": {
     "jsqr": "^1.4.0",

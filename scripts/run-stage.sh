@@ -55,7 +55,8 @@ build() {
   cp "$(ls "$STAGE_DIR"/build/plink-demo-*.jar | grep -v -- '-plain' | head -n 1)" "$STAGE_DIR/app.jar"
   echo "==> Building frontend into .stage/dist ..."
   cd "$PROJECT_DIR/frontend"
-  npm run build --silent -- --outDir "$STAGE_DIR/dist" --emptyOutDir
+  # Both apps: the link app at the root of dist, the ticket app in dist/tickets.
+  PLINK_DIST="$STAGE_DIR/dist" npm run build --silent
 }
 
 start() {
@@ -75,13 +76,15 @@ start() {
   else
     echo "==> Serving stage frontend on :$FRONTEND_PORT ..."
     ( cd "$PROJECT_DIR/frontend" || exit 1
-      BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" nohup node_modules/.bin/vite preview \
-        --outDir "$STAGE_DIR/dist" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort \
+      # The link app's preview also serves the ticket app under /tickets.
+      BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" PLINK_DIST="$STAGE_DIR/dist" nohup node_modules/.bin/vite preview \
+        -c apps/link/vite.config.ts --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort \
         >> "$STAGE_DIR/logs/frontend.log" 2>&1 < /dev/null &
       echo $! > "$STAGE_DIR/frontend.pid" )
   fi
   wait_for_http "Backend" "http://127.0.0.1:$BACKEND_PORT/api/auth/session"
   wait_for_http "Frontend" "http://127.0.0.1:$FRONTEND_PORT/"
+  wait_for_http "Frontend /tickets" "http://127.0.0.1:$FRONTEND_PORT/tickets/gate"
 }
 
 stop() {

@@ -66,4 +66,4 @@
 - `src/main/java/com/plink/ticket/service/TicketService.java`: `view(resolved, viewer)` (잠긴 응답)
 - `src/main/java/com/plink/ticket/controller/TicketController.java`: `requireViewer`
 - `src/main/java/com/plink/ticket/live/TicketSocketHandler.java`, `LiveEvents.java`: 실시간 연결 확인·만료·끊기
-- `frontend/src/components/TicketPage.tsx`: 잠금 화면, 자동 확인, 휴대폰 변경 시 재발급
+- `frontend/apps/ticket/src/components/TicketPage.tsx`: 잠금 화면, 자동 확인, 휴대폰 변경 시 재발급

@@ -4,16 +4,17 @@
 
 The Spring Boot backend lives in `src/main/java/com/plink`. General link sharing code is grouped under `controller`, `service`, `repository`, and `model`; ticketing, gate, live-event, and face features are under `ticket/`. Configuration and Flyway migrations are in `src/main/resources`, with production migrations in `db/migration` and demo-only data in `db/dev`.
 
-The React/TypeScript frontend is in `frontend/src`: UI components are under `components`, and ticket APIs and browser helpers under `ticket`. Static assets belong in `frontend/public`. The optional Python face service is in `face-service/`. Backend tests mirror production packages under `src/test/java`.
+The React/TypeScript frontend is two apps that share one origin and one backend: `frontend/apps/link` (links, contents, administration, sign-in; the site root) and `frontend/apps/ticket` (everything under `/tickets`: the holder's ticket, the gate terminal, the ticket console). Code both use - auth, header and footer, dialogs, the base stylesheet - is in `frontend/shared/src`, imported as `@shared/...`; an app never imports from the other. Navigation that crosses apps uses `AppLink`/`useGo` from `@shared/scope`. Static assets belong in `frontend/public`. The optional Python face service is in `face-service/`. Backend tests mirror production packages under `src/test/java`.
 
 ## Build, Test, and Development Commands
 
-- `bash scripts/run-dev.sh`: build and start backend on 8080 and Vite on 3000; logs go to `logs/`.
+- `bash scripts/run-dev.sh`: build and start backend on 8080, the link app's Vite on 3000 and the ticket app's on 3001 (3000 forwards `/tickets` to it, so use 3000); logs go to `logs/`.
 - `bash scripts/run-dev.sh stop`: stop both local services.
 - `./mvnw test`: compile and run all Java tests. Use JDK 17 or newer.
 - `./mvnw clean package -DskipTests`: produce the backend JAR in `target/`.
 - `cd frontend && npm ci`: install the locked frontend dependency set.
-- `cd frontend && npm run build`: run TypeScript checks and create `frontend/dist`.
+- `cd frontend && npm run build`: run TypeScript checks and build both apps into `frontend/dist` (ticket app in `dist/tickets`).
+- `cd frontend && npm run preview`: serve that build as production does: the link app's server also serves `/tickets`.
 - `cd face-service && ./run.sh`: start the optional face service.
 
 ## Coding Style & Naming Conventions
