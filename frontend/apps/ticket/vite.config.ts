@@ -4,7 +4,7 @@ import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
 
 /**
  * The ticket app: the holder's ticket, the gate terminal and the organiser console, all
- * under /tickets. In development the link app's server on :3000 forwards /tickets here,
+ * under /tickets. In development the link app's server on :3000 forwards /tickets here (:3010),
  * so the site is used through that one address.
  */
 export default defineConfig({
@@ -16,7 +16,7 @@ export default defineConfig({
   publicDir: false,
   build: { outDir: `${dist}/tickets`, emptyOutDir: true },
   server: {
-    port: Number(process.env.TICKET_DEV_PORT || 3001),
+    port: Number(process.env.TICKET_DEV_PORT || 3010),
     strictPort: true,
     allowedHosts,
     proxy: backendProxy,

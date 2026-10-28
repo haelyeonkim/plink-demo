@@ -7,10 +7,10 @@ export default function TicketIntro() {
       <section className="th-hero">
         <div className="th-copy">
           <p className="eyebrow"><span></span> PASSKEY TICKETING</p>
-          <h1>
+          <h2 className="th-title">
             입장권은 그 사람에게만,<br />
             <strong>입장은 한 번에.</strong>
-          </h1>
+          </h2>
           <p className="th-lead">
             처음 등록한 패스키에 주인이 정해지는 입장권.<br className="th-wide" />
             게이트에서 바로 확인하고, 쿠폰과 혼잡도까지 한 곳에서 운영하세요.

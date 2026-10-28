@@ -55,8 +55,11 @@ build() {
   cp "$(ls "$STAGE_DIR"/build/plink-demo-*.jar | grep -v -- '-plain' | head -n 1)" "$STAGE_DIR/app.jar"
   echo "==> Building frontend into .stage/dist ..."
   cd "$PROJECT_DIR/frontend"
-  # Both apps: the link app at the root of dist, the ticket app in dist/tickets.
-  PLINK_DIST="$STAGE_DIR/dist" npm run build --silent
+  # Both apps: the link app at the root of dist, the ticket app in dist/tickets. Built
+  # beside the served copy and swapped in once stopped, so a running stage never serves
+  # a half-written dist.
+  rm -rf "$STAGE_DIR/dist-new"
+  PLINK_DIST="$STAGE_DIR/dist-new" npm run build --silent
 }
 
 start() {
@@ -87,6 +90,12 @@ start() {
   wait_for_http "Frontend /tickets" "http://127.0.0.1:$FRONTEND_PORT/tickets/gate"
 }
 
+swap_dist() {
+  rm -rf "$STAGE_DIR/dist-old"
+  if [ -d "$STAGE_DIR/dist" ]; then mv "$STAGE_DIR/dist" "$STAGE_DIR/dist-old"; fi
+  mv "$STAGE_DIR/dist-new" "$STAGE_DIR/dist"
+}
+
 stop() {
   for name in frontend backend; do
     local pid_file="$STAGE_DIR/$name.pid"
@@ -107,7 +116,7 @@ status() {
 }
 
 case "${1:-status}" in
-  deploy) check_env; build; stop; start ;;
+  deploy) check_env; build; stop; swap_dist; start ;;
   start) start ;;
   stop) stop ;;
   restart) stop; start ;;

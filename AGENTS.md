@@ -8,7 +8,7 @@ The React/TypeScript frontend is two apps that share one origin and one backend:
 
 ## Build, Test, and Development Commands
 
-- `bash scripts/run-dev.sh`: build and start backend on 8080, the link app's Vite on 3000 and the ticket app's on 3001 (3000 forwards `/tickets` to it, so use 3000); logs go to `logs/`.
+- `bash scripts/run-dev.sh`: build and start backend on 8080, the link app's Vite on 3000 and the ticket app's on 3010 (3000 forwards `/tickets` to it, so use 3000); logs go to `logs/`.
 - `bash scripts/run-dev.sh stop`: stop both local services.
 - `./mvnw test`: compile and run all Java tests. Use JDK 17 or newer.
 - `./mvnw clean package -DskipTests`: produce the backend JAR in `target/`.

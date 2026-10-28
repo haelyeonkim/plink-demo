@@ -66,7 +66,7 @@ bash scripts/run-dev.sh stop
 
 `run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다. 스크립트가 종료되어도 두 서비스는 백그라운드에서 계속 실행됩니다.
 
-프론트엔드는 링크 앱(`3000`)과 입장권 앱(`3001`, 프론트엔드 포트 + 1) 두 개의 Vite 서버로 뜨며, 링크 앱 서버가 `/tickets` 요청을 입장권 앱으로 넘기므로 브라우저에서는 `3000` 하나만 사용합니다.
+프론트엔드는 링크 앱(`3000`)과 입장권 앱(`3010`, 프론트엔드 포트 + 10) 두 개의 Vite 서버로 뜨며, 링크 앱 서버가 `/tickets` 요청을 입장권 앱으로 넘기므로 브라우저에서는 `3000` 하나만 사용합니다.
 
 포트 변경은 `--backend-port 9090 --frontend-port 5173 --ticket-port 5174` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
 
@@ -85,8 +85,8 @@ bash scripts/run-dev.sh stop
 ```bash
 cd frontend
 npm ci
-npm run dev:ticket   # 입장권 앱 (:3001)
-npm run dev          # 링크 앱 (:3000, /tickets는 :3001로 전달)
+npm run dev:ticket   # 입장권 앱 (:3010)
+npm run dev          # 링크 앱 (:3000, /tickets는 :3010으로 전달)
 ```
 
 빌드는 프로젝트 루트에서 `./mvnw package`, `frontend/`에서 `npm run build`로 실행합니다. 최초 Maven 빌드에는 Maven Central에서 의존성을 다운로드할 수 있는 네트워크가 필요합니다. 프론트엔드 결과물은 `frontend/dist/`(입장권 앱은 `frontend/dist/tickets/`), 백엔드 JAR은 `target/`에 생성됩니다. 현재 백엔드 JAR에 프론트엔드가 자동 포함되지는 않습니다.

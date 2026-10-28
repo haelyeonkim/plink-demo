@@ -1,10 +1,10 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, sep } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
 
-const ticketDev = `http://localhost:${process.env.TICKET_DEV_PORT || 3001}`;
+const ticketDev = `http://localhost:${process.env.TICKET_DEV_PORT || 3010}`;
 const TICKETS = /^\/tickets(?:[/?#]|$)/;
 
 const TYPES: Record<string, string> = {
@@ -30,17 +30,25 @@ function ticketApp(): Plugin {
         try { path = decodeURIComponent(url.split(/[?#]/)[0]).replace(/^\/tickets\/?/, ''); }
         catch { return next(); }
         let file = normalize(join(root, path));
-        if (!file.startsWith(root)) return next();
+        if (file !== root && !file.startsWith(root + sep)) return next();
         const asset = existsSync(file) && statSync(file).isFile();
         if (!asset) {
           // A missing script or image is a 404, not a page.
           if (path.startsWith('assets/')) { res.statusCode = 404; return res.end(); }
           file = join(root, 'index.html');
+          // Between a build emptying dist and writing the ticket app back, there is no page
+          // to send. Say so rather than let a failed read take the whole server down.
+          if (!existsSync(file)) { res.statusCode = 503; res.setHeader('Retry-After', '5'); return res.end(); }
         }
         res.setHeader('Content-Type', TYPES[extname(file)] || 'application/octet-stream');
         res.setHeader('Cache-Control', asset && path.startsWith('assets/')
           ? 'public, max-age=31536000, immutable' : 'no-cache');
-        createReadStream(file).pipe(res);
+        const stream = createReadStream(file);
+        stream.on('error', () => {
+          if (!res.headersSent) res.statusCode = 503;
+          res.end();
+        });
+        stream.pipe(res);
       });
     },
   };
@@ -60,7 +68,11 @@ export default defineConfig({
     proxy: {
       ...backendProxy,
       // The ticket app runs as its own dev server; ws carries its hot reload.
-      '^/tickets(?:[/?#]|$)': { target: ticketDev, changeOrigin: true, ws: true },
+      // The ticket dev server lives under /tickets/ and answers /tickets itself with a 404.
+      '^/tickets(?:[/?#]|$)': {
+        target: ticketDev, changeOrigin: true, ws: true,
+        rewrite: path => path.replace(/^\/tickets(?=$|[?#])/, '/tickets/'),
+      },
     },
   },
   preview: { proxy: backendProxy },

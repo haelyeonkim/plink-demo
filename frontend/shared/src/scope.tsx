@@ -70,5 +70,14 @@ export function useGo(): (to: string, options?: { replace?: boolean }) => void {
 
 /** Where to go after signing in: a path on this site, never another origin. */
 export function safeNext(value: string | null): string | null {
-  return value && value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : null;
+  // Browsers drop tabs and newlines and read a backslash as a slash, so "/\t/evil" or
+  // "/\\evil" would leave the site. Resolve it the way the browser will, and keep it only
+  // if it stays on this origin.
+  if (!value || !value.startsWith('/')) return null;
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null;
+  } catch {
+    return null;
+  }
 }

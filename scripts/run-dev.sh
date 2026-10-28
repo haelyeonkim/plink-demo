@@ -34,7 +34,7 @@ stop_all() {
   # Older launches recorded npx's PID, leaving its Vite child alive.
   # Match this project's executable on this script's ports only: the same machine may be
   # serving production from the same checkout on another port.
-  local ticket_port="${TICKET_PORT:-$((FRONTEND_PORT + 1))}"
+  local ticket_port="${TICKET_PORT:-$((FRONTEND_PORT + 10))}"
   while read -r vite_pid; do
     [ -n "$vite_pid" ] || continue
     kill "$vite_pid" 2>/dev/null || true
@@ -72,7 +72,7 @@ wait_for_http() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    stop) stop_all ;;
+    stop) STOP=1; shift ;;
     --backend-port) BACKEND_PORT="$2"; shift 2 ;;
     --frontend-port) FRONTEND_PORT="$2"; shift 2 ;;
     --ticket-port) TICKET_PORT="$2"; shift 2 ;;
@@ -81,7 +81,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-TICKET_PORT="${TICKET_PORT:-$((FRONTEND_PORT + 1))}"
+# Read every option before stopping, so "stop --frontend-port N" stops what runs on N.
+if [ "${STOP:-}" = 1 ]; then stop_all; fi
+
+# +10, not +1: 3001 is commonly taken on this machine by an unrelated service.
+TICKET_PORT="${TICKET_PORT:-$((FRONTEND_PORT + 10))}"
 
 APP_BASE_URL_VALUE="${APP_BASE_URL:-}"
 if [ -z "$APP_BASE_URL_VALUE" ] && [ -f "$PROJECT_DIR/.env" ]; then

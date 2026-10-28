@@ -19,7 +19,7 @@ import Footer from '@shared/components/Footer';
 /** Old per-link bookmarks still open the link, now inside the console's list tab. */
 function LegacyLinkDetail() {
   const { id } = useParams<{ id: string }>();
-  return <Navigate to={`/links?tab=issue&link=${id}`} replace />;
+  return <Navigate to={`/links/${id}?tab=issue`} replace />;
 }
 
 /** Preserve bookmarks from the first combined list/editor screen. */

@@ -8,10 +8,10 @@ export default function Hero() {
       <section className="hero" id="top">
         <div className="hero-copy">
           <p className="eyebrow"><span></span> PRIVATE LINK SHARING</p>
-          <h1>
+          <h2 className="hero-title">
             먼저 보여야 할 사람에게,<br />
             <strong>안전하게 링크하세요.</strong>
-          </h1>
+          </h2>
           <p className="lead">
             관리자를 위한 비공개 링크 공유.<br className="desktop" />
             수신자에게 링크를 전달하고, 패스키 수신 확정과 열람을 관리하세요.
