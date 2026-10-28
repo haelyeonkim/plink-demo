@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 34" fill="none">
+  <!-- Passlink's own mark: the link tool keeps the square keyhole and its blue. -->
+  <rect x="0" y="2" width="30" height="30" rx="8" fill="#315cf4"/>
+  <circle cx="15" cy="14" r="4.2" fill="#fff"/>
+  <path d="M12.6 18.2 L17.4 18.2 L18.9 25.4 L11.1 25.4 Z" fill="#fff"/>
+  <text x="38" y="26" font-family="Arial, 'Apple SD Gothic Neo', sans-serif" font-weight="800"
+        font-size="24" letter-spacing="-1.5" fill="#122145">Passlink<tspan fill="#315cf4" dx="6" font-weight="700" letter-spacing="-0.5">Private</tspan></text>
+</svg>

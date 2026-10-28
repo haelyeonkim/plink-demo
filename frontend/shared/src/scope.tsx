@@ -37,7 +37,7 @@ export interface Brand {
 
 const BRANDS: Record<BrandName, Brand> = {
   site: { key: 'site', name: '패스링크', logo: '/logo.svg', home: '/', login: '/login', console: '/' },
-  link: { key: 'link', name: '패스링크', logo: '/logo.svg', home: '/links', login: '/links/login', console: '/links' },
+  link: { key: 'link', name: '패스링크 프라이빗', logo: '/logo-private.svg', home: '/links', login: '/links/login', console: '/links' },
   ticket: { key: 'ticket', name: '패스링크 티켓', logo: '/logo-ticket.svg', home: '/tickets', login: '/tickets/login', console: '/tickets' },
 };
 

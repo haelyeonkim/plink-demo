@@ -636,7 +636,18 @@ select.artwork-status {
 @media (max-width: 760px) {
   .tools-home { padding: 36px 16px 56px; }
   .tools-intro h1 { font-size: 30px; letter-spacing: -1.5px; }
-  .tools-grid { grid-template-columns: 1fr; }
+  /* Still side by side on a phone: the choice is the point of the page, so both tools
+     stay in view at once. Each card keeps its name, one line of what it does and its
+     way in; the feature list waits for the sections below. */
+  .tools-grid { gap: 10px; }
+  .tool-card { padding: 16px 14px; border-radius: 14px; }
+  .tool-card img { height: 18px; max-width: 100%; }
+  .tool-card h2 { font-size: 18px; margin: 14px 0 6px; }
+  .tool-card > p { font-size: 12.5px; line-height: 1.6; margin-bottom: 14px; }
+  .tool-card ul { display: none; }
+  .tool-actions { flex-direction: column; align-items: stretch; gap: 10px; }
+  .tool-primary { padding: 11px 8px; font-size: 13px; text-align: center; }
+  .tool-secondary { align-self: center; font-size: 12.5px; padding: 2px 1px; }
 }
 
 /* ---- The front page's ticket section, in the ticket tool's colour ---- */

@@ -20,7 +20,7 @@ export default function Home() {
 
       <div className="tools-grid">
         <article className="tool-card tool-link">
-          <img src="/logo.svg" alt="패스링크" height="30" />
+          <img src="/logo-private.svg" alt="패스링크 프라이빗" height="30" />
           <h2>보호 링크</h2>
           <p>문서와 작품을 수신자에게만 열리는 링크로 보내고, 누가 언제 열었는지 확인하세요.</p>
           <ul>
