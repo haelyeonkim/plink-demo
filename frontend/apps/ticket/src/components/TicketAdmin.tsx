@@ -434,7 +434,7 @@ export default function TicketAdmin() {
     setIssued(null);
     setNotice('행사를 삭제했어요.');
     await loadSessions();
-    navigate('/tickets/admin');
+    navigate('/tickets');
   });
 
   const registerGate = (form: HTMLFormElement) => act(async () => {
@@ -778,7 +778,7 @@ export default function TicketAdmin() {
     <section className="page-section page-wide">
       <div className="page-head">
         <h2>
-          {session ? <Link className="crumb-link" to="/tickets/admin">입장권 관리</Link> : <span aria-current="page">입장권 관리</span>}
+          {session ? <Link className="crumb-link" to="/tickets">입장권 관리</Link> : <span aria-current="page">입장권 관리</span>}
           {session
             ? <><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">{session.name}</span></>
             : <span className="count">{sessions.length}</span>}

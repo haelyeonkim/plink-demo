@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { useGo } from '../scope';
+import { useBrand, useGo } from '../scope';
 
 /** The scope a screen needs, as the session reports it. */
 type Scope = 'canLinks' | 'canTickets' | 'canAccounts';
@@ -10,10 +10,11 @@ export default function RequireAdmin({ children, scope }: { children: ReactNode;
   const { session, loading, error, refresh } = useAuth();
   const { pathname, search } = useLocation();
   const go = useGo();
+  const brand = useBrand();
   const signedOut = !loading && !error && !session?.user;
-  // The sign-in page lives in the link app; it brings the operator back here afterwards.
+  // Each app has its own sign-in page; it brings the operator back here afterwards.
   useEffect(() => {
-    if (signedOut) go(`/login?next=${encodeURIComponent(pathname + search)}`, { replace: true });
+    if (signedOut) go(`${brand.login}?next=${encodeURIComponent(pathname + search)}`, { replace: true });
   }, [signedOut]);
   if (loading) return <p className="loading">로그인 상태를 확인하고 있어요.</p>;
   if (error) return <section className="page-section"><p role="alert">{error}</p><button className="btn-primary" onClick={refresh}>다시 시도</button></section>;

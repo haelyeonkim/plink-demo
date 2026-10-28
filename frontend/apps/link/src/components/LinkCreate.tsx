@@ -135,13 +135,13 @@ export default function LinkCreate() {
               {contents.length === 0
                 ? '아직 만든 컨텐츠가 없어요. '
                 : '여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다. '}
-              <Link to="/contents/new">컨텐츠 만들기</Link>
+              <Link to="/links/contents/new">컨텐츠 만들기</Link>
             </p>
           </div>
         ) : <div className="field">
           <label id="artwork-picker-label">전달할 작품 ({selectedWorks.length}점 선택)</label>
           {artworks.length === 0 ? <p className="hint-text">
-            저장된 작품이 없어요. <Link to="/contents/new">URL 또는 PDF에서 작품 가져오기</Link>
+            저장된 작품이 없어요. <Link to="/links/contents/new">URL 또는 PDF에서 작품 가져오기</Link>
           </p> : <div className="artwork-picker" role="group" aria-labelledby="artwork-picker-label">
             {artworks.map(artwork => {
               const checked = selectedWorks.includes(artwork.id);

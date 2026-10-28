@@ -106,17 +106,6 @@ export default function Hero() {
         </ol>
       </section>
 
-      {/* Mini sections */}
-      <section className="mini-sections">
-        <Link className="mini-section-link" to="/links" id="manage-intro">
-          <b>링크 관리</b>
-          <p>문서마다 수신자를 발급하고, 누가 열었는지 확인하세요.</p>
-        </Link>
-        <Link className="mini-section-link" to="/tickets/admin" id="stats">
-          <b>입장권 관리</b>
-          <p>행사를 만들고 입장권을 발급해 게이트에서 확인하세요.</p>
-        </Link>
-      </section>
 
     </>
   );

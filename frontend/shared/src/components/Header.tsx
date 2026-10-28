@@ -1,24 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { useLocation } from 'react-router-dom';
-import { AppLink as Link } from '../scope';
+import { AppLink as Link, useBrand, type BrandName } from '../scope';
 
 /** The administration button's label, and so the one name a header need not repeat. */
 const ADMIN = '관리자';
 
-const LINKS: Array<[string, string]> = [
-  ['/links', '링크 관리'],
-  ['/tickets/admin', '입장권 관리'],
-  ['/guide', '사용자 가이드'],
-];
+/** Each tool's header is its own: neither lists the other's console. */
+const MENUS: Record<BrandName, Array<[string, string]>> = {
+  site: [['/links', '링크 관리'], ['/tickets', '입장권 관리'], ['/guide', '사용자 가이드']],
+  link: [['/links', '링크 관리'], ['/links/contents', '컨텐츠'], ['/guide', '사용자 가이드']],
+  ticket: [['/tickets', '입장권 관리'], ['/guide', '사용자 가이드']],
+};
 
 /**
- * Screens a visitor or a gate terminal sees, rather than an operator. A ticket holder
- * has no account here and a terminal is a kiosk, so neither gets site navigation or a
- * sign-in button.
+ * Screens a visitor or a gate terminal sees, rather than an operator. A ticket holder or
+ * a link's recipient has no account here and a terminal is a kiosk, so none of them gets
+ * site navigation or a sign-in button.
  */
 export function isStandalone(pathname: string): boolean {
   if (pathname === '/tickets/gate') return true;
+  // /s/{code} and /s/{issuer}/{code} - what a link's recipient opens.
+  if (/^\/s\/[^/]+/.test(pathname)) return true;
   // Operator screens live under /tickets too, and they keep the site's navigation.
   if (pathname.startsWith('/tickets/admin') || pathname.startsWith('/tickets/sessions')) return false;
   // /tickets/{sessionId}/{token} - the holder's own page.
@@ -27,6 +30,8 @@ export function isStandalone(pathname: string): boolean {
 
 export default function Header() {
   const { session, loading, logout } = useAuth();
+  const brand = useBrand();
+  const menu = MENUS[brand.key];
   const { pathname } = useLocation();
   const standalone = isStandalone(pathname);
   const [busy, setBusy] = useState(false);
@@ -53,7 +58,7 @@ export default function Header() {
   if (standalone) {
     return (
       <header className="header header-plain">
-        <span className="logo"><img src="/logo.svg" alt="패스링크" height="28" /></span>
+        <span className="logo"><img src={brand.logo} alt={brand.name} height="28" /></span>
       </header>
     );
   }
@@ -73,17 +78,17 @@ export default function Header() {
       </button>
     </>
   ) : (
-    <Link className="login" to="/login">{loading ? '확인 중…' : '로그인'}</Link>
+    <Link className="login" to={brand.login}>{loading ? '확인 중…' : '로그인'}</Link>
   );
 
   return (
     <>
       <header className="header">
-        <Link className="logo" to="/">
-          <img src="/logo.svg" alt="패스링크" height="28" />
+        <Link className="logo" to={brand.home}>
+          <img src={brand.logo} alt={brand.name} height="28" />
         </Link>
         <nav>
-          {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+          {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
         </nav>
         <div className={`header-account${session?.user ? '' : ' header-account-guest'}`}>
           {account}
@@ -102,7 +107,7 @@ export default function Header() {
       {open && (
         <div className="mobile-menu" id="mobile-menu">
           <nav>
-            {LINKS.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
           </nav>
           {session?.user && <div className="mobile-account">{account}</div>}
         </div>

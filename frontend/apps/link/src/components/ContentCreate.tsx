@@ -100,7 +100,7 @@ export default function ContentCreate() {
         { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) }, sourceType, sourceRef);
       setArtworks((document.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork)));
       setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
-      if (!editing) navigate(`/contents/${document.id}/edit`, { replace: true });
+      if (!editing) navigate(`/links/contents/${document.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장하지 못했어요.');
     } finally { setBusy(false); }
@@ -123,7 +123,7 @@ export default function ContentCreate() {
       setSourceRef(result.sourceRef);
       setImported(true);
       setNotice(`${result.artworkCount}개 작품을 내 컨텐츠에 저장했어요. 내용을 확인하고 수정할 수 있습니다.`);
-      navigate(`/contents/${result.id}/edit`, { replace: true });
+      navigate(`/links/contents/${result.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '작품을 가져오지 못했어요.');
     } finally { setBusy(false); }
@@ -154,22 +154,22 @@ export default function ContentCreate() {
       <section className="page-section page-wide">
         <h2>
           <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
           <span className="crumb" aria-current="page">새 컨텐츠 만들기</span>
         </h2>
         <div className="picked-bar">
           <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 내 계정에 자동 저장되며, 나중에 다시 열어 수정할 수 있습니다.</span>
         </div>
         <div className="content-source-grid">
-          <Link to="/contents/new?source=manual" className="content-source-card">
+          <Link to="/links/contents/new?source=manual" className="content-source-card">
             <h3>직접 작성</h3>
             <p>전시와 작품 정보를 하나씩 입력하고 바로 미리봅니다.</p><b>작성 시작</b>
           </Link>
-          <Link to="/contents/new?source=url" className="content-source-card">
+          <Link to="/links/contents/new?source=url" className="content-source-card">
             <h3>웹페이지에서 가져오기</h3>
             <p>공개 뷰잉룸 URL을 분석해 작품 정보 초안을 만듭니다.</p><b>URL 입력</b>
           </Link>
-          <Link to="/contents/new?source=pdf" className="content-source-card">
+          <Link to="/links/contents/new?source=pdf" className="content-source-card">
             <h3>PDF에서 가져오기</h3>
             <p>작품 목록 PDF의 텍스트를 분석해 편집 가능한 초안을 만듭니다.</p><b>파일 선택</b>
           </Link>
@@ -182,8 +182,8 @@ export default function ContentCreate() {
     return (
       <section className="page-section page-wide">
         <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/contents/new">새 컨텐츠 만들기</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/links/contents/new">새 컨텐츠 만들기</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
           <span className="crumb" aria-current="page">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
         </h2>
         <div className="picked-bar">
@@ -216,10 +216,10 @@ export default function ContentCreate() {
   return (
     <section className="page-section page-wide">
       <h2>
-        <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><Link className="crumb crumb-link" to="/contents">컨텐츠</Link>
+        <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link>
         <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
         {editing ? <span className="crumb" aria-current="page">{exhibition || '제목 없음'}</span> : <>
-          <Link className="crumb crumb-link" to="/contents/new">새 컨텐츠 만들기</Link>
+          <Link className="crumb crumb-link" to="/links/contents/new">새 컨텐츠 만들기</Link>
           <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
           <span className="crumb" aria-current="page">직접 작성</span>
         </>}

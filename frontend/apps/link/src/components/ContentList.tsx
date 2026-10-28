@@ -32,7 +32,7 @@ export default function ContentList() {
           <span className="count">{contents.length}</span>
         </h2>
         <span className="page-actions">
-          <Link className="btn-primary" to="/contents/new">새 컨텐츠 만들기</Link>
+          <Link className="btn-primary" to="/links/contents/new">새 컨텐츠 만들기</Link>
         </span>
       </div>
       <div className="picked-bar">
@@ -43,14 +43,14 @@ export default function ContentList() {
         {loading ? <p role="status">컨텐츠를 불러오고 있어요.</p> : contents.length === 0 ? (
           <div className="empty-state">
             <p>아직 저장한 컨텐츠가 없어요.</p>
-            <Link className="btn-secondary" to="/contents/new">첫 컨텐츠 만들기</Link>
+            <Link className="btn-secondary" to="/links/contents/new">첫 컨텐츠 만들기</Link>
           </div>
         ) : (
           <ul className="entity-list">
             {contents.map(row => (
               <li key={row.id} className="openable" tabIndex={0}
-                onClick={() => navigate(`/contents/${row.id}/edit`)}
-                onKeyDown={event => { if (event.key === 'Enter') navigate(`/contents/${row.id}/edit`); }}>
+                onClick={() => navigate(`/links/contents/${row.id}/edit`)}
+                onKeyDown={event => { if (event.key === 'Enter') navigate(`/links/contents/${row.id}/edit`); }}>
                 <div className="entity-main">
                   <span className="entity-title">{row.title}</span>
                   <span className="entity-meta">

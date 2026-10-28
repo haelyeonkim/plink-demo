@@ -29,7 +29,7 @@ export default function SessionCreate() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || '행사를 만들지 못했어요.');
-      navigate('/tickets/admin', { replace: true });
+      navigate('/tickets', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '행사를 만들지 못했어요.');
     } finally {
@@ -40,7 +40,7 @@ export default function SessionCreate() {
   return (
     <section className="page-section">
       <h2>
-        <Link className="crumb-link" to="/tickets/admin">입장권 관리</Link>
+        <Link className="crumb-link" to="/tickets">입장권 관리</Link>
         <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
         <span className="crumb" aria-current="page">행사 추가</span>
       </h2>

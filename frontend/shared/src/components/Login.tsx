@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { signIn, useAuth } from '@shared/auth';
-import { safeNext, useGo } from '@shared/scope';
+import { useSearchParams } from 'react-router-dom';
+import { signIn, useAuth } from '../auth';
+import { AppLink as Link, safeNext, useBrand, useGo } from '../scope';
+
+/** The same sign-in, in each app's own words. Accounts are shared: one sign-in opens both. */
+const WORDS = {
+  site: { eyebrow: 'WELCOME TO PASSLINK', title: '반가워요, 패스링크입니다' },
+  link: { eyebrow: 'PRIVATE LINK SHARING', title: '링크 관리자 로그인' },
+  ticket: { eyebrow: 'PASSLINK TICKET', title: '입장권 운영자 로그인' },
+};
 
 export default function Login() {
   const { session, loading, error, refresh } = useAuth();
   const [params] = useSearchParams();
   const go = useGo();
-  // A console that sent the visitor here asks to be returned to; it may be the ticket app.
-  const next = safeNext(params.get('next')) || '/';
+  const brand = useBrand();
+  const words = WORDS[brand.key];
+  // A console that sent the visitor here asks to be returned to; otherwise this app's own.
+  const next = safeNext(params.get('next')) || brand.console;
 
   // Signed in already, or just now: the login page has nothing left to say.
   useEffect(() => {
@@ -37,9 +46,9 @@ export default function Login() {
   return (
     <section className="page-section login-page">
       <div className="access-card login-card">
-        <img src="/logo.svg" alt="패스링크" height="32" />
-        <p className="eyebrow center">WELCOME TO PASSLINK</p>
-        <h1>{session?.user ? '로그인되었습니다' : '반가워요, 패스링크입니다'}</h1>
+        <img src={brand.logo} alt={brand.name} height="32" />
+        <p className="eyebrow center">{words.eyebrow}</p>
+        <h1>{session?.user ? '로그인되었습니다' : words.title}</h1>
 
         {loading ? <p role="status">로그인 상태를 확인하고 있어요.</p> : error ? (
           <>
@@ -77,7 +86,7 @@ export default function Login() {
                 <a className="google-login" href="/oauth2/authorization/google">Google로 계속하기</a>
               </>
             )}
-            <Link className="login-home" to="/">홈으로 돌아가기</Link>
+            <Link className="login-home" to={brand.home}>홈으로 돌아가기</Link>
           </>
         )}
       </div>

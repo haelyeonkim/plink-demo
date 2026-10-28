@@ -223,7 +223,7 @@ export default function LinkAdmin() {
           <span className="page-actions">
             {/* Content is what a link points at, so it is made from here rather than
                 from a menu of its own. */}
-            <Link className="btn-secondary" to="/contents">컨텐츠</Link>
+            <Link className="btn-secondary" to="/links/contents">컨텐츠</Link>
             <Link className="btn-primary" to="/links/new">링크 추가</Link>
           </span>
         )}
@@ -301,7 +301,7 @@ export default function LinkAdmin() {
               <dt>대상</dt>
               <dd>
                 {detail.contentId
-                  ? <>여기서 만든 컨텐츠 · <Link to={`/contents/${detail.contentId}/edit`}>
+                  ? <>여기서 만든 컨텐츠 · <Link to={`/links/contents/${detail.contentId}/edit`}>
                       {detail.contentTitle}
                     </Link></>
                   : <a href={detail.originalUrl ?? '#'} target="_blank" rel="noopener">
@@ -458,7 +458,7 @@ export default function LinkAdmin() {
                   ))}
                 </select>
                 <p className="hint-text">
-                  <Link to="/contents">컨텐츠 만들기·편집</Link>
+                  <Link to="/links/contents">컨텐츠 만들기·편집</Link>
                 </p>
               </div>
             )}

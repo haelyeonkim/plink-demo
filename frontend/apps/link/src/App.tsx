@@ -1,10 +1,10 @@
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
 import { AppScope } from '@shared/scope';
-import Login from './components/Login';
-import { BrowserRouter, Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import Login from '@shared/components/Login';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Header from '@shared/components/Header';
-import Hero from './components/Hero';
+import Home from './components/Home';
 import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
 import ContentCreate from './components/ContentCreate';
@@ -26,7 +26,14 @@ function LegacyLinkDetail() {
 function LegacyContentCreate() {
   const [params] = useSearchParams();
   const id = Number(params.get('id')) || null;
-  return <Navigate to={id ? `/contents/${id}/edit` : '/contents/new'} replace />;
+  return <Navigate to={id ? `/links/contents/${id}/edit` : '/links/contents/new'} replace />;
+}
+
+/** Addresses from before contents moved under /links. */
+function Moved({ to }: { to: (params: Record<string, string | undefined>) => string }) {
+  const params = useParams();
+  const { search } = useLocation();
+  return <Navigate to={to(params) + search} replace />;
 }
 
 export default function App() {
@@ -37,29 +44,37 @@ export default function App() {
       <Header />
       <main>
         <Routes>
-          <Route path="/" element={<Hero />} />
-          <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
-          {/* One link, at its own address, so it can be linked to and come back to. */}
-          <Route path="/links/:linkId" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
-          <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
-          <Route path="/contents" element={<RequireAdmin scope="canLinks"><ContentList /></RequireAdmin>} />
-          <Route path="/contents/new" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
-          <Route path="/contents/:contentId/edit" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
-          <Route path="/content/create" element={<RequireAdmin scope="canLinks"><LegacyContentCreate /></RequireAdmin>} />
-          {/* Administration sits on its own path, away from the product consoles. */}
+          {/* Passlink: what it is, and what belongs to the site rather than to either tool. */}
+          <Route path="/" element={<Home />} />
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
+          <Route path="/guide" element={<Guide />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/login" element={<Login />} />
+          {/* The link tool opens on its console, like the ticket tool under /tickets. */}
+          <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
+          <Route path="/links/login" element={<Login />} />
+          <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
+          <Route path="/links/contents" element={<RequireAdmin scope="canLinks"><ContentList /></RequireAdmin>} />
+          <Route path="/links/contents/new" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
+          <Route path="/links/contents/:contentId/edit" element={<RequireAdmin scope="canLinks"><ContentCreate /></RequireAdmin>} />
+          {/* One link, at its own address, so it can be linked to and come back to. */}
+          <Route path="/links/:linkId" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
+          {/* What a recipient opens: issued addresses never move. /s/{issuer}/{code} is namespaced. */}
+          <Route path="/s/:shortCode" element={<AccessLink />} />
+          <Route path="/s/:slug/:shortCode" element={<AccessLink />} />
+          {/* Older addresses. */}
+          <Route path="/links/admin" element={<Moved to={() => '/links'} />} />
+          <Route path="/links/admin/:linkId" element={<Moved to={p => `/links/${p.linkId}`} />} />
+          <Route path="/contents" element={<Moved to={() => '/links/contents'} />} />
+          <Route path="/contents/new" element={<Moved to={() => '/links/contents/new'} />} />
+          <Route path="/contents/:contentId/edit" element={<Moved to={p => `/links/contents/${p.contentId}/edit`} />} />
+          <Route path="/content/create" element={<LegacyContentCreate />} />
           <Route path="/accounts" element={<Navigate to="/admin" replace />} />
           <Route path="/create" element={<Navigate to="/links/new" replace />} />
           <Route path="/manage" element={<Navigate to="/links" replace />} />
           <Route path="/manage/:id" element={<LegacyLinkDetail />} />
-          <Route path="/s/:shortCode" element={<AccessLink />} />
-          {/* Namespaced by the issuing account: /s/{issuer}/{code}. */}
-          <Route path="/s/:slug/:shortCode" element={<AccessLink />} />
           <Route path="/stats" element={<Navigate to="/links" replace />} />
-          <Route path="/guide" element={<Guide />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/login" element={<Login />} />
         </Routes>
       </main>
       <Footer />

@@ -1,3 +1,9 @@
+/* The ticket service's own colour. --blue is the accent every shared rule reads, so the
+   ticket app's buttons, links and focus rings take it without restating them. */
+:root {
+  --blue: #6a4cf0;
+}
+
 /* Destructive, and it should not be the first thing the eye lands on. */
 .btn-tiny-danger { color: #c0392b; border-color: #f0cdc9; }
 .btn-tiny-danger:hover { background: #fdeeee; }

@@ -332,8 +332,8 @@ plink/
 │   ├── package.json                 # 의존성·스크립트 공용
 │   ├── vite.common.ts               # 백엔드 프록시, 빌드 위치 공용 설정
 │   ├── shared/src/                  # 공용: 인증, 헤더·푸터, 대화상자, base.css (@shared/...)
-│   ├── apps/link/                   # 링크 앱: /, /links, /contents, /s, /admin, /login …
-│   ├── apps/ticket/                 # 입장권 앱: /tickets 아래 전부 (base /tickets/)
+│   ├── apps/link/                   # 링크 앱: / 앱 설명, /admin, /guide, 링크 도구 /links(관리 화면), 수신자 /s/*
+│   ├── apps/ticket/                 # 입장권 앱: /tickets(관리 화면) 아래 전부 (base /tickets/)
 │   └── public/                      # 로고·아이콘 (링크 앱이 사이트 루트에서 제공)
 ├── index.html                       # 정적 랜딩 페이지
 └── app/globals.css
