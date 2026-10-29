@@ -46,6 +46,12 @@ public class CommunityController {
         return community.like(tickets.resolve(sessionId, token), session, messageId);
     }
 
+    @PostMapping("/chat/{messageId}/dislike")
+    public Map<String, Object> dislike(@PathVariable long sessionId, @PathVariable String token,
+            @PathVariable long messageId, HttpSession session) {
+        return community.dislike(tickets.resolve(sessionId, token), session, messageId);
+    }
+
     @PostMapping("/chat/{messageId}/report")
     public Map<String, Object> report(@PathVariable long sessionId, @PathVariable String token,
             @PathVariable long messageId, HttpSession session) {

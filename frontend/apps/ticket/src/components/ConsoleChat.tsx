@@ -4,7 +4,7 @@ import { read, shortTime } from '../console/model';
 
 interface FeedRow {
   id: number; author: string; ticketId: number | null; ticketRef: string | null; staff: boolean; notice: boolean;
-  body: string; likes: number; reports: number; hidden: boolean; pinned: boolean; pinnedUntil: string | null;
+  body: string; likes: number; dislikes: number; reports: number; hidden: boolean; pinned: boolean; pinnedUntil: string | null;
   muted: boolean; createdAt: string; alert: boolean;
 }
 interface ChatSettings { enabled: boolean; cooldownSeconds: number; maxLength: number; hotLikes: number; hotMinutes: number; reportHide: number }
@@ -97,14 +97,17 @@ export default function ConsoleChat({ sessionId, tick, onNotice, onError }: {
           </div>
           <div className="console-table-box flat">
             <table className="console-table chat-feed">
-              <thead><tr><th>보낸 사람</th><th>메시지</th><th className="num">좋아요</th><th>상태</th><th aria-label="작업" /></tr></thead>
+              <thead><tr><th>보낸 사람</th><th>메시지</th><th className="num">반응</th><th>상태</th><th aria-label="작업" /></tr></thead>
               <tbody>
                 {view.messages.map(row => (
                   <tr key={row.id} className={row.hidden ? 'is-off' : row.reports > 0 ? 'is-flag' : ''}>
                     <td><b>{row.author}</b>
                       <small className="cell-note">{shortTime(row.createdAt)}{row.ticketRef ? ` · ${row.ticketRef}` : ''}</small></td>
                     <td className="chat-feed-body">{row.body}</td>
-                    <td className="num">{row.likes}</td>
+                    <td className="num reactions">
+                      <span title="좋아요">♥ {row.likes}</span>
+                      {row.dislikes > 0 && <small className="cell-note" title="싫어요">싫어요 {row.dislikes}</small>}
+                    </td>
                     <td>
                       <span className={`pill pill-${row.hidden ? 'wait' : row.reports > 0 ? 'off' : row.pinned ? 'in' : row.staff ? 'out' : 'ok'}`}>
                         {row.hidden ? '가려짐' : row.reports > 0 ? `신고 ${row.reports}` : row.pinned ? (row.notice ? '공지 고정' : '인기 고정') : row.staff ? '운영' : '보임'}

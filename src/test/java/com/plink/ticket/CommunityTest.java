@@ -136,9 +136,22 @@ class CommunityTest {
         Map<String, Object> reply = community.post(b.resolved(), b.session(), "어디요?", first);
         assertEquals("노을 예뻐요", ((Map<?, ?>) reply.get("reply")).get("body"));
 
-        assertEquals(true, community.like(a.resolved(), a.session(), first).get("liked"));
-        assertEquals(false, community.like(a.resolved(), a.session(), first).get("liked"), "a second tap takes it back");
-        community.like(a.resolved(), a.session(), first);
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.like(a.resolved(), a.session(), first)),
+            "nobody likes their own line");
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.dislike(a.resolved(), a.session(), first)));
+        assertEquals(true, community.like(b.resolved(), b.session(), first).get("liked"));
+        assertEquals(false, community.like(b.resolved(), b.session(), first).get("liked"), "a second tap takes it back");
+
+        // A dislike takes a like back, and the other way round.
+        Holder c = inside(sessionId, "c@example.com");
+        community.like(c.resolved(), c.session(), first);
+        Map<String, Object> switched = community.dislike(c.resolved(), c.session(), first);
+        assertEquals(0, switched.get("likes"));
+        assertEquals(1, switched.get("dislikes"));
+        Map<?, ?> seen = (Map<?, ?>) ((List<?>) community.chat(c.resolved(), c.session(), 0).get("messages")).get(0);
+        assertEquals(true, seen.get("disliked"));
+        assertEquals(false, seen.get("liked"));
+        community.like(c.resolved(), c.session(), first);
         community.like(b.resolved(), b.session(), first);
         Map<String, Object> hot = (Map<String, Object>) community.chat(a.resolved(), a.session(), 0).get("hot");
         assertNotNull(hot, "two likes reach this event's bar");

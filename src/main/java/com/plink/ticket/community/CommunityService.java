@@ -137,7 +137,8 @@ public class CommunityService {
         CommunityRepository.Settings settings = repo.settings(sessionId);
         Timestamp now = Timestamp.from(Instant.now());
         List<CommunityRepository.Message> rows = repo.recent(sessionId, Math.max(afterId, 0), PAGE, false);
-        Set<Long> liked = repo.likedBy(member.ticket().id, rows.stream().map(CommunityRepository.Message::id).toList());
+        List<Long> ids = rows.stream().map(CommunityRepository.Message::id).toList();
+        Reactions mine = new Reactions(repo.likedBy(member.ticket().id, ids), repo.dislikedBy(member.ticket().id, ids));
 
         Map<String, Object> me = new LinkedHashMap<>();
         me.put("nickname", nickname(sessionId, member.ticket().id));
@@ -151,15 +152,20 @@ public class CommunityService {
         result.put("maxLength", settings.maxLength());
         result.put("hotLikes", settings.hotLikes());
         result.put("inside", admissions.occupancy(sessionId).getOrDefault("inside", 0));
-        result.put("notice", repo.pinnedNotice(sessionId, now).map(m -> holderView(m, member, Set.of())).orElse(null));
-        result.put("hot", repo.pinnedHot(sessionId, now).map(m -> holderView(m, member, Set.of())).orElse(null));
+        result.put("notice", repo.pinnedNotice(sessionId, now).map(m -> holderView(m, member, Reactions.NONE)).orElse(null));
+        result.put("hot", repo.pinnedHot(sessionId, now).map(m -> holderView(m, member, Reactions.NONE)).orElse(null));
         List<Map<String, Object>> messages = new ArrayList<>();
-        for (CommunityRepository.Message m : rows) messages.add(holderView(m, member, liked));
+        for (CommunityRepository.Message m : rows) messages.add(holderView(m, member, mine));
         result.put("messages", messages);
         return result;
     }
 
-    private Map<String, Object> holderView(CommunityRepository.Message m, Member member, Set<Long> liked) {
+    /** What this holder has pressed on the lines in view. */
+    private record Reactions(Set<Long> liked, Set<Long> disliked) {
+        static final Reactions NONE = new Reactions(Set.of(), Set.of());
+    }
+
+    private Map<String, Object> holderView(CommunityRepository.Message m, Member member, Reactions mine) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", m.id());
         row.put("author", author(m));
@@ -168,7 +174,9 @@ public class CommunityService {
         row.put("mine", m.ticketId() != null && m.ticketId() == member.ticket().id);
         row.put("body", m.body());
         row.put("likes", m.likes());
-        row.put("liked", liked.contains(m.id()));
+        row.put("liked", mine.liked().contains(m.id()));
+        row.put("dislikes", m.dislikes());
+        row.put("disliked", mine.disliked().contains(m.id()));
         row.put("createdAt", m.createdAt().toInstant().toString());
         row.put("pinnedUntil", m.pinnedUntil() == null ? null : m.pinnedUntil().toInstant().toString());
         if (m.replyTo() != null) {
@@ -215,13 +223,13 @@ public class CommunityService {
         long id = repo.insertMessage(sessionId, member.ticket().id, false, false, body, replyTo, null, null,
             Timestamp.from(Instant.now()));
         ping(sessionId, id);
-        return holderView(repo.findMessage(id).orElseThrow(), member, Set.of());
+        return holderView(repo.findMessage(id).orElseThrow(), member, Reactions.NONE);
     }
 
     @Transactional
     public Map<String, Object> like(TicketService.Resolved resolved, HttpSession session, long messageId) {
         Member member = member(resolved, session);
-        CommunityRepository.Message m = visibleMessage(member, messageId);
+        CommunityRepository.Message m = othersMessage(member, messageId);
         boolean liked = repo.toggleLike(m.id(), member.ticket().id);
         CommunityRepository.Message now = repo.findMessage(m.id()).orElseThrow();
         CommunityRepository.Settings settings = repo.settings(m.sessionId());
@@ -231,8 +239,31 @@ public class CommunityService {
                 Timestamp.from(Instant.now().plus(settings.hotMinutes(), ChronoUnit.MINUTES)));
         }
         if (pinned) ping(m.sessionId(), repo.latestId(m.sessionId()));
-        else live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", now.id(), "likes", now.likes()));
-        return Map.of("messageId", now.id(), "likes", now.likes(), "liked", liked);
+        else live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", now.id()));
+        return reaction(now, liked, false);
+    }
+
+    @Transactional
+    public Map<String, Object> dislike(TicketService.Resolved resolved, HttpSession session, long messageId) {
+        Member member = member(resolved, session);
+        CommunityRepository.Message m = othersMessage(member, messageId);
+        boolean disliked = repo.toggleDislike(m.id(), member.ticket().id);
+        CommunityRepository.Message now = repo.findMessage(m.id()).orElseThrow();
+        live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", now.id()));
+        return reaction(now, false, disliked);
+    }
+
+    private static Map<String, Object> reaction(CommunityRepository.Message m, boolean liked, boolean disliked) {
+        return Map.of("messageId", m.id(), "likes", m.likes(), "dislikes", m.dislikes(), "liked", liked, "disliked", disliked);
+    }
+
+    /** A line someone else wrote: nobody likes or dislikes their own. */
+    private CommunityRepository.Message othersMessage(Member member, long messageId) {
+        CommunityRepository.Message m = visibleMessage(member, messageId);
+        if (m.ticketId() != null && m.ticketId() == member.ticket().id) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "내 메시지에는 누를 수 없어요.");
+        }
+        return m;
     }
 
     @Transactional
@@ -361,6 +392,7 @@ public class CommunityService {
             row.put("notice", m.notice());
             row.put("body", m.body());
             row.put("likes", m.likes());
+            row.put("dislikes", m.dislikes());
             row.put("reports", m.reports());
             row.put("hidden", m.hidden());
             row.put("pinned", m.pinnedUntil() != null && m.pinnedUntil().after(now));

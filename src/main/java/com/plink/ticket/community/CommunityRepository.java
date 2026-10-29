@@ -25,7 +25,7 @@ public class CommunityRepository {
 
     /** One chat line, with the line it answers when it is a reply. */
     public record Message(long id, long sessionId, Long ticketId, boolean staff, boolean notice, String body,
-            Long replyTo, int likes, int reports, boolean hidden, Timestamp pinnedUntil, Timestamp createdAt,
+            Long replyTo, int likes, int dislikes, int reports, boolean hidden, Timestamp pinnedUntil, Timestamp createdAt,
             Long replyTicketId, boolean replyStaff, String replyBody, boolean replyHidden, String ticketRef,
             Timestamp alertUntil) {}
 
@@ -38,7 +38,8 @@ public class CommunityRepository {
     private static final RowMapper<Message> MESSAGE = (rs, row) -> new Message(
         rs.getLong("id"), rs.getLong("session_id"), (Long) rs.getObject("ticket_id", Long.class),
         rs.getBoolean("staff"), rs.getBoolean("notice"), rs.getString("body"),
-        (Long) rs.getObject("reply_to", Long.class), rs.getInt("like_count"), rs.getInt("report_count"),
+        (Long) rs.getObject("reply_to", Long.class), rs.getInt("like_count"), rs.getInt("dislike_count"),
+        rs.getInt("report_count"),
         rs.getBoolean("hidden"), rs.getTimestamp("pinned_until"), rs.getTimestamp("created_at"),
         (Long) rs.getObject("r_ticket", Long.class), rs.getBoolean("r_staff"), rs.getString("r_body"),
         rs.getBoolean("r_hidden"), rs.getString("t_ref"), rs.getTimestamp("alert_until"));
@@ -127,26 +128,47 @@ public class CommunityRepository {
     }
 
     public Set<Long> likedBy(long ticketId, Collection<Long> messageIds) {
-        Set<Long> liked = new HashSet<>();
-        if (messageIds.isEmpty()) return liked;
+        return reactedBy("chat_like", ticketId, messageIds);
+    }
+
+    public Set<Long> dislikedBy(long ticketId, Collection<Long> messageIds) {
+        return reactedBy("chat_dislike", ticketId, messageIds);
+    }
+
+    private Set<Long> reactedBy(String table, long ticketId, Collection<Long> messageIds) {
+        Set<Long> found = new HashSet<>();
+        if (messageIds.isEmpty()) return found;
         List<Object> args = new ArrayList<>();
         args.add(ticketId);
         args.addAll(messageIds);
-        jdbc.query("SELECT message_id FROM chat_like WHERE ticket_id = ? AND message_id IN ("
+        jdbc.query("SELECT message_id FROM " + table + " WHERE ticket_id = ? AND message_id IN ("
             + String.join(",", java.util.Collections.nCopies(messageIds.size(), "?")) + ")",
-            rs -> { liked.add(rs.getLong("message_id")); }, args.toArray());
-        return liked;
+            rs -> { found.add(rs.getLong("message_id")); }, args.toArray());
+        return found;
     }
 
-    /** Adds or takes back one like, and says which it was. */
+    /** Adds or takes back one like, and says which it was. A like takes back a dislike. */
     public boolean toggleLike(long messageId, long ticketId) {
-        int removed = jdbc.update("DELETE FROM chat_like WHERE message_id = ? AND ticket_id = ?", messageId, ticketId);
+        return toggle("chat_like", "like_count", "chat_dislike", "dislike_count", messageId, ticketId);
+    }
+
+    /** Adds or takes back one dislike, and says which it was. A dislike takes back a like. */
+    public boolean toggleDislike(long messageId, long ticketId) {
+        return toggle("chat_dislike", "dislike_count", "chat_like", "like_count", messageId, ticketId);
+    }
+
+    private boolean toggle(String table, String count, String otherTable, String otherCount, long messageId, long ticketId) {
+        int removed = jdbc.update("DELETE FROM " + table + " WHERE message_id = ? AND ticket_id = ?", messageId, ticketId);
         if (removed > 0) {
-            jdbc.update("UPDATE chat_message SET like_count = like_count - 1 WHERE id = ? AND like_count > 0", messageId);
+            jdbc.update("UPDATE chat_message SET " + count + " = " + count + " - 1 WHERE id = ? AND " + count + " > 0", messageId);
             return false;
         }
-        jdbc.update("INSERT INTO chat_like (message_id, ticket_id) VALUES (?, ?)", messageId, ticketId);
-        jdbc.update("UPDATE chat_message SET like_count = like_count + 1 WHERE id = ?", messageId);
+        if (jdbc.update("DELETE FROM " + otherTable + " WHERE message_id = ? AND ticket_id = ?", messageId, ticketId) > 0) {
+            jdbc.update("UPDATE chat_message SET " + otherCount + " = " + otherCount + " - 1 WHERE id = ? AND "
+                + otherCount + " > 0", messageId);
+        }
+        jdbc.update("INSERT INTO " + table + " (message_id, ticket_id) VALUES (?, ?)", messageId, ticketId);
+        jdbc.update("UPDATE chat_message SET " + count + " = " + count + " + 1 WHERE id = ?", messageId);
         return true;
     }
 

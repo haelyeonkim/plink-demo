@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  fetchChat, likeChat, reportChat, sendChat, type ChatMessage, type ChatView,
+  dislikeChat, fetchChat, likeChat, reportChat, sendChat, type ChatMessage, type ChatView, type Reaction,
 } from '../ticket/api';
 
 function clock(value: string): string {
@@ -19,6 +19,50 @@ function useCountdown(nextAt: string | null): number {
   }, [until]);
   return Math.max(0, Math.ceil((until - now) / 1000));
 }
+
+/**
+ * Fits the room to what the phone actually shows: from under the header down to the
+ * tabs, or, while the keyboard is up, from the top of the visible screen down to the
+ * keys. iOS keeps the layout the same size when the keyboard opens and only shows less
+ * of it, so the visible viewport is the measure, not 100vh.
+ */
+function useFitToScreen(onFit: () => void) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const fit = () => {
+      const view = window.visualViewport;
+      const height = view?.height ?? window.innerHeight;
+      const offset = view?.offsetTop ?? 0;
+      const typing = height < window.innerHeight - 120;
+      root.classList.toggle('chat-typing', typing);
+      const header = typing ? 0 : (document.querySelector('.header') as HTMLElement | null)?.offsetHeight ?? 0;
+      const tabs = typing ? 0 : (document.querySelector('.ticket-tabs') as HTMLElement | null)?.offsetHeight ?? 0;
+      root.style.setProperty('--chat-top', `${offset + header}px`);
+      root.style.setProperty('--chat-height', `${Math.max(240, height - header - tabs)}px`);
+      onFit();
+    };
+    fit();
+    const view = window.visualViewport;
+    view?.addEventListener('resize', fit);
+    view?.addEventListener('scroll', fit);
+    window.addEventListener('resize', fit);
+    return () => {
+      view?.removeEventListener('resize', fit);
+      view?.removeEventListener('scroll', fit);
+      window.removeEventListener('resize', fit);
+      root.classList.remove('chat-typing');
+      root.style.removeProperty('--chat-top');
+      root.style.removeProperty('--chat-height');
+    };
+  }, [onFit]);
+}
+
+const ThumbDownIcon = ({ filled }: { filled: boolean }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M17 3v11l-4 7a2 2 0 0 1-2-2v-4H5a2 2 0 0 1-2-2.3l1.2-7A2 2 0 0 1 6.2 3zM17 3h3v11h-3" />
+  </svg>
+);
 
 const HeartIcon = ({ filled }: { filled: boolean }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
@@ -44,6 +88,12 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
   const [noticeOpen, setNoticeOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // A room that changes size keeps the newest line in sight when that is where the holder was.
+  const keepBottom = useCallback(() => {
+    const box = list.current;
+    if (box && stick.current) box.scrollTop = box.scrollHeight;
+  }, []);
+  useFitToScreen(keepBottom);
 
   const load = useCallback(async () => {
     try {
@@ -83,15 +133,19 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
     finally { setSending(false); }
   }
 
-  async function like(message: ChatMessage) {
+  async function react(message: ChatMessage, press: () => Promise<Reaction>) {
     try {
-      const result = await likeChat(sessionId, token, message.id);
+      const result = await press();
       setView(current => current && ({
         ...current,
-        messages: current.messages.map(m => m.id === message.id ? { ...m, likes: result.likes, liked: result.liked } : m),
+        messages: current.messages.map(m => m.id === message.id ? {
+          ...m, likes: result.likes, liked: result.liked, dislikes: result.dislikes, disliked: result.disliked,
+        } : m),
       }));
-    } catch (err) { setError(err instanceof Error ? err.message : '좋아요를 누르지 못했어요.'); }
+    } catch (err) { setError(err instanceof Error ? err.message : '누르지 못했어요.'); }
   }
+  const like = (message: ChatMessage) => react(message, () => likeChat(sessionId, token, message.id));
+  const dislike = (message: ChatMessage) => react(message, () => dislikeChat(sessionId, token, message.id));
 
   async function report(message: ChatMessage) {
     setMenuFor(null);
@@ -109,10 +163,8 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
   return (
     <div className="chat-room">
       <header className="chat-head">
-        <div>
-          <h2>장내 채팅</h2>
-          <span>지금 장내 {view.inside.toLocaleString()}명</span>
-        </div>
+        <h2>채팅</h2>
+        <span className="chat-inside">장내 {view.inside.toLocaleString()}명</span>
         <span className="chat-me" title="채팅에서 보이는 내 이름">나: {me.nickname}</span>
       </header>
 
@@ -154,10 +206,24 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
             </div>
             <span className="chat-meta">
               <time dateTime={message.createdAt}>{clock(message.createdAt)}</time>
-              <button type="button" className={`chat-like${message.liked ? ' on' : ''}`} aria-pressed={message.liked}
-                aria-label={`좋아요 ${message.likes}${message.liked ? ', 누름' : ''}`} onClick={() => void like(message)}>
-                <HeartIcon filled={message.liked} /> {message.likes > 0 ? message.likes : ''}
-              </button>
+              {message.mine ? (
+                // Their own line: what others thought of it, nothing to press.
+                <>
+                  {message.likes > 0 && <span className="chat-count">
+                    <HeartIcon filled={false} /><span className="visually-hidden">좋아요</span> {message.likes}</span>}
+                  {message.dislikes > 0 && <span className="chat-count">
+                    <ThumbDownIcon filled={false} /><span className="visually-hidden">싫어요</span> {message.dislikes}</span>}
+                </>
+              ) : (<>
+                <button type="button" className={`chat-like${message.liked ? ' on' : ''}`} aria-pressed={message.liked}
+                  aria-label={`좋아요 ${message.likes}${message.liked ? ', 누름' : ''}`} onClick={() => void like(message)}>
+                  <HeartIcon filled={message.liked} /> {message.likes > 0 ? message.likes : ''}
+                </button>
+                <button type="button" className={`chat-dislike${message.disliked ? ' on' : ''}`} aria-pressed={message.disliked}
+                  aria-label={`싫어요 ${message.dislikes}${message.disliked ? ', 누름' : ''}`} onClick={() => void dislike(message)}>
+                  <ThumbDownIcon filled={message.disliked} /> {message.dislikes > 0 ? message.dislikes : ''}
+                </button>
+              </>)}
               <button type="button" onClick={() => { setReplyTo(message); setMenuFor(null); }}>답장</button>
               {!message.mine && !message.staff && (
                 <button type="button" aria-label={`${message.author}의 메시지 더보기`} onClick={() => setMenuFor(message)}>⋯</button>
