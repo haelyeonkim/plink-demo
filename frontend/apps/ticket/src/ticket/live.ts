@@ -15,6 +15,9 @@ export interface LiveChannel {
   close(): void;
 }
 
+/** Whether the channel is carrying messages now, or waiting to reconnect. */
+export type LiveState = 'connecting' | 'open' | 'retrying';
+
 function socketUrl(path: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
@@ -25,27 +28,37 @@ function socketUrl(path: string): string {
  * panel watch the same channel, and two connections per phone would be two of
  * everything - handshakes, snapshots, retries - for the same messages.
  */
-const shared = new Map<string, { channel: LiveChannel; listeners: Set<(m: LiveMessage) => void> }>();
+interface Shared {
+  channel: LiveChannel;
+  listeners: Set<(m: LiveMessage) => void>;
+  watchers: Set<(state: LiveState) => void>;
+  state: LiveState;
+}
+const shared = new Map<string, Shared>();
 
-export function openLive(path: string, onMessage: (message: LiveMessage) => void): LiveChannel {
-  const existing = shared.get(path);
-  if (existing) {
-    existing.listeners.add(onMessage);
-    return { close() {
-      existing.listeners.delete(onMessage);
-      if (existing.listeners.size === 0) { shared.delete(path); existing.channel.close(); }
-    } };
+export function openLive(path: string, onMessage: (message: LiveMessage) => void,
+    onState?: (state: LiveState) => void): LiveChannel {
+  let entry = shared.get(path);
+  if (!entry) {
+    const created: Shared = { channel: { close() {} }, listeners: new Set(), watchers: new Set(), state: 'connecting' };
+    created.channel = connectLive(path,
+      message => created.listeners.forEach(listener => listener(message)),
+      state => { created.state = state; created.watchers.forEach(watch => watch(state)); });
+    shared.set(path, created);
+    entry = created;
   }
-  const listeners = new Set<(m: LiveMessage) => void>([onMessage]);
-  const channel = connectLive(path, message => listeners.forEach(listener => listener(message)));
-  shared.set(path, { channel, listeners });
+  const current = entry;
+  current.listeners.add(onMessage);
+  if (onState) { current.watchers.add(onState); onState(current.state); }
   return { close() {
-    listeners.delete(onMessage);
-    if (listeners.size === 0) { shared.delete(path); channel.close(); }
+    current.listeners.delete(onMessage);
+    if (onState) current.watchers.delete(onState);
+    if (current.listeners.size === 0) { shared.delete(path); current.channel.close(); }
   } };
 }
 
-function connectLive(path: string, onMessage: (message: LiveMessage) => void): LiveChannel {
+function connectLive(path: string, onMessage: (message: LiveMessage) => void,
+    onState: (state: LiveState) => void): LiveChannel {
   let socket: WebSocket | null = null;
   let closed = false;
   let attempt = 0;
@@ -59,12 +72,12 @@ function connectLive(path: string, onMessage: (message: LiveMessage) => void): L
       retry();
       return;
     }
-    socket.onopen = () => { attempt = 0; };
+    socket.onopen = () => { attempt = 0; onState('open'); };
     socket.onmessage = event => {
       try { onMessage(JSON.parse(String(event.data)) as LiveMessage); }
       catch { /* a message we cannot read is not worth tearing the socket down for */ }
     };
-    socket.onclose = () => { socket = null; retry(); };
+    socket.onclose = () => { socket = null; if (!closed) onState('retrying'); retry(); };
     socket.onerror = () => { socket?.close(); };
   }
 

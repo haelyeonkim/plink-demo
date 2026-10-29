@@ -56,6 +56,7 @@ class CouponTest {
     @Autowired PresentationService presentations;
     @Autowired com.plink.ticket.controller.TicketAdminController adminController;
     @Autowired com.plink.ticket.service.AdmissionService admissions;
+    @Autowired com.plink.ticket.repository.TicketFieldRepository fields;
 
     private long sessionId;
 
@@ -91,6 +92,24 @@ class CouponTest {
     /** The code the holder's phone would be showing. */
     private String code(Ticket ticket) {
         return TicketCodes.code(presentations.issue(ticket, "IN", true), 1);
+    }
+
+    /** "Everybody whose 등급 is VIP" is found on the server, and live tickets only. */
+    @Test void couponsCanGoToTicketsMatchingAField() {
+        newSession();
+        fields.insert(sessionId, "등급", "TIER", "VIP\n일반");
+        long vip = ((Number) tickets.issue(sessionId, "vip@example.com", null, "VIP").get("ticketId")).longValue();
+        long offVip = ((Number) tickets.issue(sessionId, "offvip@example.com", null, "VIP").get("ticketId")).longValue();
+        tickets.issue(sessionId, "plain@example.com", null, "일반");
+        tickets.setRevoked(offVip, true);
+        long booth = booths.insert(sessionId, "라운지", null);
+        long offerId = coupons.defineOffer(sessionId, booth, "디저트", null).id;
+        Map<String, Object> given = adminController.issueCoupons(sessionId,
+            Map.of("offerId", offerId, "match", Map.of("field", "등급", "value", "VIP")));
+        assertEquals(1, ((Number) given.get("tickets")).intValue());
+        assertEquals(1, couponRepository.findByTicket(vip).size());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> adminController.issueCoupons(sessionId,
+            Map.of("offerId", offerId, "match", Map.of("field", "등급", "value", "없는 등급"))));
     }
 
     /** A booth gives only what it has been set up to give, and only while that is on. */

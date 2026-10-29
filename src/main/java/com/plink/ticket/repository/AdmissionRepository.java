@@ -173,6 +173,28 @@ public class AdmissionRepository {
         return value == null ? 0 : value;
     }
 
+    /** One ticket's own ledger, newest first, for the console's ticket detail. */
+    public List<Map<String, Object>> ticketEvents(long ticketId, int limit) {
+        return jdbc.query(
+            "SELECT e.direction, e.gate_id, g.label AS gate_label, e.method, e.result, e.reason, e.occurred_at "
+            + "FROM admission_event e LEFT JOIN gate g ON g.id = e.gate_id "
+            + "WHERE e.ticket_id = ? ORDER BY e.id DESC LIMIT ?",
+            (rs, n) -> {
+                // Named here rather than left to the driver, which spells column labels
+                // its own way (H2 upper-cases them).
+                Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("direction", rs.getString("direction"));
+                row.put("gateId", rs.getString("gate_id"));
+                row.put("gateLabel", rs.getString("gate_label"));
+                row.put("method", rs.getString("method"));
+                row.put("result", rs.getString("result"));
+                row.put("reason", rs.getString("reason"));
+                java.sql.Timestamp at = rs.getTimestamp("occurred_at");
+                row.put("occurredAt", at == null ? null : at.toInstant().toString());
+                return row;
+            }, ticketId, limit);
+    }
+
     /** The ledger as the console reads it: which ticket, which terminal, when. */
     public List<Map<String, Object>> recentEvents(long sessionId, int limit) {
         return jdbc.queryForList(

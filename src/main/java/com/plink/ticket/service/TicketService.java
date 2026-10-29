@@ -230,6 +230,50 @@ public class TicketService {
         return result;
     }
 
+    /**
+     * Sends tickets their own links again, unchanged: nothing is rotated, a registered
+     * holder keeps their device, and the mail is the reminder the operator meant. A ticket
+     * that is off, or was issued before links were kept, is skipped and said so.
+     */
+    public Map<String, Object> resendLinks(long sessionId, java.util.List<Long> ticketIds) {
+        EventSession session = requireSession(sessionId);
+        int sent = 0;
+        java.util.List<Map<String, Object>> skipped = new java.util.ArrayList<>();
+        for (Long ticketId : ticketIds) {
+            Ticket ticket = tickets.findById(ticketId).filter(t -> t.sessionId == sessionId).orElse(null);
+            String reason = null;
+            String token = null;
+            if (ticket == null) reason = "이 행사의 입장권이 아니에요.";
+            else if (ticket.revoked()) reason = "비활성화된 입장권이에요.";
+            else if ((token = cipher.open(ticket.tokenCipher)) == null) {
+                reason = "링크를 보관하기 전에 발급되어 다시 보낼 수 없어요. 새 링크로 재발급해 주세요.";
+            }
+            if (reason == null) {
+                String url = urlFor(sessionId, token);
+                String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
+                boolean mailed = mail.send(recipient, "[" + session.name + "] 입장권 링크를 다시 보내 드려요",
+                    "아래 링크를 휴대폰에서 열어 주세요. 처음 받은 링크와 같은 링크입니다.\n\n" + url
+                    + "\n\n링크를 다른 사람에게 전달하지 마세요.");
+                boolean texted = ticket.phone != null && sms.send(ticket.phone, smsText(session, url));
+                if (mailed || texted) {
+                    tickets.recordDelivery(ticket.id, mailed && texted ? "EMAIL+SMS" : mailed ? "EMAIL" : "SMS");
+                    sent++;
+                    continue;
+                }
+                reason = "메일·문자를 보내지 못했어요.";
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("ticketId", ticketId);
+            row.put("ticketRef", ticket == null ? null : ticket.ticketRef);
+            row.put("reason", reason);
+            skipped.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sent", sent);
+        result.put("skipped", skipped);
+        return result;
+    }
+
     String smsText(EventSession session, String url) {
         return "[" + session.name + "] 입장권이 발급되었어요. 휴대폰에서 열고 등록해 주세요.\n" + url;
     }

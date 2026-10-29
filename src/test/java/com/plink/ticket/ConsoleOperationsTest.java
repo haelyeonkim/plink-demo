@@ -380,6 +380,56 @@ class ConsoleOperationsTest {
         assertEquals(0L, none.get("insideCount"));
     }
 
+    /** A reminder sends the link the ticket already has: nothing rotates, a revoked ticket is skipped. */
+    @Test void resendingSendsTheSameLinkAndSkipsRevokedTickets() {
+        long sessionId = newSession();
+        Map<String, Object> first = tickets.issue(sessionId, "keep@example.com", null, null, null);
+        long keep = ((Number) first.get("ticketId")).longValue();
+        long off = ((Number) tickets.issue(sessionId, "off@example.com", null, null, null).get("ticketId")).longValue();
+        tickets.setRevoked(off, true);
+        mailbox.clear();
+        Map<String, Object> result = adminController.resendLinks(sessionId, Map.of("ticketIds", java.util.List.of(keep, off)));
+        assertEquals(1, result.get("sent"));
+        assertEquals(1, ((java.util.List<?>) result.get("skipped")).size());
+        assertEquals(first.get("url"), mailbox.lastTicketUrl().orElseThrow(), "the link is the same one, not a new one");
+    }
+
+    /** Switching several off at once leaves the ones already off alone, and only touches this event. */
+    @Test void ticketsCanBeSwitchedOffTogether() {
+        long sessionId = newSession();
+        long a = ((Number) tickets.issue(sessionId, "a@example.com", null, null, null).get("ticketId")).longValue();
+        long b = ((Number) tickets.issue(sessionId, "b@example.com", null, null, null).get("ticketId")).longValue();
+        long other = ((Number) tickets.issue(newSession(), "c@example.com", null, null, null).get("ticketId")).longValue();
+        Map<String, Object> first = adminController.setTicketsStatus(sessionId,
+            Map.of("ticketIds", java.util.List.of(a, b, other), "revoked", true));
+        assertEquals(2, first.get("changed"));
+        assertEquals(1, first.get("skipped"));
+        Map<String, Object> again = adminController.setTicketsStatus(sessionId,
+            Map.of("ticketIds", java.util.List.of(a, b), "revoked", true));
+        assertEquals(0, again.get("changed"));
+    }
+
+    /** A list about to be uploaded is told which addresses already hold a ticket, case aside. */
+    @Test void anUploadIsToldWhichAddressesAreTaken() {
+        long sessionId = newSession();
+        tickets.issue(sessionId, "taken@example.com", null, null, null);
+        Map<String, Object> result = adminController.checkEmails(sessionId,
+            Map.of("emails", java.util.List.of("Taken@Example.com", "free@example.com")));
+        assertEquals(java.util.List.of("taken@example.com"), result.get("issued"));
+    }
+
+    /** A ticket's detail lists its own movements, named the same way whatever the database. */
+    @Test void aTicketsHistoryListsItsMovements() {
+        long sessionId = newSession();
+        long id = ((Number) tickets.issue(sessionId, "moves@example.com", null, null, null).get("ticketId")).longValue();
+        jdbc.update("INSERT INTO admission_event (ticket_id, session_id, direction, gate_id, method, result, occurred_at) "
+            + "VALUES (?, ?, 'IN', NULL, 'QR', 'ADMITTED', CURRENT_TIMESTAMP)", id, sessionId);
+        Map<String, Object> history = adminController.ticketHistory(id);
+        java.util.List<?> moves = (java.util.List<?>) history.get("movements");
+        assertEquals(1, moves.size());
+        assertEquals("ADMITTED", ((Map<?, ?>) moves.get(0)).get("result"));
+    }
+
     @Test void oneSeatCannotBeIssuedTwice() {
         long sessionId = newSession();
         fields.insert(sessionId, "좌석", "SEAT", "A-1");

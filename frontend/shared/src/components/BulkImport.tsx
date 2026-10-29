@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { columnIndexes, parseTable } from '../csv';
 
 export interface ImportField {
@@ -22,11 +22,16 @@ export interface ImportResult {
  * that was saved with the wrong delimiter or a column in an unexpected order shows up
  * as visibly wrong rows, not as two hundred surprise emails.
  */
-export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }: {
+export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, checkTaken }: {
   fields: ImportField[];
   sampleName: string;
   notifyLabel: string;
   onSubmit: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
+  /**
+   * Which of these addresses already hold one, lower-cased. Given, rows for them are
+   * set aside before anything is sent, instead of coming back as failures.
+   */
+  checkTaken?: (emails: string[]) => Promise<Set<string>>;
 }) {
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState('');
@@ -52,7 +57,40 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
   });
 
   const required = fields.filter(f => f.required).map(f => f.key);
-  const invalid = rows.filter(row => required.some(key => !row[key]));
+  const hasEmail = fields.some(f => f.key === 'email');
+  const [taken, setTaken] = useState<Set<string>>(new Set());
+  const emailKey = rows.map(row => (row.email ?? '').toLowerCase()).join('\n');
+  useEffect(() => {
+    if (!checkTaken || !hasEmail) return;
+    const emails = [...new Set(emailKey.split('\n').filter(Boolean))];
+    if (emails.length === 0) { setTaken(new Set()); return; }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      checkTaken(emails).then(found => { if (current) setTaken(found); }).catch(() => { /* the upload still reports per row */ });
+    }, 300);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [emailKey, checkTaken, hasEmail]);
+
+  // Why a row will not be sent, said before sending: empty, malformed, twice in the
+  // file, or already holding one.
+  const seen = new Set<string>();
+  const problems = rows.map(row => {
+    if (required.some(key => !row[key])) return '필수 값 없음';
+    // Only an upload that can ask the server checks addresses here; others keep the
+    // server's own per-row answer.
+    if (!hasEmail || !checkTaken) return null;
+    const email = row.email.toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return '이메일 형식 오류';
+    if (seen.has(email)) return '파일 안에서 중복';
+    seen.add(email);
+    if (taken.has(email)) return '이미 발급됨';
+    return null;
+  });
+  const invalid = rows.filter((_, index) => problems[index] !== null);
+  const tally = problems.reduce<Record<string, number>>((sum, problem) => {
+    if (problem) sum[problem] = (sum[problem] ?? 0) + 1;
+    return sum;
+  }, {});
 
   async function read(files: FileList | null) {
     const chosen = files?.[0];
@@ -66,7 +104,7 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
   async function submit() {
     setBusy(true); setError(''); setResult(null);
     try {
-      setResult(await onSubmit(rows.filter(row => required.every(key => row[key])), notify));
+      setResult(await onSubmit(rows.filter((_, index) => problems[index] === null), notify));
       setText('');
       if (file.current) file.current.value = '';
     } catch (err) {
@@ -117,18 +155,23 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
           <div className="bulk-preview">
             <table>
               <thead>
-                <tr><th>#</th>{fields.map(f => <th key={f.key}>{f.label}</th>)}</tr>
+                <tr><th>#</th>{fields.map(f => <th key={f.key}>{f.label}</th>)}<th>확인</th></tr>
               </thead>
               <tbody>
-                {rows.slice(0, 5).map((row, index) => (
-                  <tr key={index} className={required.some(key => !row[key]) ? 'row-bad' : ''}>
+                {/* The first rows, then every row that will be set aside, so a problem
+                    on row 140 is not hidden behind "… and 135 more". */}
+                {rows.map((row, index) => ({ row, index }))
+                  .filter(({ index }) => index < 5 || problems[index] !== null).slice(0, 30)
+                  .map(({ row, index }) => (
+                  <tr key={index} className={problems[index] ? 'row-bad' : ''}>
                     <td>{index + 1}</td>
                     {fields.map(f => <td key={f.key}>{row[f.key] || '-'}</td>)}
+                    <td>{problems[index] ?? '발급'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {rows.length > 5 && <p className="hint-text">… 외 {rows.length - 5}행</p>}
+            {rows.length > 5 && <p className="hint-text">전체 {rows.length.toLocaleString()}행</p>}
           </div>
 
           <label className="field-inline">
@@ -137,11 +180,12 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit }
             {notifyLabel}
           </label>
 
-          {invalid.length > 0 && (
-            <p className="warn-text" role="status">
-              {invalid.length}행은 필수 값이 비어 있어 건너뜁니다.
-            </p>
-          )}
+          <div className="bulk-tally" role="status">
+            <span className="ok">발급 {(rows.length - invalid.length).toLocaleString()}</span>
+            {Object.entries(tally).map(([problem, n]) => (
+              <span key={problem} className="skip">{problem} {n.toLocaleString()} · 건너뜀</span>
+            ))}
+          </div>
           <button className="btn-primary" type="button" disabled={busy || rows.length === invalid.length}
             onClick={() => void submit()}>
             {busy ? '발급 중…' : `${rows.length - invalid.length}건 발급하기`}

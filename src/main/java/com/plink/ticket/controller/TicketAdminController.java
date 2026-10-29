@@ -326,6 +326,89 @@ public class TicketAdminController {
         return text.isEmpty() ? null : text;
     }
 
+    /** The tickets a bulk action names, at most a few thousand. */
+    private static List<Long> ticketIds(Map<String, Object> body) {
+        List<Long> ids = new ArrayList<>();
+        if (body != null && body.get("ticketIds") instanceof List<?> list) {
+            for (Object value : list) {
+                if (value instanceof Number number) ids.add(number.longValue());
+            }
+        }
+        if (ids.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "입장권을 골라 주세요.");
+        }
+        if (ids.size() > 5000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "한 번에 5,000장까지 처리할 수 있어요.");
+        }
+        return ids;
+    }
+
+    /** Sends the chosen tickets their existing links again, without minting new ones. */
+    @PostMapping("/sessions/{id}/tickets/resend")
+    public Map<String, Object> resendLinks(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        return ticketService.resendLinks(id, ticketIds(body));
+    }
+
+    /** Switches the chosen tickets off, or back on; ones already that way are left alone. */
+    @PostMapping("/sessions/{id}/tickets/status")
+    public Map<String, Object> setTicketsStatus(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        boolean revoked = Boolean.TRUE.equals(body.get("revoked"));
+        int changed = 0, skipped = 0;
+        for (long ticketId : ticketIds(body)) {
+            Ticket ticket = tickets.findById(ticketId).filter(t -> t.sessionId == id).orElse(null);
+            if (ticket == null || ticket.revoked() == revoked) { skipped++; continue; }
+            ticketService.setRevoked(ticketId, revoked);
+            changed++;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("changed", changed);
+        result.put("skipped", skipped);
+        return result;
+    }
+
+    /**
+     * Which addresses in a list about to be uploaded already hold a ticket here, so the
+     * operator sees it before sending rather than as failed rows after.
+     */
+    @PostMapping("/sessions/{id}/tickets/check")
+    public Map<String, Object> checkEmails(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        List<String> emails = new ArrayList<>();
+        if (body.get("emails") instanceof List<?> list) {
+            for (Object value : list) if (value != null) emails.add(String.valueOf(value));
+        }
+        if (emails.size() > 20000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "한 번에 20,000건까지 확인할 수 있어요.");
+        }
+        return Map.of("issued", new ArrayList<>(tickets.liveEmailsAmong(id, emails)));
+    }
+
+    /** One ticket's movements and coupons, for the detail beside the ticket list. */
+    @GetMapping("/tickets/{ticketId}/history")
+    public Map<String, Object> ticketHistory(@PathVariable long ticketId) {
+        Ticket ticket = tickets.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        Map<Long, String> boothNames = new java.util.HashMap<>();
+        List<Map<String, Object>> held = new ArrayList<>();
+        for (com.plink.ticket.model.Coupon coupon : couponRepository.findByTicket(ticketId)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("couponId", coupon.id);
+            row.put("booth", boothNames.computeIfAbsent(coupon.boothId,
+                boothId -> booths.findById(boothId).map(booth -> booth.name).orElse(null)));
+            row.put("title", coupon.title);
+            row.put("status", coupon.status);
+            row.put("redeemedAt", coupon.redeemedAt == null ? null : coupon.redeemedAt.toInstant().toString());
+            held.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ticketId", ticket.id);
+        result.put("boundAt", ticket.boundAt == null ? null : ticket.boundAt.toInstant().toString());
+        result.put("movements", admissions.ticketEvents(ticketId, 50));
+        result.put("coupons", held);
+        return result;
+    }
+
     /** Switches a ticket off so it stops opening and stops admitting, or back on. */
     @PostMapping("/tickets/{ticketId}/status")
     public Map<String, Object> setTicketStatus(@PathVariable long ticketId,
@@ -724,6 +807,25 @@ public class TicketAdminController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "발급할 쿠폰을 골라 주세요.");
         }
         int quantity = body.get("quantity") instanceof Number number ? number.intValue() : 1;
+        // "Everybody whose 등급 is VIP": the tickets are found here, so the console need not
+        // page through the whole event to name them.
+        if (ticketIds.isEmpty() && body.get("match") instanceof Map<?, ?> match) {
+            String label = blankToNull(match.get("field") == null ? null : String.valueOf(match.get("field")));
+            String value = blankToNull(match.get("value") == null ? null : String.valueOf(match.get("value")));
+            com.plink.ticket.model.TicketField field = fields.findBySession(id).stream()
+                .filter(f -> f.label.equals(label)).findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "조건으로 쓸 항목을 찾을 수 없어요."));
+            if (value == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "조건 값을 골라 주세요.");
+            for (Ticket ticket : tickets.findBySession(id)) {
+                if (ticket.revoked()) continue;
+                String held = field.seat() ? ticket.seat : field.tier() ? ticket.tier : String.valueOf(readAttributes(ticket.attributes).getOrDefault(field.label, ""));
+                if (value.equals(held)) ticketIds.add(ticket.id);
+            }
+            if (ticketIds.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "'" + field.label + ": " + value + "'인 입장권이 없어요.");
+            }
+        }
         return coupons.issue(id, offerId.longValue(), ticketIds, quantity);
     }
 

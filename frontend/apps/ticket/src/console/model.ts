@@ -185,3 +185,16 @@ export function clock(value: string | null): string {
 export function percent(part: number, whole: number): number {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
+
+/** One ticket's movements and coupons, for the detail beside the ticket list. */
+export interface TicketHistory {
+  ticketId: number; boundAt: string | null;
+  movements: Array<{ direction: string | null; gateId: string | null; gateLabel: string | null;
+    method: string | null; result: string; reason: string | null; occurredAt: string | null }>;
+  coupons: Array<{ couponId: number; booth: string | null; title: string; status: string; redeemedAt: string | null }>;
+}
+
+/** How a link reached its holder, as the console says it. */
+export const DELIVERY: Record<string, string> = {
+  EMAIL: '메일', SMS: '문자', 'EMAIL+SMS': '메일·문자', LINK: '직접 전달',
+};

@@ -79,6 +79,27 @@ public class TicketRepository {
     }
 
     /**
+     * Which of these addresses already hold a live ticket in the event, lower-cased: what
+     * a list upload would be refused for, said before anything is sent.
+     */
+    public java.util.Set<String> liveEmailsAmong(long sessionId, java.util.Collection<String> emails) {
+        java.util.Set<String> found = new java.util.HashSet<>();
+        List<String> wanted = emails.stream().filter(java.util.Objects::nonNull)
+            .map(email -> email.trim().toLowerCase(java.util.Locale.ROOT)).distinct().toList();
+        for (int from = 0; from < wanted.size(); from += 500) {
+            List<String> chunk = wanted.subList(from, Math.min(wanted.size(), from + 500));
+            List<Object> args = new ArrayList<>();
+            args.add(sessionId);
+            args.addAll(chunk);
+            jdbc.query("SELECT LOWER(issued_to_email) AS email FROM ticket WHERE session_id = ? "
+                + "AND status <> 'REVOKED' AND LOWER(issued_to_email) IN ("
+                + String.join(",", java.util.Collections.nCopies(chunk.size(), "?")) + ")",
+                rs -> { found.add(rs.getString("email")); }, args.toArray());
+        }
+        return found;
+    }
+
+    /**
      * Removes the ticket itself. Everything hanging off it - its passkey, presence,
      * transfers, grants and ledger rows - is cascaded by the schema, which is why this
      * is the console's "delete" and revoking is what keeps the record.

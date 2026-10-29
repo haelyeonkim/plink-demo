@@ -9,11 +9,11 @@ import BulkImport from '@shared/components/BulkImport';
 import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
-import { openLive } from '../ticket/live';
+import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
 import {
-  BoothRow, CouponFilter, CouponRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, OfferRow, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, CouponFilter, CouponRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, OfferRow, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -43,9 +43,16 @@ export default function TicketAdmin() {
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('ALL');
   const [ticketPageNo, setTicketPageNo] = useState(0);
   const [summary, setSummary] = useState<TicketSummary | null>(null);
+  // Tickets ticked for a bulk action, and the one whose detail is open beside the list.
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [openTicket, setOpenTicket] = useState<TicketRow | null>(null);
+  const [history, setHistory] = useState<TicketHistory | null>(null);
   // Bumped after anything that changes a list, so the page on screen is read again.
   const [revision, setRevision] = useState(0);
   const [occupancy, setOccupancy] = useState<Occupancy | null>(null);
+  // Whether the numbers on screen are live, and when they last changed.
+  const [liveState, setLiveState] = useState<LiveState>('connecting');
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string } | null>(null);
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
@@ -54,8 +61,12 @@ export default function TicketAdmin() {
   // The hand-out sheet: open with a ticket to give to that one person, or with null to
   // choose the recipients inside. `pickTickets` is that choice - everybody, or a few.
   const [couponSheet, setCouponSheet] =
-    useState<{ only: TicketRow | null; boothId?: number } | null>(null);
+    useState<{ only: TicketRow | null; boothId?: number; ids?: number[] } | null>(null);
   const [pickTickets, setPickTickets] = useState(false);
+  // "Everybody whose 등급 is VIP": a field and one of its values, found on the server.
+  const [matchMode, setMatchMode] = useState(false);
+  const [matchField, setMatchField] = useState('');
+  const [matchValue, setMatchValue] = useState('');
   // Chosen recipients survive a new search: the list below the box changes, the choice
   // does not.
   const [chosen, setChosen] = useState<Map<number, TicketRow>>(new Map());
@@ -101,6 +112,7 @@ export default function TicketAdmin() {
   // than doing it under a name that sounds like reading.
   const [confirmReissue, setConfirmReissue] = useState<{ row: TicketRow; notify: boolean } | null>(null);
   const [confirmTicket, setConfirmTicket] = useState<TicketRow | null>(null);
+  const [confirmBulkOff, setConfirmBulkOff] = useState<number[] | null>(null);
   const [confirmBooth, setConfirmBooth] = useState<BoothRow | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -118,6 +130,7 @@ export default function TicketAdmin() {
       setGates(await read(await fetch(`/api/admin/sessions/${id}/gates`)));
       setBooths(await read(await fetch(`/api/admin/sessions/${id}/booths`)));
       setRevision(value => value + 1);
+      setUpdatedAt(new Date());
     } catch (err) { setError(err instanceof Error ? err.message : '행사 정보를 불러오지 못했어요.'); }
   }, []);
 
@@ -125,6 +138,22 @@ export default function TicketAdmin() {
   const ticketSearch = useDebounced(ticketQuery.trim());
   const couponSearch = useDebounced(couponQuery.trim());
   useEffect(() => { setTicketPageNo(0); }, [ticketSearch, ticketFilter, selected]);
+  // A choice is about the rows on screen: a new search, filter or page starts it over.
+  useEffect(() => { setChecked(new Set()); }, [ticketSearch, ticketFilter, ticketPageNo, selected]);
+  useEffect(() => { setOpenTicket(null); }, [selected]);
+  // The open ticket follows the list: after an action its row is read again.
+  useEffect(() => {
+    setOpenTicket(current => current
+      ? ticketPage.items.find(row => row.ticketId === current.ticketId) ?? current : null);
+  }, [ticketPage]);
+  useEffect(() => {
+    if (!openTicket) { setHistory(null); return; }
+    let current = true;
+    fetch(`/api/admin/tickets/${openTicket.ticketId}/history`).then(read)
+      .then(data => { if (current) setHistory(data); })
+      .catch(() => { if (current) setHistory(null); });
+    return () => { current = false; };
+  }, [openTicket?.ticketId, revision]);
   const boothParam = params.get('booth');
   useEffect(() => { setCouponPageNo(0); }, [couponSearch, couponFilter, boothParam, selected]);
 
@@ -160,9 +189,9 @@ export default function TicketAdmin() {
     // Scans arrive as they happen; what follows is the fallback for a network that will
     // not carry the socket, which is why it can afford to be slow.
     const live = openLive(`/ws/admin/sessions/${selected}`, message => {
-      if (message.type === 'OCCUPANCY') setOccupancy(message as unknown as Occupancy);
+      if (message.type === 'OCCUPANCY') { setOccupancy(message as unknown as Occupancy); setUpdatedAt(new Date()); }
       if (message.type === 'MOVEMENT') void loadSession(selected);
-    });
+    }, setLiveState);
     const timer = window.setInterval(() => { void loadSession(selected); }, 30000);
     return () => { live.close(); window.clearInterval(timer); };
   }, [selected, loadSession]);
@@ -199,6 +228,41 @@ export default function TicketAdmin() {
     await loadSession(selected!);
     return result;
   };
+
+  /** Sends the chosen tickets their existing links again; nothing is rotated. */
+  const resendLinks = (ticketIds: number[]) => act(async () => {
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/resend`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds }),
+    }));
+    const skipped = result.skipped as Array<{ ticketRef: string | null; reason: string }>;
+    setNotice(`${result.sent}장에 입장권 링크를 다시 보냈어요.`
+      + (skipped.length > 0 ? ` ${skipped.length}장은 건너뜀: ${skipped[0].reason}` : ''));
+    setChecked(new Set());
+    await loadSession(selected!);
+  });
+
+  /** Which addresses in a list already hold a ticket here, before the list is sent. */
+  const checkTaken = useCallback(async (emails: string[]) => {
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/check`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emails }),
+    }));
+    return new Set<string>(result.issued as string[]);
+  }, [selected]);
+
+  const setManyRevoked = (ticketIds: number[], revoked: boolean) => act(async () => {
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, revoked }),
+    }));
+    setNotice(revoked
+      ? `${result.changed}장을 비활성화했어요. 링크가 열리지 않고 게이트도 거부합니다.`
+      : `${result.changed}장을 다시 사용할 수 있어요.`);
+    setChecked(new Set());
+    setConfirmBulkOff(null);
+    await loadSession(selected!);
+  });
 
   const setRevoked = (ticketId: number, revoked: boolean) => act(async () => {
     const result = await read(await mutate(`/api/admin/tickets/${ticketId}/status`, {
@@ -375,11 +439,12 @@ export default function TicketAdmin() {
   });
 
   /** Gives one of a booth's offers to everybody, or to the people the operator picked. */
-  const giveCoupons = (offerId: number, ticketIds: number[], quantity: number) =>
+  const giveCoupons = (offerId: number, ticketIds: number[], quantity: number,
+      match?: { field: string; value: string }) =>
     act(async () => {
       const result = await read(await mutate(`/api/admin/sessions/${selected}/coupons`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offerId, ticketIds, quantity }),
+        body: JSON.stringify({ offerId, ticketIds, quantity, ...(match ? { match } : {}) }),
       }));
       const each = quantity > 1 ? ` (1인당 ${quantity}장까지)` : '';
       setNotice(result.given > 0
@@ -407,16 +472,19 @@ export default function TicketAdmin() {
   const givingBooths = booths.filter(booth => booth.offers.some(offer => offer.active));
 
   /** Opens the sheet, for one named person or for a choice made inside it. */
-  const openCouponSheet = (only: TicketRow | null, boothId?: number) => {
+  const openCouponSheet = (only: TicketRow | null, boothId?: number, ids?: number[]) => {
     const booth = givingBooths.find(row => row.boothId === boothId) ?? givingBooths[0] ?? null;
     setPickTickets(false);
+    setMatchMode(false);
+    setMatchField('');
+    setMatchValue('');
     setChosen(new Map());
     setPickQuery('');
     setSheetError('');
     setSheetBooth(booth?.boothId ?? null);
     setSheetOffer(booth?.offers.find(offer => offer.active)?.offerId ?? null);
     setSheetQuantity(1);
-    setCouponSheet({ only, boothId });
+    setCouponSheet({ only, boothId, ids });
   };
 
   const issueCoupons = () => {
@@ -425,9 +493,15 @@ export default function TicketAdmin() {
       setSheetError('발급할 쿠폰을 골라 주세요.');
       return;
     }
-    const ids = only ? [only.ticketId] : pickTickets ? [...chosen.keys()] : [];
-    if (!only && pickTickets && ids.length === 0) {
+    const given = couponSheet?.ids;
+    const ids = only ? [only.ticketId] : given ? given : pickTickets ? [...chosen.keys()] : [];
+    if (!only && !given && pickTickets && ids.length === 0) {
       setSheetError('쿠폰을 받을 입장권을 선택해 주세요.');
+      return;
+    }
+    const match = !only && !given && matchMode ? { field: matchField, value: matchValue } : undefined;
+    if (match && (!match.field || !match.value)) {
+      setSheetError('조건으로 쓸 항목과 값을 골라 주세요.');
       return;
     }
     if (!Number.isInteger(sheetQuantity) || sheetQuantity < 1 || sheetQuantity > MAX_PER_TICKET) {
@@ -435,7 +509,7 @@ export default function TicketAdmin() {
       return;
     }
     setCouponSheet(null);
-    void giveCoupons(sheetOffer, ids, sheetQuantity);
+    void giveCoupons(sheetOffer, ids, sheetQuantity, match);
   };
 
   // The recipient list in the sheet is a search, not the whole event: it reads the
@@ -645,6 +719,12 @@ export default function TicketAdmin() {
                 {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 행사' : ''}</p>
             </div>
             <div className="console-actions">
+              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt) === 'today')) && (
+                <span className={`live-state live-${liveState}`} role="status">
+                  {liveState === 'open' ? '실시간 연결됨' : liveState === 'retrying' ? '연결이 끊겨 다시 연결하는 중' : '연결 중'}
+                  {updatedAt && ` · ${[updatedAt.getHours(), updatedAt.getMinutes(), updatedAt.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')} 갱신`}
+                </span>
+              )}
               {tab === 'overview' && eventWhen(session.startsAt) === 'today' && (
                 <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
               )}
@@ -683,7 +763,7 @@ export default function TicketAdmin() {
               ]}
               sampleName="입장권-발급-양식.csv"
               notifyLabel="발급하면서 수신자에게 메일·문자 보내기"
-              onSubmit={issueBulk} />
+              onSubmit={issueBulk} checkTaken={checkTaken} />
           </section>
           <aside className="console-aside">
             <form className="console-card" onSubmit={e => { e.preventDefault(); issueTicket(e.currentTarget); }}>
@@ -749,8 +829,22 @@ export default function TicketAdmin() {
         </div>
       )}
 
-      {session && tab === 'tickets' && (
-        <div className="tab-panel">
+      {session && tab === 'tickets' && (() => {
+        const rows = ticketPage.items;
+        const allOn = rows.length > 0 && rows.every(row => checked.has(row.ticketId));
+        const toggle = (id: number) => setChecked(current => {
+          const next = new Set(current);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
+        const picked = rows.filter(row => checked.has(row.ticketId));
+        const ids = picked.map(row => row.ticketId);
+        const anyOff = picked.some(row => row.status === 'REVOKED');
+        const anyOn = picked.some(row => row.status !== 'REVOKED');
+        const columns = 7 + fieldList.length;
+        const open = openTicket;
+        return (
+        <div className="console-stack">
           {/* The chips are the labels on the rows: choosing one shows exactly the rows
               wearing it, and each says how many there are before it is chosen. */}
           <ListFilter<TicketFilter>
@@ -764,89 +858,178 @@ export default function TicketAdmin() {
               ['INSIDE', '장내', counts.inside],
               ['REVOKED', '비활성', counts.revoked],
             ]} />
-          <div className="table-scroll">
-            <table className="ticket-table">
-              <thead>
-                <tr>
-                  <th>참조</th>
-                  {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
-                  <th>상태</th><th>입·퇴장</th><th>보유자</th><th>전달</th><th />
-                </tr>
-              </thead>
-              <tbody>
-                {ticketPage.items.map(row => (
-                  <Fragment key={row.ticketId}>
-                  {/* data-label feeds the stacked layout a phone falls back to, where
-                      each cell carries its own heading instead of a column. */}
-                  <tr className={row.status === 'REVOKED' ? 'row-revoked' : ''}>
-                    <td data-label="참조">{row.ticketRef}</td>
-                    {fieldList.map(field => (
-                      <td key={field.id} data-label={field.label}>{valueOf(row, field) ?? '-'}</td>
-                    ))}
-                    <td data-label="상태">
-                      <span className={`pill pill-${ticketState(row).tone}`}>{ticketState(row).label}</span>
-                    </td>
-                    <td data-label="입·퇴장">
-                      <span className={`pill pill-${presenceState(row).tone}`}>
-                        {presenceState(row).label}
-                      </span>
-                      {row.entryCount > 0 && (
-                        <small className="cell-note">
-                          {shortTime(presenceState(row).since)} · 입장 {row.entryCount}회
-                          {row.reentryCount > 0 ? ` (재입장 ${row.reentryCount})` : ''}
-                        </small>
-                      )}
-                    </td>
-                    <td data-label="보유자">{row.holderEmail ?? row.issuedToEmail}</td>
-                    <td data-label="전달">{row.deliveredVia ?? '-'}</td>
-                    <td className="cell-buttons">
-                      <button className="btn-tiny" onClick={() => showLink(row.ticketId)}>링크 보기</button>
-                      <button className="btn-tiny" onClick={() => setConfirmReissue({ row, notify: true })}>
-                        재발송
-                      </button>
-                      <RowMenu label={`${row.ticketRef} 작업`} items={[
-                        ...(givingBooths.length > 0 && row.status !== 'REVOKED'
-                          ? [{ label: '쿠폰 주기', onSelect: () => openCouponSheet(row) }] : []),
-                        { label: '새 링크로 재발급', onSelect: () => setConfirmReissue({ row, notify: false }) },
-                        row.status === 'REVOKED'
-                          ? { label: '다시 사용하기', onSelect: () => setRevoked(row.ticketId, false) }
-                          : { label: '비활성화', onSelect: () => setRevoked(row.ticketId, true) },
-                        'separator',
-                        { label: '삭제', onSelect: () => setConfirmTicket(row), danger: true },
-                      ]} />
-                    </td>
+
+          {checked.size > 0 && (
+            <div className="bulk-bar" role="region" aria-label="선택한 입장권 작업">
+              <b>{checked.size.toLocaleString()}장 선택됨</b>
+              <button type="button" disabled={!anyOn} onClick={() => resendLinks(ids.filter(id =>
+                picked.find(row => row.ticketId === id)?.status !== 'REVOKED'))}>링크 다시 보내기</button>
+              <button type="button" disabled={!anyOn || givingBooths.length === 0}
+                onClick={() => openCouponSheet(null, undefined, picked.filter(row => row.status !== 'REVOKED').map(row => row.ticketId))}>
+                쿠폰 주기</button>
+              {anyOff && (
+                <button type="button" onClick={() => setManyRevoked(picked.filter(row => row.status === 'REVOKED').map(row => row.ticketId), false)}>
+                  다시 사용하기</button>
+              )}
+              <span className="bulk-gap" />
+              <button type="button" className="danger" disabled={!anyOn}
+                onClick={() => setConfirmBulkOff(picked.filter(row => row.status !== 'REVOKED').map(row => row.ticketId))}>
+                비활성화…</button>
+              <button type="button" className="quiet" onClick={() => setChecked(new Set())}>선택 해제</button>
+            </div>
+          )}
+
+          <div className={`tickets-layout${open ? ' with-detail' : ''}`}>
+            <div className="console-table-box">
+              <table className="console-table ticket-list">
+                <thead>
+                  <tr>
+                    <th className="check">
+                      <input type="checkbox" aria-label="이 페이지 전체 선택" checked={allOn}
+                        onChange={() => setChecked(allOn ? new Set() : new Set(rows.map(row => row.ticketId)))} />
+                    </th>
+                    <th>입장권</th>
+                    {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
+                    <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th aria-label="상세" />
                   </tr>
-                  {issued?.from === 'row' && issued.ticketId === row.ticketId && (
+                </thead>
+                <tbody>
+                  {rows.map(row => {
+                    const state = ticketState(row);
+                    const presence = presenceState(row);
+                    const isOpen = open?.ticketId === row.ticketId;
+                    return (
+                      <tr key={row.ticketId} className={`${row.status === 'REVOKED' ? 'is-off' : ''}${isOpen ? ' is-open' : ''}${checked.has(row.ticketId) ? ' is-checked' : ''}`}>
+                        <td className="check">
+                          <input type="checkbox" aria-label={`${row.ticketRef} 선택`} checked={checked.has(row.ticketId)}
+                            onChange={() => toggle(row.ticketId)} />
+                        </td>
+                        <td>
+                          <button type="button" className="ticket-ref" aria-expanded={isOpen}
+                            onClick={() => setOpenTicket(isOpen ? null : row)}>{row.ticketRef}</button>
+                        </td>
+                        {fieldList.map(field => <td key={field.id}>{valueOf(row, field) ?? '–'}</td>)}
+                        <td><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
+                        <td>
+                          <span className={`pill pill-${presence.tone}`}>{presence.label}</span>
+                          {presence.since && <small className="cell-note">{clock(presence.since)}</small>}
+                        </td>
+                        <td className="muted">{row.holderEmail ?? row.issuedToEmail}</td>
+                        <td className="muted">{DELIVERY[row.deliveredVia ?? ''] ?? row.deliveredVia ?? '–'}</td>
+                        <td className="chev">
+                          <button type="button" aria-label={`${row.ticketRef} 상세 ${isOpen ? '닫기' : '열기'}`}
+                            onClick={() => setOpenTicket(isOpen ? null : row)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {rows.length === 0 && (
                     <tr>
-                      <td colSpan={6 + fieldList.length}>
-                        <IssuedLink url={issued.url}
-                          note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
+                      <td colSpan={columns} className="console-none">
+                        {ticketSearch || ticketFilter !== 'ALL' ? '조건에 맞는 입장권이 없어요.'
+                          : <>아직 발급한 입장권이 없어요. <Link to="?tab=issue">입장권 발급</Link>에서 시작하세요.</>}
                       </td>
                     </tr>
                   )}
-                  </Fragment>
-                ))}
-                {ticketPage.items.length === 0 && (
-                  <tr>
-                    <td colSpan={6 + fieldList.length} className="hint-text">
-                      {ticketSearch || ticketFilter !== 'ALL' ? '조건에 맞는 입장권이 없어요.' : '발급된 입장권이 없어요.'}
-                    </td>
-                  </tr>
+                </tbody>
+              </table>
+              <Pager page={ticketPage} unit="장" onPage={setTicketPageNo} />
+            </div>
+
+            {open && (
+              <aside className="ticket-detail" aria-label={`${open.ticketRef} 상세`}>
+                <div className="ticket-detail-head">
+                  <div>
+                    <small>{open.ticketRef}</small>
+                    <h3>{fieldList.map(field => valueOf(open, field)).filter(Boolean).join(' · ') || '입장권'}</h3>
+                  </div>
+                  <button type="button" className="sheet-close" aria-label="상세 닫기" onClick={() => setOpenTicket(null)}>✕</button>
+                </div>
+                <div className="ticket-detail-tags">
+                  <span className={`pill pill-${ticketState(open).tone}`}>{ticketState(open).label}</span>
+                  <span className={`pill pill-${presenceState(open).tone}`}>
+                    {presenceState(open).label}{presenceState(open).since ? ` · ${clock(presenceState(open).since)}부터` : ''}</span>
+                </div>
+                <dl className="ticket-detail-facts">
+                  <div><dt>받는 사람</dt><dd>{open.holderEmail ?? open.issuedToEmail}</dd></div>
+                  <div><dt>등록</dt><dd>{history?.boundAt ? shortTime(history.boundAt) : open.holderEmail ? '등록됨' : '아직 안 함'}</dd></div>
+                  <div><dt>전달</dt><dd>{DELIVERY[open.deliveredVia ?? ''] ?? open.deliveredVia ?? '–'}
+                    {open.reissueCount > 0 ? ` · 재발급 ${open.reissueCount}회` : ''}</dd></div>
+                  {open.phone && <div><dt>휴대폰</dt><dd>{open.phone}</dd></div>}
+                  <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
+                </dl>
+
+                {issued?.from === 'row' && issued.ticketId === open.ticketId && (
+                  <IssuedLink url={issued.url} note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
                 )}
-              </tbody>
-            </table>
+
+                <section className="ticket-detail-part">
+                  <h4>입·퇴장 기록</h4>
+                  {(history?.movements ?? []).length === 0 ? <p className="console-none">기록이 없어요.</p> : (
+                    <ol className="timeline">
+                      {history!.movements.slice(0, 8).map((move, index) => (
+                        <li key={index}>
+                          <span className="muted">{clock(move.occurredAt)}</span>
+                          <span className={`pill pill-${outcomeTone(move.result)}`}>{OUTCOMES[move.result] ?? move.result}</span>
+                          <span>{move.gateLabel || move.gateId || '–'}</span>
+                          {move.reason && <small className="cell-note">{move.reason}</small>}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+
+                <section className="ticket-detail-part">
+                  <h4>쿠폰</h4>
+                  {(history?.coupons ?? []).length === 0 ? <p className="console-none">받은 쿠폰이 없어요.</p> : (
+                    <ul className="timeline">
+                      {history!.coupons.map(coupon => (
+                        <li key={coupon.couponId}>
+                          <span>{coupon.title}</span>
+                          <span className={`pill pill-${coupon.status === 'REDEEMED' ? 'ok' : coupon.status === 'VOID' ? 'off' : 'wait'}`}>
+                            {coupon.status === 'REDEEMED' ? '사용함' : coupon.status === 'VOID' ? '무효' : '미사용'}</span>
+                          {coupon.booth && <small className="cell-note">{coupon.booth}</small>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <div className="ticket-detail-actions">
+                  <button type="button" className="btn-secondary" onClick={() => showLink(open.ticketId)}>링크 보기</button>
+                  <button type="button" className="btn-secondary" disabled={open.status === 'REVOKED'}
+                    onClick={() => resendLinks([open.ticketId])}>링크 다시 보내기</button>
+                  {givingBooths.length > 0 && open.status !== 'REVOKED' && (
+                    <button type="button" className="btn-secondary" onClick={() => openCouponSheet(open)}>쿠폰 주기</button>
+                  )}
+                </div>
+                <div className="ticket-detail-danger">
+                  <h4>되돌리기 어려운 작업</h4>
+                  <button type="button" onClick={() => setConfirmReissue({ row: open, notify: true })}>
+                    새 링크로 재발급 <small>이전 링크와 등록한 기기가 끊겨요</small></button>
+                  {open.status === 'REVOKED' ? (
+                    <button type="button" onClick={() => setRevoked(open.ticketId, false)}>
+                      다시 사용하기 <small>링크와 게이트가 다시 받아들여요</small></button>
+                  ) : (
+                    <button type="button" onClick={() => setRevoked(open.ticketId, true)}>
+                      비활성화 <small>링크가 열리지 않고 게이트가 거부해요</small></button>
+                  )}
+                  <button type="button" className="danger" onClick={() => setConfirmTicket(open)}>
+                    삭제 <small>같은 이메일로 다시 발급할 수 있게 돼요</small></button>
+                </div>
+              </aside>
+            )}
           </div>
-          <Pager page={ticketPage} unit="장" onPage={setTicketPageNo} />
-          <p className="hint-text">
-            <b>링크 보기</b>는 발급된 링크를 그대로 보여 줍니다. 입장권도 등록 상태도 그대로예요.
-            <b> 재발급</b>은 새 링크를 만들고 그 순간 이전 링크를 닫습니다.
-          </p>
-          <p className="hint-text">
-            비활성화하면 링크가 열리지 않고 게이트도 거부합니다. 이미 장내에 있는 사람을 내보내지는
-            않아요 - 입장한 기록은 사실이니까요.
+          <p className="hint-text console-help">
+            <b>링크 다시 보내기</b>는 처음 보낸 링크를 그대로 다시 보냅니다. <b>새 링크로 재발급</b>은 새 링크를 만들고 그 순간
+            이전 링크를 닫아요. 비활성화해도 이미 장내에 있는 사람을 내보내지는 않아요.
           </p>
         </div>
-      )}
+        );
+      })()}
 
       {session && tab === 'gates' && (() => {
         // A gate that needs someone goes first: no tablet, then a date about to run out.
@@ -1400,16 +1583,15 @@ export default function TicketAdmin() {
 
       <ConfirmDialog
         open={confirmReissue != null}
-        title={confirmReissue?.notify ? '링크를 다시 보낼까요?' : '새 링크를 발급할까요?'}
+        title={confirmReissue?.notify ? '새 링크로 재발급하고 보낼까요?' : '새 링크를 발급할까요?'}
         message={'이미 보낸 링크는 이 순간부터 열리지 않고, 등록된 기기도 함께 풀립니다. '
-          + '보유자는 새 링크로 다시 등록해야 해요.'
-          + (confirmReissue?.notify ? '' : ' 발급된 링크는 서버에 남기지 않아 지난 링크를 다시 볼 수는 없습니다.')}
+          + '보유자는 새 링크로 다시 등록해야 해요. 같은 링크를 한 번 더 보내려면 \'링크 다시 보내기\'를 쓰세요.'}
         details={confirmReissue ? [
           ['입장권', confirmReissue.row.ticketRef],
           ['받는 사람', confirmReissue.row.holderEmail ?? confirmReissue.row.issuedToEmail ?? '-'],
           ['상태', ticketState(confirmReissue.row).label],
         ] : undefined}
-        confirmLabel={confirmReissue?.notify ? '재발송' : '재발급'}
+        confirmLabel={confirmReissue?.notify ? '재발급하고 보내기' : '재발급'}
         onConfirm={() => {
           if (!confirmReissue) return;
           const { row, notify } = confirmReissue;
@@ -1435,6 +1617,7 @@ export default function TicketAdmin() {
                       ? `${couponSheet.only.ticketRef}`
                         + `${couponSheet.only.seat ? ` · ${couponSheet.only.seat}` : ''} · `
                         + `${couponSheet.only.holderEmail ?? couponSheet.only.issuedToEmail}`
+                      : couponSheet.ids ? `선택한 입장권 ${couponSheet.ids.length.toLocaleString()}장`
                       : '부스에 정해 둔 쿠폰 중 발급 중인 것만 줄 수 있어요.'}
                   </p>
                 </div>
@@ -1505,15 +1688,48 @@ export default function TicketAdmin() {
                     </>);
                   })()}
 
-                  {!couponSheet.only && givingBooths.length > 0 && (<>
+                  {!couponSheet.only && !couponSheet.ids && givingBooths.length > 0 && (<>
                     <div className="field">
                       <label htmlFor="coupon-scope">받는 사람</label>
-                      <select id="coupon-scope" value={pickTickets ? 'some' : 'all'}
-                        onChange={e => { setPickTickets(e.target.value === 'some'); setSheetError(''); }}>
+                      <select id="coupon-scope" value={pickTickets ? 'some' : matchMode ? 'match' : 'all'}
+                        onChange={e => {
+                          setPickTickets(e.target.value === 'some');
+                          setMatchMode(e.target.value === 'match');
+                          setSheetError('');
+                        }}>
                         <option value="all">사용 중인 입장권 전체 ({counts.live.toLocaleString()}장)</option>
+                        <option value="match" disabled={fieldList.length === 0}>
+                          {fieldList.length === 0 ? '조건에 맞는 입장권 (발급 항목이 없어요)' : '조건에 맞는 입장권'}
+                        </option>
                         <option value="some">골라서 주기</option>
                       </select>
                     </div>
+                    {matchMode && (() => {
+                      const field = fieldList.find(row => row.label === matchField) ?? null;
+                      const values = field
+                        ? (field.values.length > 0 ? field.values : [...valuesInUse(field)].sort())
+                        : [];
+                      return (
+                        <div className="form-row">
+                          <div className="field">
+                            <label htmlFor="match-field">항목</label>
+                            <select id="match-field" value={matchField}
+                              onChange={e => { setMatchField(e.target.value); setMatchValue(''); setSheetError(''); }}>
+                              <option value="">항목 고르기</option>
+                              {fieldList.map(row => <option key={row.id} value={row.label}>{row.label}</option>)}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor="match-value">값</label>
+                            <select id="match-value" value={matchValue} disabled={!field}
+                              onChange={e => { setMatchValue(e.target.value); setSheetError(''); }}>
+                              <option value="">값 고르기</option>
+                              {values.map(value => <option key={value} value={value}>{value}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {pickTickets && (<>
                       <div className="pick-search">
                         <input type="search" value={pickQuery} placeholder="참조·좌석·이메일로 찾기"
@@ -1590,6 +1806,16 @@ export default function TicketAdmin() {
           removeBooth(booth);
         }}
         onCancel={() => setConfirmBooth(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmBulkOff != null}
+        title={`입장권 ${confirmBulkOff?.length ?? 0}장을 비활성화할까요?`}
+        message={'링크가 열리지 않고 게이트도 입장을 거부합니다. 이미 장내에 있는 사람을 내보내지는 않아요. '
+          + '선택한 입장권에서 다시 사용하기로 되돌릴 수 있어요.'}
+        confirmLabel="비활성화"
+        onConfirm={() => { if (confirmBulkOff) setManyRevoked(confirmBulkOff, true); }}
+        onCancel={() => setConfirmBulkOff(null)}
       />
 
       <ConfirmDialog

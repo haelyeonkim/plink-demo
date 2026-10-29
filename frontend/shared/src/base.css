@@ -961,3 +961,9 @@ select, .field select, select.artwork-status {
 .login-privacy h2 { font-size: 13px; margin-bottom: 8px; }
 .login-privacy p { font-size: 12px; color: #5b647a; line-height: 1.7; margin-bottom: 6px; }
 .login-privacy a { color: var(--blue); font-weight: 600; }
+
+/* What an upload will send and what it sets aside, counted before sending. */
+.bulk-tally { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+.bulk-tally span { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 8px; }
+.bulk-tally .ok { background: #e3f5ec; color: #1c6b50; }
+.bulk-tally .skip { background: #fff4dc; color: #8a5300; }

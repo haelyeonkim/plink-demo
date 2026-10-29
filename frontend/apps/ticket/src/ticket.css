@@ -1034,8 +1034,80 @@ body:has(.gate-screen) .header-plain { display: none; }
 .settings-body { min-width: 0; }
 .settings-body .settings-form { max-width: none; }
 
+/* 발급 현황: tick rows for a bulk action, open one for its detail beside the list. */
+.bulk-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 12px; background: var(--ink); color: white; font-size: 13px;
+}
+.bulk-bar b { margin-right: 6px; }
+.bulk-bar button {
+  border: 0; background: rgba(255, 255, 255, .14); color: white; font: inherit; font-size: 13px;
+  font-weight: 600; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+}
+.bulk-bar button:hover:not(:disabled) { background: rgba(255, 255, 255, .24); }
+.bulk-bar button:disabled { opacity: .45; cursor: not-allowed; }
+.bulk-bar button.danger { background: #b3362b; }
+.bulk-bar button.quiet { background: none; color: #c9cfe0; }
+.bulk-gap { flex: 1; }
+.tickets-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.tickets-layout.with-detail { grid-template-columns: minmax(0, 1fr) 340px; }
+.ticket-list { min-width: 760px; }
+.ticket-list td, .ticket-list th { padding: 11px 12px; }
+.ticket-list .check { width: 32px; }
+.ticket-list input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--blue); }
+.ticket-list .ticket-ref {
+  border: 0; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--ink);
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.ticket-list .ticket-ref:hover { color: var(--blue); text-decoration: underline; }
+.ticket-list tbody tr:hover { background: #faf8ff; }
+.ticket-list tr.is-checked { background: #fafbfd; }
+.ticket-list tr.is-open { background: #f4f1ff; box-shadow: inset 3px 0 0 var(--blue); }
+.ticket-list tr.is-off td { color: #5d6577; }
+.ticket-list .chev { width: 40px; text-align: right; }
+.ticket-list .chev button { border: 0; background: none; color: var(--muted); padding: 6px; border-radius: 8px; cursor: pointer; }
+.ticket-list .chev button:hover { background: #efecff; color: var(--blue); }
+.ticket-list .cell-note { display: block; margin-top: 2px; }
+.console-table-box .pager { padding: 10px 14px; }
+.ticket-detail {
+  position: sticky; top: 16px; display: flex; flex-direction: column; gap: 14px;
+  background: white; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px;
+  max-height: calc(100vh - 32px); overflow-y: auto;
+}
+.ticket-detail-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.ticket-detail-head small { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ticket-detail-head h3 { font-size: 18px; margin: 2px 0 0; }
+.ticket-detail-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.ticket-detail-facts { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+.ticket-detail-facts dt { font-size: 12px; color: var(--muted); }
+.ticket-detail-facts dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.ticket-detail-part { border-top: 1px solid #eef0f5; padding-top: 12px; }
+.ticket-detail-part h4, .ticket-detail-danger h4 { font-size: 12px; color: var(--muted); margin: 0 0 8px; font-weight: 700; }
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.timeline li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.timeline .cell-note { width: 100%; margin-left: 50px; }
+.ticket-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid #eef0f5; padding-top: 12px; }
+.ticket-detail-actions .btn-secondary { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; }
+.ticket-detail-danger { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid #eef0f5; padding-top: 12px; }
+.ticket-detail-danger button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left;
+  border: 0; background: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+}
+.ticket-detail-danger button small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.ticket-detail-danger button:hover { background: #f6f7fa; }
+.ticket-detail-danger button.danger { color: #b3362b; }
+
+/* Whether the numbers on screen are live. */
+.live-state { align-self: center; font-size: 12px; font-weight: 700; padding: 6px 11px; border-radius: 999px; }
+.live-open { background: #e3f5ec; color: #1c6b50; }
+.live-connecting { background: #f1f2f7; color: var(--muted); }
+.live-retrying { background: #fff4dc; color: #8a5300; }
+
 @media (max-width: 1100px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tickets-layout.with-detail { grid-template-columns: minmax(0, 1fr); }
+  .ticket-detail { position: static; max-height: none; }
   .console-two, .console-split, .console-split.reverse { grid-template-columns: minmax(0, 1fr); }
 }
 /* Tablet and phone: the menu turns into a row across the top that scrolls sideways. */
@@ -1055,3 +1127,5 @@ body:has(.gate-screen) .header-plain { display: none; }
   .console-head h2 { font-size: 22px; }
   .gate-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.console-table-box .pager-count { padding: 10px 14px; margin: 0; }
+.issue-bulk .bulk-import { border-top: 0; margin-top: 0; padding-top: 0; }
