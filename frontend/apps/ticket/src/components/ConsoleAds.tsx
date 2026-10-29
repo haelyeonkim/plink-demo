@@ -53,7 +53,7 @@ export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError 
 
   const load = useCallback(async () => {
     try { setAds(await read(await fetch(base))); }
-    catch (err) { onError(err instanceof Error ? err.message : '광고판을 불러오지 못했어요.'); }
+    catch (err) { onError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.'); }
   }, [base, onError]);
   useEffect(() => { void load(); }, [load, tick]);
 
@@ -76,10 +76,10 @@ export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError 
     };
     const current = editing;
     void act(() => current === 'new' || current === null ? send(base, 'POST', body) : send(`${base}/${current.id}`, 'PUT', body),
-      current === 'new' ? '광고판에 올렸어요.' : '글을 고쳤어요.').then(ok => { if (ok) setEditing(null); });
+      current === 'new' ? '알림판에 올렸어요.' : '글을 고쳤어요.').then(ok => { if (ok) setEditing(null); });
   };
 
-  if (!ads) return <p className="console-none">광고판을 불러오고 있어요.</p>;
+  if (!ads) return <p className="console-none">알림판을 불러오고 있어요.</p>;
   const draft = editing === 'new' ? null : editing;
 
   return (
@@ -152,7 +152,7 @@ export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError 
                   <button className="btn-tiny" type="button" onClick={() => setEditing(ad)}>수정</button>
                   <button className="btn-tiny" type="button" onClick={() => void act(
                     () => send(`${base}/${ad.id}/hidden`, 'POST', { hidden: !ad.hidden }),
-                    ad.hidden ? '다시 게시했어요.' : '광고판에서 내렸어요.')}>{ad.hidden ? '다시 게시' : '내리기'}</button>
+                    ad.hidden ? '다시 게시했어요.' : '알림판에서 내렸어요.')}>{ad.hidden ? '다시 게시' : '내리기'}</button>
                   <button className="btn-tiny btn-tiny-danger" type="button" onClick={() => {
                     if (window.confirm(`'${ad.title}' 글을 지울까요? 되돌릴 수 없어요.`)) {
                       void act(() => send(`${base}/${ad.id}`, 'DELETE'), '글을 지웠어요.');
@@ -161,7 +161,7 @@ export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError 
                 </td>
               </tr>
             ))}
-            {ads.length === 0 && <tr><td colSpan={7} className="console-none">아직 올라온 글이 없어요. 부스는 부스 단말의 광고판 모드에서 올릴 수 있어요.</td></tr>}
+            {ads.length === 0 && <tr><td colSpan={7} className="console-none">아직 올라온 글이 없어요. 부스는 부스 단말의 알림판 모드에서 올릴 수 있어요.</td></tr>}
           </tbody>
         </table>
       </div>

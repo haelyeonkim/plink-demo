@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import {
   dislikeChat, fetchChat, likeChat, reportChat, sendChat, type ChatMessage, type ChatView, type Reaction,
 } from '../ticket/api';
+import { boothColor } from '../ticket/coupons';
 
 function clock(value: string): string {
   const d = new Date(value);
@@ -57,19 +58,22 @@ function useFitToScreen(onFit: () => void) {
   }, [onFit]);
 }
 
-const ThumbDownIcon = ({ filled }: { filled: boolean }) => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
+const ThumbUp = ({ filled = false, size = 14 }: { filled?: boolean; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M17 3v11l-4 7a2 2 0 0 1-2-2v-4H5a2 2 0 0 1-2-2.3l1.2-7A2 2 0 0 1 6.2 3zM17 3h3v11h-3" />
+    <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM7 11l4-8a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 17.3 20H7" />
   </svg>
 );
 
-const HeartIcon = ({ filled }: { filled: boolean }) => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
+const ThumbDown = ({ filled = false, size = 14 }: { filled?: boolean; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" />
+    <path d="M17 13V4h3a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1zM17 13l-4 8a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-2-2.3l1.2-7A2 2 0 0 1 6.7 4H17" />
   </svg>
 );
+
+/** Who said a line, as a key: a run of lines from one person shows their name once. */
+const speaker = (m: ChatMessage) => (m.staff ? 'staff' : m.mine ? 'me' : m.author);
 
 /**
  * The room's chat: everyone who has come in, under names made from their tickets. A line
@@ -85,7 +89,8 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [menuFor, setMenuFor] = useState<ChatMessage | null>(null);
   const [sending, setSending] = useState(false);
-  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   // A room that changes size keeps the newest line in sight when that is where the holder was.
@@ -159,130 +164,180 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
   }
   const { me } = view;
   const left = view.maxLength - [...text].length;
+  const pinned = [view.notice, view.hot].filter((m): m is ChatMessage => m !== null);
+  const rules = [
+    view.cooldownSeconds > 0
+      ? `${view.cooldownSeconds >= 60 ? `${Math.round(view.cooldownSeconds / 60)}분` : `${view.cooldownSeconds}초`}에 한 번 보낼 수 있어요`
+      : null,
+    `좋아요 ${view.hotLikes}개면 잠시 위에 고정돼요`,
+    '입장한 관람객만 볼 수 있고, 장내에 있을 때만 쓸 수 있어요',
+  ].filter(Boolean) as string[];
+  const current = menuFor ? view.messages.find(m => m.id === menuFor.id) ?? menuFor : null;
 
   return (
     <div className="chat-room">
-      <header className="chat-head">
-        <h2>채팅</h2>
-        <span className="chat-inside">장내 {view.inside.toLocaleString()}명</span>
-        <span className="chat-me" title="채팅에서 보이는 내 이름">나: {me.nickname}</span>
+      <header className="cr-bar">
+        <svg className="cr-mark" width="22" height="22" viewBox="0 0 30 30" aria-hidden="true">
+          <path d="M8 0H22A8 8 0 0 1 30 8V11.5A3.5 3.5 0 0 0 30 18.5V22A8 8 0 0 1 22 30H8A8 8 0 0 1 0 22V18.5A3.5 3.5 0 0 0 0 11.5V8A8 8 0 0 1 8 0Z" fill="var(--blue)" />
+          <circle cx="15" cy="12" r="4" fill="#fff" /><path d="M12.7 16H17.3L18.7 23H11.3Z" fill="#fff" />
+        </svg>
+        <span className="cr-title"><h2>채팅</h2><small>장내 {view.inside.toLocaleString()}명</small></span>
+        <span className="cr-me" title="채팅에서 보이는 내 이름">
+          <span className="cr-avatar small" style={{ background: boothColor(me.nickname) }} aria-hidden="true">{[...me.nickname][0]}</span>
+          {me.nickname}
+        </span>
+        <button type="button" className="cr-icon" aria-label="채팅 규칙" aria-expanded={rulesOpen}
+          onClick={() => setRulesOpen(open => !open)}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
+        </button>
       </header>
+      {rulesOpen && <ul className="cr-rules">{rules.map(rule => <li key={rule}>{rule}</li>)}</ul>}
 
-      {(view.notice || view.hot) && (
-        <div className="chat-pins">
-          {view.notice && (
-            <button type="button" className={`chat-pin notice${noticeOpen ? ' open' : ''}`}
-              aria-expanded={noticeOpen} onClick={() => setNoticeOpen(open => !open)}>
-              <b>공지</b><span>{view.notice.body}</span>
-            </button>
-          )}
-          {view.hot && (
-            <a className="chat-pin hot" href={`#chat-${view.hot.id}`}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z" /></svg>
-              <b>인기</b><span>{view.hot.body}</span><small>좋아요 {view.hot.likes}</small>
-            </a>
+      {pinned.length > 0 && (
+        <div className={`cr-pins${pinsOpen ? ' open' : ''}`}>
+          <button type="button" className="cr-pin-bar" aria-expanded={pinsOpen} onClick={() => setPinsOpen(open => !open)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8" /></svg>
+            <span>{pinned[0].body}</span>
+            {pinned.length > 1 && <em>+ 인기 1</em>}
+            <svg className="cr-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {pinsOpen && (
+            <ul className="cr-pin-list">
+              {view.notice && <li className="notice"><b>공지</b><span>{view.notice.body}</span></li>}
+              {view.hot && (
+                <li className="hot">
+                  <a href={`#chat-${view.hot.id}`} onClick={() => setPinsOpen(false)}>
+                    <b>인기</b><span>{view.hot.body}</span>
+                    <small><ThumbUp size={12} /> {view.hot.likes}</small>
+                  </a>
+                </li>
+              )}
+            </ul>
           )}
         </div>
       )}
 
-      <div className="chat-list" ref={list} aria-label="메시지" aria-live="polite"
+      <div className="cr-list" ref={list} aria-label="메시지" aria-live="polite"
         onScroll={event => {
           const box = event.currentTarget;
           stick.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
         }}>
-        <p className="chat-day">입장한 관람객만 볼 수 있어요</p>
+        <p className="cr-day">입장한 관람객만 볼 수 있어요</p>
         {view.messages.length === 0 && <p className="console-none">아직 메시지가 없어요. 첫 인사를 남겨 보세요.</p>}
-        {view.messages.map(message => (
-          <article key={message.id} id={`chat-${message.id}`}
-            className={`chat-line${message.mine ? ' mine' : ''}${message.staff ? ' staff' : ''}${view.hot?.id === message.id ? ' hot' : ''}`}>
-            {!message.mine && (
-              <span className="chat-author">{message.author}{message.staff && <em>운영</em>}</span>
-            )}
-            <div className="chat-bubble">
-              {message.reply && <span className="chat-quote"><b>{message.reply.author}</b> {message.reply.body}</span>}
-              <span>{message.body}</span>
-            </div>
-            <span className="chat-meta">
-              <time dateTime={message.createdAt}>{clock(message.createdAt)}</time>
-              {message.mine ? (
-                // Their own line: what others thought of it, nothing to press.
-                <>
-                  {message.likes > 0 && <span className="chat-count">
-                    <HeartIcon filled={false} /><span className="visually-hidden">좋아요</span> {message.likes}</span>}
-                  {message.dislikes > 0 && <span className="chat-count">
-                    <ThumbDownIcon filled={false} /><span className="visually-hidden">싫어요</span> {message.dislikes}</span>}
-                </>
-              ) : (<>
-                <button type="button" className={`chat-like${message.liked ? ' on' : ''}`} aria-pressed={message.liked}
-                  aria-label={`좋아요 ${message.likes}${message.liked ? ', 누름' : ''}`} onClick={() => void like(message)}>
-                  <HeartIcon filled={message.liked} /> {message.likes > 0 ? message.likes : ''}
-                </button>
-                <button type="button" className={`chat-dislike${message.disliked ? ' on' : ''}`} aria-pressed={message.disliked}
-                  aria-label={`싫어요 ${message.dislikes}${message.disliked ? ', 누름' : ''}`} onClick={() => void dislike(message)}>
-                  <ThumbDownIcon filled={message.disliked} /> {message.dislikes > 0 ? message.dislikes : ''}
-                </button>
-              </>)}
-              <button type="button" onClick={() => { setReplyTo(message); setMenuFor(null); }}>답장</button>
-              {!message.mine && !message.staff && (
-                <button type="button" aria-label={`${message.author}의 메시지 더보기`} onClick={() => setMenuFor(message)}>⋯</button>
-              )}
-            </span>
-          </article>
-        ))}
+        {view.messages.map((message, index) => {
+          const prev = view.messages[index - 1];
+          const next = view.messages[index + 1];
+          if (message.staff) {
+            return (
+              <p key={message.id} id={`chat-${message.id}`} className="cr-staff">
+                <b>운영팀</b><span>{message.body}</span>
+              </p>
+            );
+          }
+          const first = !prev || prev.staff || speaker(prev) !== speaker(message);
+          const last = !next || next.staff || speaker(next) !== speaker(message)
+            || clock(next.createdAt) !== clock(message.createdAt);
+          const hot = view.hot?.id === message.id;
+          return (
+            <article key={message.id} id={`chat-${message.id}`}
+              className={`cr-line${message.mine ? ' mine' : ''}${first ? ' first' : ''}`}>
+              {!message.mine && (first
+                ? <span className="cr-avatar" style={{ background: boothColor(message.author) }} aria-hidden="true">{[...message.author][0]}</span>
+                : <span className="cr-avatar-gap" aria-hidden="true" />)}
+              <div className="cr-stack">
+                {!message.mine && first && <span className="cr-name">{message.author}</span>}
+                {hot && <span className="cr-hot"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 2c1.5 5 6 6 6 12a6 6 0 0 1-12 0c0-2.5 1.2-4 2.5-5 0 2.5 1.2 3.5 2.5 3.5 0-4-1.5-6 1-10.5z" /></svg>인기</span>}
+                <div className="cr-row">
+                  <button type="button" className="cr-bubble" aria-haspopup="dialog"
+                    aria-label={`${message.mine ? '내' : message.author} 메시지: ${message.body}. 메뉴 열기`}
+                    onClick={() => setMenuFor(message)}>
+                    {message.reply && <span className="cr-quote"><b>{message.reply.author}</b><span>{message.reply.body}</span></span>}
+                    <span>{message.body}</span>
+                  </button>
+                  {last && <time dateTime={message.createdAt}>{clock(message.createdAt)}</time>}
+                </div>
+                {(message.likes > 0 || message.dislikes > 0) && (
+                  <span className="cr-reacts">
+                    {message.likes > 0 && (
+                      <button type="button" className={message.liked ? 'on' : ''} disabled={message.mine}
+                        aria-label={`좋아요 ${message.likes}${message.liked ? ', 누름' : ''}`} onClick={() => void like(message)}>
+                        <ThumbUp filled={message.liked} size={12} /> {message.likes}</button>
+                    )}
+                    {message.dislikes > 0 && (
+                      <button type="button" className={message.disliked ? 'on down' : 'down'} disabled={message.mine}
+                        aria-label={`싫어요 ${message.dislikes}${message.disliked ? ', 누름' : ''}`} onClick={() => void dislike(message)}>
+                        <ThumbDown filled={message.disliked} size={12} /> {message.dislikes}</button>
+                    )}
+                  </span>
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
 
-      {error && <p className="error-text chat-error" role="alert">{error}</p>}
+      {error && <p className="error-text cr-error" role="alert">{error}</p>}
 
-      <form className="chat-compose" onSubmit={send}>
+      <form className="cr-compose" onSubmit={send}>
         {replyTo && (
-          <div className="chat-replying">
-            <span><b>{replyTo.author}</b>에게 답장 · {replyTo.body}</span>
+          <div className="cr-replying">
+            <span><b>{replyTo.author}에게 답장</b><small>{replyTo.body}</small></span>
             <button type="button" aria-label="답장 취소" onClick={() => setReplyTo(null)}>✕</button>
           </div>
         )}
         {me.canWrite ? (
-          <div className="chat-input">
+          <div className="cr-input">
             <label className="visually-hidden" htmlFor="chat-text">메시지</label>
             <input id="chat-text" value={text} maxLength={view.maxLength * 2} disabled={wait > 0 || sending}
-              placeholder={wait > 0 ? `${wait}초 뒤에 보낼 수 있어요` : '메시지 보내기'}
+              placeholder={wait > 0 ? `${wait}초 뒤에 보낼 수 있어요` : left < 0 ? `${-left}자 넘었어요` : '메시지 보내기'}
               onChange={event => setText(event.target.value)} />
             {wait > 0 ? (
-              <span className="chat-timer" role="timer" aria-label={`${wait}초 남음`}>
-                <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
-                  <circle cx="22" cy="22" r="19" />
-                  <circle cx="22" cy="22" r="19" className="run"
-                    strokeDasharray="119.4" strokeDashoffset={119.4 * (1 - wait / Math.max(1, view.cooldownSeconds))} />
+              <span className="cr-timer" role="timer" aria-label={`${wait}초 남음`}>
+                <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true">
+                  <circle cx="21" cy="21" r="18" />
+                  <circle cx="21" cy="21" r="18" className="run"
+                    strokeDasharray="113.1" strokeDashoffset={113.1 * (1 - wait / Math.max(1, view.cooldownSeconds))} />
                 </svg>
                 <b>{wait}</b>
               </span>
             ) : (
-              <button type="submit" className="chat-send" aria-label="보내기" disabled={!text.trim() || sending || left < 0}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              <button type="submit" className="cr-send" aria-label="보내기" disabled={!text.trim() || sending || left < 0}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               </button>
             )}
           </div>
         ) : (
-          <p className="chat-blocked">{me.blocked}</p>
+          <p className="cr-blocked">{me.blocked}</p>
         )}
-        <span className="chat-hint">
-          {left < 0 ? `${-left}자 넘었어요 · ` : ''}
-          {view.cooldownSeconds > 0 ? `${view.cooldownSeconds >= 60 ? `${Math.round(view.cooldownSeconds / 60)}분` : `${view.cooldownSeconds}초`}에 한 번 보낼 수 있어요` : ''}
-          {` · 좋아요 ${view.hotLikes}개면 잠시 위에 고정돼요`}
-        </span>
       </form>
 
-      {menuFor && (
+      {current && (
         <div className="sheet-scrim" role="presentation" onClick={() => setMenuFor(null)}>
-          <div className="chat-sheet" role="dialog" aria-modal="true" aria-label="메시지 메뉴" onClick={e => e.stopPropagation()}>
-            <p className="chat-sheet-quote"><b>{menuFor.author}</b> {menuFor.body}</p>
-            <button type="button" onClick={() => { setReplyTo(menuFor); setMenuFor(null); }}>답장하기</button>
-            <button type="button" onClick={() => { void navigator.clipboard?.writeText(menuFor.body); setMenuFor(null); }}>복사</button>
-            <button type="button" className="danger" onClick={() => void report(menuFor)}>신고하기</button>
-            <button type="button" className="quiet" onClick={() => setMenuFor(null)}>닫기</button>
-          </div>
+          <section className="cr-sheet" role="dialog" aria-modal="true" aria-label="메시지 메뉴" onClick={e => e.stopPropagation()}>
+            <span className="sheet-grip" aria-hidden="true" />
+            <p className="cr-sheet-quote"><b>{current.mine ? '내 메시지' : current.author}</b> {current.body}</p>
+            {!current.mine && (
+              <div className="cr-sheet-reacts">
+                <button type="button" className={current.liked ? 'on' : ''} aria-pressed={current.liked}
+                  onClick={() => void like(current)}><ThumbUp filled={current.liked} size={20} /> 좋아요{current.likes > 0 ? ` ${current.likes}` : ''}</button>
+                <button type="button" className={current.disliked ? 'on down' : 'down'} aria-pressed={current.disliked}
+                  onClick={() => void dislike(current)}><ThumbDown filled={current.disliked} size={20} /> 싫어요{current.dislikes > 0 ? ` ${current.dislikes}` : ''}</button>
+              </div>
+            )}
+            <div className="cr-sheet-actions">
+              {me.canWrite && <button type="button" onClick={() => { setReplyTo(current); setMenuFor(null); }}>답장하기</button>}
+              <button type="button" onClick={() => { void navigator.clipboard?.writeText(current.body); setMenuFor(null); }}>복사</button>
+              {!current.mine && !current.staff && (
+                <button type="button" className="danger" onClick={() => void report(current)}>신고하기</button>
+              )}
+            </div>
+            <button type="button" className="cr-sheet-close" onClick={() => setMenuFor(null)}>닫기</button>
+          </section>
         </div>
       )}
     </div>

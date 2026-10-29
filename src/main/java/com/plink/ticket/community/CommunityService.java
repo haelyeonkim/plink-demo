@@ -604,7 +604,7 @@ public class CommunityService {
     /** A booth terminal works on its own booth's notices and no one else's. */
     private long boothOf(Gate gate) {
         if (!"BOOTH".equals(gate.role) || gate.boothId == null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "부스 단말에서만 광고를 올릴 수 있어요.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "부스 단말에서만 알림판 글을 올릴 수 있어요.");
         }
         return gate.boothId;
     }

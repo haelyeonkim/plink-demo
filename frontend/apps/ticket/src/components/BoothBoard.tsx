@@ -48,7 +48,7 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
 
   const load = useCallback(async () => {
     try { setAds(await gateAds(gateId, gateToken)); }
-    catch (err) { setError(err instanceof Error ? err.message : '광고판을 불러오지 못했어요.'); }
+    catch (err) { setError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.'); }
   }, [gateId, gateToken]);
   useEffect(() => { void load(); }, [load]);
 
@@ -82,7 +82,7 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
         startsAt: editing ? editing.startsAt : undefined,
         endsAt: editing && until === 'keep' ? editing.endsAt : endsAt(until),
       }, editing?.id);
-      setMessage(editing ? '고쳤어요.' : '광고판에 올렸어요. 입장한 관람객에게 바로 보여요.');
+      setMessage(editing ? '고쳤어요.' : '알림판에 올렸어요. 입장한 관람객에게 바로 보여요.');
       reset();
       await load();
     } catch (err) { setError(err instanceof Error ? err.message : '올리지 못했어요.'); }
@@ -91,7 +91,7 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
 
   async function end(ad: BoothAd) {
     setBusy(true); setError('');
-    try { await gateAdEnd(gateId, gateToken, ad.id); setMessage('광고판에서 내렸어요.'); await load(); }
+    try { await gateAdEnd(gateId, gateToken, ad.id); setMessage('알림판에서 내렸어요.'); await load(); }
     catch (err) { setError(err instanceof Error ? err.message : '내리지 못했어요.'); }
     finally { setBusy(false); }
   }
@@ -113,7 +113,7 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
     <div className="booth-board" role="dialog" aria-modal="true" aria-labelledby="booth-board-title">
       <header className="booth-board-head">
         <div>
-          <span className="booth-board-kicker">광고판</span>
+          <span className="booth-board-kicker">알림판</span>
           <h2 id="booth-board-title">{booth}</h2>
         </div>
         <button type="button" className="btn-ghost" onClick={onClose}>스캔으로 돌아가기</button>
@@ -121,7 +121,7 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
 
       <div className="booth-board-body">
         <form className="booth-board-form" onSubmit={submit}>
-          <h3>{editing ? '광고 고치기' : '새 광고 올리기'}</h3>
+          <h3>{editing ? '글 고치기' : '새 글 올리기'}</h3>
           <div className="booth-board-kinds" role="radiogroup" aria-label="분류">
             {(['SALE', 'PROGRAM'] as const).map(key => (
               <button key={key} type="button" role="radio" aria-checked={category === key}
@@ -163,10 +163,10 @@ export default function BoothBoard({ gateId, gateToken, booth, place, onClose }:
           {error && <p className="gate-error" role="alert">{error}</p>}
           <div className="booth-board-actions">
             <button type="submit" className="booth-board-submit" disabled={busy || uploading || !title.trim() || !body.trim()}>
-              {editing ? '저장' : '광고판에 올리기'}</button>
+              {editing ? '저장' : '알림판에 올리기'}</button>
             {editing && <button type="button" className="btn-ghost" onClick={reset}>취소</button>}
           </div>
-          <p className="booth-board-hint">입장한 관람객의 광고판에 바로 보여요. 운영팀이 내릴 수 있어요.</p>
+          <p className="booth-board-hint">입장한 관람객의 알림판에 바로 보여요. 운영팀이 내릴 수 있어요.</p>
         </form>
 
         <aside className="booth-board-side">

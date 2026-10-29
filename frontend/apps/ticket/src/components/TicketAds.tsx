@@ -33,7 +33,7 @@ export default function TicketAds({ sessionId, token, tick, seenId, onSeen, onCo
       setAds(next);
       setError('');
       if (next.length > 0) onSeen(Math.max(...next.map(ad => ad.id)));
-    } catch (err) { setError(err instanceof Error ? err.message : '광고판을 불러오지 못했어요.'); }
+    } catch (err) { setError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.'); }
   }, [sessionId, token, onSeen]);
   useEffect(() => { void load(); }, [load, tick]);
 
@@ -48,7 +48,7 @@ export default function TicketAds({ sessionId, token, tick, seenId, onSeen, onCo
         <button type="button" className="ad-back" onClick={() => setOpen(null)}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-          광고판</button>
+          알림판</button>
         {open.imageId && <img className="ad-photo" src={adImageUrl(sessionId, token, open)!} alt={`${open.booth} 사진`} />}
         <div className="ad-tags">
           <span className={`ad-tag ${open.category.toLowerCase()}`}>{AD_CATEGORY[open.category]}</span>
@@ -71,7 +71,7 @@ export default function TicketAds({ sessionId, token, tick, seenId, onSeen, onCo
   return (
     <div className="ad-board">
       <header className="tab-head">
-        <h2>광고판</h2>
+        <h2>알림판</h2>
         <span>부스·운영팀 소식 {(ads ?? []).length}건</span>
       </header>
       <div className="chip-row" role="group" aria-label="분류">

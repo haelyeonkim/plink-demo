@@ -747,7 +747,7 @@ export default function GateScanner() {
           </button>
         )}
         {gate.role === 'BOOTH' && !giving && (
-          <button className="btn-ghost" onClick={() => { setScanning(false); setBoard(true); }}>광고판</button>
+          <button className="btn-ghost" onClick={() => { setScanning(false); setBoard(true); }}>알림판</button>
         )}
         {gate.role !== 'BOOTH' && !giving && (
           <button className="btn-ghost" onClick={() => {

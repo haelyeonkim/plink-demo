@@ -24,7 +24,7 @@ type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
-  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '광고판', settings: '행사 설정',
+  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '행사 설정',
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';

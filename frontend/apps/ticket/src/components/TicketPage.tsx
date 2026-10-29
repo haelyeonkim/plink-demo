@@ -544,7 +544,7 @@ export default function TicketPage() {
         ['coupons', '쿠폰', 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z',
           liveCoupons > 0 ? String(liveCoupons) : null, false],
         ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !entered],
-        ['ads', '광고판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
+        ['ads', '알림판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
       ] as Array<[View, string, string, string | null, boolean]>).map(([key, label, icon, badge, locked]) => (
         <button key={key} type="button" aria-current={view === key ? 'page' : undefined}
           className={view === key ? 'on' : ''} disabled={locked}
@@ -662,13 +662,13 @@ export default function TicketPage() {
                     : '아직 메시지가 없어요'}</small>
                 </button>
                 <button type="button" className="room-tile" onClick={() => go('ads')}>
-                  <b>광고판{newAds && <em>새</em>}</b>
+                  <b>알림판{newAds && <em>새</em>}</b>
                   <small>{community?.topAd
                     ? <><strong>{community.topAd.booth}</strong> {community.topAd.title}</>
                     : '아직 올라온 소식이 없어요'}</small>
                 </button>
               </>) : (
-                <p className="room-locked">입장하면 장내 채팅과 광고판이 열려요.</p>
+                <p className="room-locked">입장하면 장내 채팅과 알림판이 열려요.</p>
               )}
             </section>
 

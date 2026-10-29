@@ -76,7 +76,7 @@ export default function ConsoleChat({ sessionId, tick, onNotice, onError }: {
             placeholder="예: 오후 2시 라이브 드로잉이 메인홀 무대에서 시작해요." onChange={e => setNotice(e.target.value)} />
           <div className="console-checks">
             <label><input type="checkbox" checked={pin} onChange={e => setPin(e.target.checked)} /> 채팅 맨 위에 고정</label>
-            <label><input type="checkbox" checked={alsoAd} onChange={e => setAlsoAd(e.target.checked)} /> 광고판에도 올리기</label>
+            <label><input type="checkbox" checked={alsoAd} onChange={e => setAlsoAd(e.target.checked)} /> 알림판에도 올리기</label>
             <label><input type="checkbox" checked={alert} onChange={e => setAlert(e.target.checked)} /> 입장권 화면에 알림</label>
           </div>
           {alert && (
