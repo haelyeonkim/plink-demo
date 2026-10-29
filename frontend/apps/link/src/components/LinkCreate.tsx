@@ -83,10 +83,10 @@ export default function LinkCreate() {
             `${validation.rows[row.row - 1]?.line ?? row.row}번째 줄 (${row.email}): ${row.error || '발급 실패'}`));
           return;
         }
-        navigate(`/links?tab=links&link=${link.id}`, { replace: true });
+        navigate(`/links/${link.id}?tab=links`, { replace: true });
         return;
       }
-      navigate(`/links?tab=issue&link=${link.id}`, { replace: true });
+      navigate(`/links/${link.id}?tab=issue`, { replace: true });
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : '링크를 만들지 못했어요.');
     } finally {
@@ -213,7 +213,7 @@ export default function LinkCreate() {
         </ul>}
         {createdLinkId !== null && !busy && <p className="hint-text">
           링크는 이미 생성되었습니다. 중복 생성하지 않고 수신자 발급 결과를 확인해 주세요.{' '}
-          <Link className="crumb-link" to={`/links?tab=links&link=${createdLinkId}`}>생성된 링크 관리로 이동</Link>
+          <Link className="crumb-link" to={`/links/${createdLinkId}?tab=links`}>생성된 링크 관리로 이동</Link>
         </p>}
         <button className="btn-primary link-create-submit" type="submit"
           disabled={busy || createdLinkId !== null || validation.errors.length > 0 || (target === 'artworks' && selectedWorks.length === 0)}>

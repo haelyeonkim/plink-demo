@@ -12,6 +12,7 @@ import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
 import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
+import GateSetupQr, { type SetupTarget } from './GateSetupQr';
 import {
   BoothRow, CouponFilter, CouponRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, OfferRow, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
@@ -53,7 +54,9 @@ export default function TicketAdmin() {
   // Whether the numbers on screen are live, and when they last changed.
   const [liveState, setLiveState] = useState<LiveState>('connecting');
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string } | null>(null);
+  const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
+  // A setup link shown as a QR code for the tablet's camera.
+  const [setupQr, setSetupQr] = useState<SetupTarget | null>(null);
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
   const [booths, setBooths] = useState<BoothRow[]>([]);
@@ -1095,10 +1098,13 @@ export default function TicketAdmin() {
                       )}
                     </dl>
                     <div className="gate-card-actions">
-                      {!gate.boundDevice ? (
+                      {!gate.boundDevice ? (<>
                         <button className="btn-primary" type="button" disabled={!gate.setupUrl}
-                          onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>설정 링크 복사</button>
-                      ) : problem === 1 ? (
+                          onClick={() => setSetupQr({ name: gate.label || gate.gateId, url: gate.setupUrl!,
+                            code: gate.setupCode, expiresAt: gate.setupExpiresAt })}>QR로 연결</button>
+                        <button className="btn-secondary" type="button" disabled={!gate.setupUrl}
+                          onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>링크 복사</button>
+                      </>) : problem === 1 ? (
                         <button className="btn-secondary" type="button" onClick={() => renewGate(gate.gateId)}>유효기간 연장</button>
                       ) : (
                         <button className="btn-secondary" type="button" onClick={() => openGrantSheet(gate)}>쿠폰 부여 설정</button>
@@ -1179,6 +1185,8 @@ export default function TicketAdmin() {
                     <code title={gateSetup.setupUrl}>{gateSetup.setupUrl}</code>
                     <p className="code-timer">인증번호 {gateSetup.setupCode}</p>
                     <div className="share-row">
+                      <button type="button" onClick={() => setSetupQr({ name: gateSetup.gateId, url: gateSetup.setupUrl,
+                        code: gateSetup.setupCode, expiresAt: gateSetup.expiresAt ?? null })}>QR로 연결</button>
                       <button type="button" onClick={() => navigator.clipboard?.writeText(gateSetup.setupUrl)}>
                         링크 복사
                       </button>
@@ -1807,6 +1815,8 @@ export default function TicketAdmin() {
         }}
         onCancel={() => setConfirmBooth(null)}
       />
+
+      {setupQr && <GateSetupQr target={setupQr} onClose={() => setSetupQr(null)} />}
 
       <ConfirmDialog
         open={confirmBulkOff != null}
