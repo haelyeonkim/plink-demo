@@ -672,13 +672,6 @@ a { color: inherit; text-decoration: none; }
    sit inside one screen: the card centres itself in what is left under the header and
    everything that is not "get me through the door" folds away behind one button. */
 /* The bare footer under a holder's ticket: one link, and out of the way. */
-.footer-bare { padding: 8px 24px 14px; border-top: none; justify-content: center; }
-.footer-bare .footer-link { font-size: 12px; }
-/* Under the ticket the one link keeps its touch height without adding to the page. */
-@media (pointer: coarse), (max-width: 620px) {
-  .footer-bare { padding-top: 0; padding-bottom: 4px; }
-  .footer-bare .footer-link { padding: 8px 0; }
-}
 
 .notice-text { color: #2f6fd0; font-size: 13px; margin: 8px 0 16px; }
 .warn-text { color: #8a5a00; background: #fff7e6; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin: 8px 0 16px; text-align: left; }
@@ -1294,3 +1287,14 @@ select, .field select, select.artwork-status {
 .console-table td.row-actions > * + * { margin-left: 6px; }
 .console-table td.row-actions.stack > * { display: block; width: 100%; margin: 0 0 6px; }
 .console-table td.wrap { white-space: normal; min-width: 200px; overflow-wrap: anywhere; }
+
+/* iOS zooms the whole page into any text field set below 16px the moment it is focused,
+   and leaves it zoomed. On a touch screen every field is at least 16px - or its
+   surroundings' size where that is larger - so focusing one keeps the page as it was.
+   Pinch-zoom is untouched. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea, select {
+    font-size: max(16px, 1em) !important;
+  }
+}

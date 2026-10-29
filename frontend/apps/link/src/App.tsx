@@ -13,7 +13,6 @@ import AdminConsole from './components/AdminConsole';
 import AdminArtworkList from './components/AdminArtworkList';
 import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
-import Privacy from './components/Privacy';
 import Footer from '@shared/components/Footer';
 
 /** Old per-link bookmarks still open the link, now inside the console's list tab. */
@@ -49,7 +48,6 @@ export default function App() {
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/guide" element={<Guide />} />
-          <Route path="/privacy" element={<Privacy />} />
           <Route path="/login" element={<Login />} />
           {/* The link tool opens on its console, like the ticket tool under /tickets. */}
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />

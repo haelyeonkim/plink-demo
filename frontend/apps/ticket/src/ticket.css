@@ -930,8 +930,13 @@ body:has(.ticket-tabs) .footer { padding-bottom: 90px; }
 .ticket-tab-chat { padding-top: 0; padding-bottom: 0; }
 .chat-room {
   display: flex; flex-direction: column; text-align: left;
-  height: calc(100dvh - 72px - 72px); min-height: 420px;
-  background: #f6f5fb; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  /* Pinned between the header and the tabs, so the page never scrolls and only the
+     lines do. The script sets the exact edges from what the phone shows; these are the
+     same edges for a page whose script has not run yet. */
+  position: fixed; left: 0; right: 0; z-index: 20; max-width: 640px; margin: 0 auto;
+  top: var(--chat-top, 70px);
+  height: var(--chat-height, calc(100dvh - 70px - 65px - env(safe-area-inset-bottom)));
+  background: #f6f5fb; border: 0 solid var(--line); border-width: 0 1px; overflow: hidden;
 }
 .chat-loading { padding: 20px; }
 .chat-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: white; border-bottom: 1px solid var(--line); }
@@ -1128,3 +1133,204 @@ img.ad-thumb { object-fit: cover; padding: 0; background: #f1f2f7; }
 .chat-feed td { white-space: normal; }
 .chat-feed td .cell-note { display: block; margin: 3px 0 0; white-space: nowrap; }
 .chat-feed td.row-actions { white-space: nowrap; }
+
+/* With the room open the page itself holds still: no footer below it, nothing to scroll. */
+body:has(.chat-room) { overflow: hidden; overscroll-behavior: none; }
+body:has(.chat-room) .footer { display: none; }
+/* While the keyboard is up the room takes the screen above it; the tabs would only sit under the keys. */
+html.chat-typing .ticket-tabs { display: none; }
+.chat-dislike.on { color: #3d4663; font-weight: 700; }
+.chat-count { display: inline-flex; align-items: center; gap: 3px; padding: 6px 4px; font-size: 11.5px; color: var(--muted); }
+.reactions small { white-space: nowrap; }
+/* No double-tap zoom on the holder's ticket; taps also answer without the zoom delay. */
+html:has(.ticket-page), html:has(.ticket-tab) { touch-action: manipulation; }
+
+/* The code's screen fits the phone exactly: nothing to scroll while holding it to a
+   gate. The code takes what height is left after the words around it, up to its full
+   size, and on a short screen the brightness tip gives way first. */
+.ticket-present {
+  box-sizing: border-box; height: calc(100dvh - 70px); display: flex; flex-direction: column;
+  padding-top: 4px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+/* The card stays an ordinary block and is centred as a whole: inside a flex column
+   Safari loses the stage's square height, and the ring around the code collapses. */
+.ticket-present { justify-content: center; }
+.ticket-present .code-panel { flex: none; margin: 0 auto; padding: 18px 20px 16px; }
+.ticket-present .code-panel h2 { margin-bottom: 10px; }
+/* Width and height are both given, from the screen rather than from the card, so the
+   square never depends on how a browser resolves aspect-ratio in this layout. 72px is
+   the page's and the card's side padding together. */
+.ticket-present .code-stage {
+  --code: min(260px, calc(100vw - 72px), calc(100dvh - 400px));
+  width: var(--code); height: var(--code); aspect-ratio: auto;
+}
+@media (max-height: 700px) {
+  .ticket-present .code-panel > .hint-text { display: none; }
+  .ticket-present .code-stage { --code: min(260px, calc(100vw - 72px), calc(100dvh - 330px)); }
+}
+body:has(.ticket-present) .footer { display: none; }
+
+/* The console's coupons: two tables behind tabs, filtered by booth. */
+.console-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.console-tabs button {
+  border: 0; background: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--muted);
+  padding: 10px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; cursor: pointer;
+}
+.console-tabs button.on { color: var(--ink); font-weight: 800; border-bottom-color: var(--blue); }
+.console-tabs em { font-style: normal; font-size: 12px; margin-left: 2px; }
+.console-tabs button.on em { color: var(--blue); }
+.coupon-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.coupon-toolbar .chip-row { padding-bottom: 0; margin-bottom: 0; flex-wrap: wrap; overflow: visible; }
+.coupon-toolbar .chip-row small { font-size: 11px; opacity: .75; margin-left: 2px; }
+.coupon-toolbar .console-summary { margin: 0; }
+.coupon-toolbar-gap { flex: 1; }
+.coupon-search {
+  width: 260px; max-width: 100%; height: 38px; box-sizing: border-box; border: 1px solid #dfe3ee;
+  border-radius: 10px; padding: 0 12px; font: inherit; font-size: 13px;
+}
+.coupon-select { height: 38px; border: 1px solid #dfe3ee; border-radius: 10px; padding: 0 10px; font: inherit; font-size: 13px; background: white; max-width: 240px; }
+.btn-tiny.on { border-color: var(--blue); color: var(--blue); }
+/* A row of fields that reads as one sentence: booth, name, detail, then the buttons. */
+.inline-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.inline-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; color: #3d4663; }
+.inline-form label.grow { flex: 1; min-width: 220px; }
+.inline-form input, .inline-form select {
+  height: 38px; box-sizing: border-box; border: 1px solid #dfe3ee; border-radius: 10px; padding: 0 10px;
+  font: inherit; font-size: 14px; font-weight: 400; background: white;
+}
+.inline-form .btn-primary, .inline-form .btn-secondary { height: 38px; padding-top: 0; padding-bottom: 0; }
+.booth-manage { display: flex; flex-direction: column; gap: 12px; }
+.booth-manage h3 { margin: 0; }
+.offer-table .rate { width: 170px; }
+.offer-table .meter { min-width: 0; }
+.offer-table tfoot td { border-top: 1px solid var(--line); background: #fafbfd; }
+.coupons .tickets-layout .ticket-list, .coupon-table { min-width: 640px; }
+.btn-secondary.danger { color: #b3362b; border-color: #f0cdc9; }
+.coupon-table td .cell-note { display: block; margin: 2px 0 0; }
+.coupon-table td { white-space: normal; }
+.coupon-table .ticket-ref { text-align: left; }
+/* One line: the room's name, how many are in, and who this phone is in it. */
+.chat-head { padding: 8px 12px; justify-content: flex-start; }
+.chat-head h2 { font-size: 15px; }
+.chat-head .chat-inside { flex: 1; }
+/* A coupon's code says which coupon it spends, under the line telling where to show it. */
+.code-coupon { margin: -6px 0 10px; font-size: 15px; font-weight: 700; color: var(--blue); }
+
+/* The message menu comes up from the bottom; the tabs would sit over its last buttons. */
+body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
+/* However short the screen, the code stays readable and the page can still reach 닫기. */
+.ticket-present { overflow-y: auto; justify-content: safe center; }
+.ticket-present .code-stage { --code: max(150px, min(260px, calc(100vw - 72px), calc(100dvh - 400px))); }
+@media (max-height: 700px) {
+  .ticket-present .code-stage { --code: max(150px, min(260px, calc(100vw - 72px), calc(100dvh - 330px))); }
+}
+
+/* ---- The holder's coupons: stubs, a sheet, the coupon's own code and its stamp ---- */
+.wallet { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.wallet .tab-head b { color: var(--blue); }
+.wallet-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: #f1f0f7; border-radius: 12px; padding: 4px; }
+.wallet-tabs button {
+  border: 0; background: none; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted);
+  padding: 9px; border-radius: 9px; cursor: pointer;
+}
+.wallet-tabs button.on { background: white; color: var(--ink); font-weight: 800; box-shadow: 0 1px 2px rgba(18, 33, 69, .08); }
+.wallet-hint {
+  margin: 0; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #3d4663;
+  background: var(--accent-soft); border-radius: 10px; padding: 9px 12px;
+}
+.wallet-hint svg { flex: none; color: var(--blue); }
+.stub-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.stub {
+  display: flex; align-items: stretch; background: white; border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden; min-height: 86px;
+}
+.stub-main {
+  flex: 1; min-width: 0; display: flex; align-items: stretch; border: 0; background: none; padding: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+span.stub-main { cursor: default; }
+.stub-tab {
+  flex: none; width: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: white; border-right: 2px dashed rgba(255, 255, 255, .55);
+}
+.stub-tab b { font-size: 18px; }
+.stub-tab small { font-size: 10px; font-weight: 700; opacity: .9; }
+.stub-text { flex: 1; min-width: 0; padding: 12px 8px 12px 14px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.stub-text b { font-size: 15px; letter-spacing: -0.3px; }
+.stub-count { color: var(--blue); }
+.stub-detail { font-size: 12.5px; color: #3d4663; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stub-where { font-size: 11.5px; color: var(--muted); }
+.stub-qr {
+  flex: none; align-self: center; margin-right: 12px; width: 54px; height: 54px; border: 0; border-radius: 12px;
+  background: var(--ink); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; font: inherit; font-size: 10.5px; font-weight: 800; cursor: pointer;
+}
+.stub-qr:disabled { opacity: .5; }
+.stub-used { background: #f7f8fb; }
+.stub-used .stub-tab { background: #dfe3ee; color: var(--muted); border-right-color: white; }
+.stub-used .stub-text b { color: #3d4663; text-decoration: line-through; text-decoration-color: rgba(61, 70, 99, .4); }
+.stub-stamp {
+  flex: none; align-self: center; margin-right: 12px; transform: rotate(-8deg); border: 2px solid #1c6b50; color: #1c6b50;
+  border-radius: 8px; padding: 3px 8px; text-align: center; line-height: 1.2;
+}
+.stub-stamp b { display: block; font-size: 12px; }
+.stub-stamp small { font-size: 10.5px; font-weight: 700; }
+
+.wallet-scrim { z-index: 45; }
+body:has(.wallet-scrim) .ticket-tabs { display: none; }
+.wallet-sheet {
+  width: 100%; max-width: 560px; margin: 0 auto; box-sizing: border-box; background: white; border-radius: 22px 22px 0 0;
+  padding: 10px 20px calc(22px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; text-align: left;
+  max-height: 92dvh; overflow-y: auto;
+}
+.sheet-grip { align-self: center; width: 40px; height: 5px; border-radius: 99px; background: #dfe3ee; }
+.wallet-sheet-head { display: flex; align-items: center; gap: 12px; color: white; border-radius: 16px; padding: 16px; }
+.wallet-sheet-mark, .stub-mark {
+  flex: none; width: 46px; height: 46px; border-radius: 12px; background: rgba(255, 255, 255, .18);
+  display: grid; place-items: center; font-size: 19px; font-weight: 800; color: white;
+}
+.wallet-sheet-head > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wallet-sheet-head small { font-size: 12px; opacity: .85; }
+.wallet-sheet-head h3 { margin: 0; font-size: 20px; letter-spacing: -0.5px; color: white; }
+.wallet-sheet-head em { flex: none; font-style: normal; font-size: 12px; font-weight: 800; background: white; color: var(--ink); border-radius: 999px; padding: 4px 10px; }
+.wallet-sheet-detail { margin: 0; font-size: 15px; line-height: 1.6; color: #3d4663; }
+.wallet-steps {
+  margin: 0; padding: 14px 16px 14px 36px; background: #f7f8fb; border-radius: 14px; display: flex; flex-direction: column;
+  gap: 8px; font-size: 13.5px;
+}
+.wallet-facts { margin: 0; display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px 10px; font-size: 13.5px; }
+.wallet-facts dt { color: var(--muted); }
+.wallet-facts dd { margin: 0; }
+.wallet-use { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.wallet-sheet-row { display: flex; gap: 8px; }
+.wallet-sheet-row > * { flex: 1; }
+
+/* A coupon's code reads as the coupon: its booth's stub across the top. */
+.coupon-code { padding-top: 0 !important; overflow: hidden; }
+.coupon-code-head {
+  display: flex; align-items: center; gap: 12px; color: white; text-align: left;
+  margin: 0 -24px 16px; padding: 14px 18px; border-bottom: 2px dashed rgba(255, 255, 255, .5);
+}
+.ticket-present .coupon-code-head { margin: 0 -20px 14px; }
+.coupon-code-head > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.coupon-code-head small { font-size: 12px; opacity: .85; }
+.coupon-code-head b { font-size: 18px; letter-spacing: -0.4px; }
+.coupon-code-head em { flex: none; font-style: normal; font-size: 12px; font-weight: 800; background: white; color: var(--ink); border-radius: 999px; padding: 4px 10px; }
+.coupon-code .stub-mark { width: 40px; height: 40px; font-size: 17px; }
+
+.coupon-done { width: 100%; max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; flex: 1; justify-content: center; }
+.coupon-done-card {
+  background: white; border: 1px solid var(--line); border-radius: 22px; padding: 28px 22px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+}
+.coupon-done-card h2 { margin: 0; font-size: 23px; letter-spacing: -0.6px; }
+.coupon-done-card p { margin: 0; font-size: 13.5px; color: #3d4663; }
+.coupon-done-mark { width: 84px; height: 84px; border-radius: 999px; background: #e3f5ec; color: #1c6b50; display: grid; place-items: center; }
+.coupon-done-mark.repeat { background: #fff4dc; color: #8a5300; }
+.coupon-done-row { width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; background: #f7f8fb; border-radius: 14px; padding: 14px; text-align: left; }
+.coupon-done-row > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.coupon-done-row b { font-size: 16px; }
+.coupon-done-row small { font-size: 12.5px; color: var(--muted); }
+p.coupon-done-note { font-size: 12px; color: var(--muted); }
+.coupon-done-actions { display: flex; gap: 8px; }
+.coupon-done-actions > * { flex: 1; }

@@ -108,7 +108,6 @@ export default function Login() {
           로그인 상태는 서버 세션과 브라우저 쿠키로 유지되며, 로그아웃하거나 세션이 만료되면
           종료됩니다. 만든 링크·행사는 로그아웃만으로 지워지지 않습니다.
         </p>
-        <p><Link to="/privacy">개인정보처리방침 보기</Link></p>
       </aside>
     </section>
   );
