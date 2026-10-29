@@ -836,6 +836,7 @@ public class TicketAdminController {
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long boothId,
+            @RequestParam(required = false) Long offerId,
             @RequestParam(required = false) String status) {
         boolean plain = ticketService.requireSession(id).testEvent;
         int limit = pageSize(size);
@@ -843,7 +844,7 @@ public class TicketAdminController {
         if (state != null && !List.of("ISSUED", "REDEEMED", "VOID").contains(state)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 상태가 올바르지 않아요.");
         }
-        CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(boothId, state, blankToNull(q));
+        CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(boothId, offerId, state, blankToNull(q));
         List<Map<String, Object>> items = new ArrayList<>();
         for (CouponRepository.Listed coupon : couponRepository.search(id, filter, limit, Math.max(page, 0) * limit)) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -858,10 +859,14 @@ public class TicketAdminController {
             row.put("ticketRef", coupon.ticketRef());
             row.put("seat", coupon.seat());
             row.put("issuedToEmail", email(coupon.issuedToEmail(), plain));
+            row.put("issuedAt", coupon.issuedAt() == null ? null : coupon.issuedAt().toInstant().toString());
             row.put("redeemedAt", coupon.redeemedAt() == null ? null : coupon.redeemedAt().toInstant().toString());
+            row.put("redeemedAtGate", coupon.redeemedAtGate());
             items.add(row);
         }
-        return paged(items, couponRepository.count(id, filter), page, limit);
+        Map<String, Object> result = new LinkedHashMap<>(paged(items, couponRepository.count(id, filter), page, limit));
+        result.put("counts", couponRepository.countByStatus(id, filter));
+        return result;
     }
 
     /** Takes a coupon back, or puts it back in the holder's hands. */

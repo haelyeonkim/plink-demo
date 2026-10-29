@@ -26,7 +26,9 @@ public class TicketProperties {
     /** Accepted clock difference between phone and server. */
     private int clockSkewSeconds = 20;
     /** Grant issue limit per ticket per hour; an early signal of code-sharing attempts. */
-    private int presentationsPerHour = 10;
+    // Opening the code no longer asks for the passkey each time, and a booth visit opens it
+    // too, so a busy visitor opens it far more often than ten times an hour.
+    private int presentationsPerHour = 60;
     /** How many times one ticket may be re-issued to a new device. */
     private int rebindMaxPerTicket = 2;
     /** OFF, ADVISE or ENFORCE for the ticket and face routes only. */

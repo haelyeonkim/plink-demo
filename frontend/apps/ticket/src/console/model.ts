@@ -132,7 +132,9 @@ export interface CouponRow {
   couponId: number; boothId: number | null; booth: string | null; offerId: number | null;
   title: string; detail: string | null;
   status: string; ticketId: number; ticketRef: string | null; seat: string | null;
-  issuedToEmail: string | null; redeemedAt: string | null;
+  issuedToEmail: string | null; issuedAt: string | null; redeemedAt: string | null;
+  /** The terminal that read it, or null when the organiser marked it used. */
+  redeemedAtGate: string | null;
 }
 
 export interface Occupancy {

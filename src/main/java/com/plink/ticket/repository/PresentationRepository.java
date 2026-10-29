@@ -25,14 +25,16 @@ public class PresentationRepository {
         g.issuedAt = rs.getTimestamp("issued_at");
         g.expiresAt = rs.getTimestamp("expires_at");
         g.consumedAt = rs.getTimestamp("consumed_at");
+        long coupon = rs.getLong("coupon_id");
+        g.couponId = rs.wasNull() ? null : coupon;
         return g;
     };
 
     public void insert(Grant grant) {
         jdbc.update("INSERT INTO presentation_session (id, ticket_id, direction, secret, uv, issued_at, "
-            + "expires_at, geo_ok, geo_distance_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            + "expires_at, geo_ok, geo_distance_meters, coupon_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             grant.id, grant.ticketId, grant.direction, grant.secret, grant.uv, grant.issuedAt,
-            grant.expiresAt, grant.geoOk, grant.geoDistanceMeters);
+            grant.expiresAt, grant.geoOk, grant.geoDistanceMeters, grant.couponId);
     }
 
     /** Grants opened away from the venue, the signal that a link is being worked remotely. */
@@ -68,6 +70,13 @@ public class PresentationRepository {
     public void revokeOpenGrants(long ticketId) {
         jdbc.update("UPDATE presentation_session SET revoked = TRUE "
             + "WHERE ticket_id = ? AND consumed_at IS NULL AND revoked = FALSE", ticketId);
+    }
+
+    /** The first code opened since then: when it ages out, one more may be opened. */
+    public Timestamp oldestSince(long ticketId, Timestamp since) {
+        return jdbc.queryForObject(
+            "SELECT MIN(issued_at) FROM presentation_session WHERE ticket_id = ? AND issued_at >= ?",
+            Timestamp.class, ticketId, since);
     }
 
     public int countSince(long ticketId, Timestamp since) {

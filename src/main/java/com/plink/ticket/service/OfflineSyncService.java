@@ -49,6 +49,10 @@ public class OfflineSyncService {
             String capturedAt = String.valueOf(event.getOrDefault("capturedAt", ""));
             try {
                 PresentationService.Verified verified = presentations.verify(code, true);
+                if (verified.grant.forCoupon()) {
+                    throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
+                        "쿠폰 QR은 입장 기록이 될 수 없어요.");
+                }
                 Ticket ticket = tickets.lockById(verified.grant.ticketId)
                     .orElseThrow(() -> new IllegalStateException("ticket missing"));
                 admissions.move(gate, ticket, verified.grant.direction, method, verified.grant.id,

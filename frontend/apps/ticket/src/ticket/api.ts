@@ -16,6 +16,7 @@ export interface TicketCoupon {
   detail: string | null;
   status: 'ISSUED' | 'REDEEMED' | 'VOID';
   redeemedAt: string | null;
+  issuedAt?: string | null;
 }
 
 export interface TicketView {
@@ -115,6 +116,11 @@ export async function presentTicket(sessionId: string, token: string, direction:
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ direction, ...position }),
   })) as Promise<Grant>;
+}
+
+/** One coupon's own code, to show at its booth; opened like the entry code, without a fresh passkey. */
+export async function presentCoupon(sessionId: string, token: string, couponId: number): Promise<Grant> {
+  return read(await mutate(`${ticketBase(sessionId, token)}/coupons/${couponId}/present`, { method: 'POST' })) as Promise<Grant>;
 }
 
 export async function cancelTransfer(sessionId: string, token: string) {
@@ -221,18 +227,6 @@ export async function gateScan(gateId: string, gateToken: string, code: string) 
   return read(response);
 }
 
-/**
- * A booth counter's choice after a read that found several coupons: how many of each
- * kind to hand over. The pick is the one the read returned, and only this terminal's.
- */
-export async function gateRedeemCoupons(gateId: string, gateToken: string, pick: string,
-    items: { title: string; count: number }[]) {
-  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/coupons`, {
-    method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ pick, items }),
-  });
-  return read(response);
-}
-
 /** Giving mode: reads a code to give coupons, and answers with what this terminal may give. */
 export async function gateGrantScan(gateId: string, gateToken: string, code: string) {
   const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/grant`, {
@@ -267,7 +261,8 @@ export interface CommunitySummary {
 
 export interface ChatMessage {
   id: number; author: string; staff: boolean; notice: boolean; mine: boolean;
-  body: string; likes: number; liked: boolean; createdAt: string; pinnedUntil: string | null;
+  body: string; likes: number; liked: boolean; dislikes: number; disliked: boolean;
+  createdAt: string; pinnedUntil: string | null;
   reply?: { id: number; author: string; body: string };
 }
 
@@ -301,9 +296,15 @@ export async function sendChat(sessionId: string, token: string, body: string, r
   })) as Promise<ChatMessage>;
 }
 
-export async function likeChat(sessionId: string, token: string, id: number): Promise<{ likes: number; liked: boolean }> {
-  return read(await mutate(`${community(sessionId, token)}/chat/${id}/like`, { method: 'POST' })) as
-    Promise<{ likes: number; liked: boolean }>;
+/** Where a line stands after this holder pressed like or dislike on it. */
+export interface Reaction { likes: number; dislikes: number; liked: boolean; disliked: boolean }
+
+export async function likeChat(sessionId: string, token: string, id: number): Promise<Reaction> {
+  return read(await mutate(`${community(sessionId, token)}/chat/${id}/like`, { method: 'POST' })) as Promise<Reaction>;
+}
+
+export async function dislikeChat(sessionId: string, token: string, id: number): Promise<Reaction> {
+  return read(await mutate(`${community(sessionId, token)}/chat/${id}/dislike`, { method: 'POST' })) as Promise<Reaction>;
 }
 
 export async function reportChat(sessionId: string, token: string, id: number) {

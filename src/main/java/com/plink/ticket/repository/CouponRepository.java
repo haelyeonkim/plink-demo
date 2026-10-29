@@ -96,22 +96,41 @@ public class CouponRepository {
         args.add(offset);
         return jdbc.query(
             "SELECT c.id, c.booth_id, b.name AS booth, c.offer_id, c.title, c.detail, "
-            + "c.status, c.ticket_id, c.redeemed_at, t.ticket_ref, t.seat, t.issued_to_email"
-            + from + " ORDER BY c.booth_id, c.title, c.id LIMIT ? OFFSET ?",
+            + "c.status, c.ticket_id, c.issued_at, c.redeemed_at, c.redeemed_gate, g.label AS gate_label, "
+            + "t.ticket_ref, t.seat, t.issued_to_email"
+            + from + " ORDER BY c.id DESC LIMIT ? OFFSET ?",
             (rs, row) -> {
                 long offer = rs.getLong("offer_id");
                 Long offerId = rs.wasNull() ? null : offer;
                 return new Listed(rs.getLong("id"), rs.getLong("booth_id"), rs.getString("booth"), offerId,
                     rs.getString("title"), rs.getString("detail"), rs.getString("status"),
                     rs.getLong("ticket_id"), rs.getString("ticket_ref"), rs.getString("seat"),
-                    rs.getString("issued_to_email"), rs.getTimestamp("redeemed_at"));
+                    rs.getString("issued_to_email"), rs.getTimestamp("issued_at"), rs.getTimestamp("redeemed_at"),
+                    rs.getString("gate_label") != null ? rs.getString("gate_label") : rs.getString("redeemed_gate"));
             }, args.toArray());
     }
 
     /** A coupon as the console's table shows it: with its ticket and its booth's name. */
     public record Listed(long id, long boothId, String booth, Long offerId, String title, String detail,
             String status, long ticketId, String ticketRef, String seat, String issuedToEmail,
-            Timestamp redeemedAt) {}
+            Timestamp issuedAt, Timestamp redeemedAt, String redeemedAtGate) {}
+
+    /** How many of the filtered coupons are in each state, whatever state the filter asks for. */
+    public Map<String, Long> countByStatus(long sessionId, CouponFilter filter) {
+        List<Object> args = new ArrayList<>();
+        CouponFilter any = new CouponFilter(filter.boothId(), filter.offerId(), null, filter.query());
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        for (String state : List.of("ISSUED", "REDEEMED", "VOID")) counts.put(state, 0L);
+        jdbc.query("SELECT c.status, COUNT(*) AS n" + from(sessionId, any, args) + " GROUP BY c.status",
+            rs -> { counts.put(rs.getString("status"), rs.getLong("n")); }, args.toArray());
+        return counts;
+    }
+
+    /** Marked used by the organiser rather than read at a booth: no terminal to name. */
+    public boolean redeemByStaff(long id, Timestamp at) {
+        return jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = ?, redeemed_gate = NULL "
+            + "WHERE id = ? AND status = 'ISSUED'", at, id) > 0;
+    }
 
     public long count(long sessionId, CouponFilter filter) {
         List<Object> args = new ArrayList<>();
@@ -121,15 +140,20 @@ public class CouponRepository {
     }
 
     /** What the console can narrow a session's coupons down by. Nulls mean "any". */
-    public record CouponFilter(Long boothId, String status, String query) {}
+    public record CouponFilter(Long boothId, Long offerId, String status, String query) {}
 
     private static String from(long sessionId, CouponFilter filter, List<Object> args) {
         StringBuilder sql = new StringBuilder(" FROM coupon c JOIN ticket t ON t.id = c.ticket_id "
-            + "LEFT JOIN booth b ON b.id = c.booth_id WHERE c.session_id = ?");
+            + "LEFT JOIN booth b ON b.id = c.booth_id LEFT JOIN gate g ON g.id = c.redeemed_gate "
+            + "WHERE c.session_id = ?");
         args.add(sessionId);
         if (filter.boothId() != null) {
             sql.append(" AND c.booth_id = ?");
             args.add(filter.boothId());
+        }
+        if (filter.offerId() != null) {
+            sql.append(" AND c.offer_id = ?");
+            args.add(filter.offerId());
         }
         if (filter.status() != null) {
             sql.append(" AND c.status = ?");
@@ -168,9 +192,15 @@ public class CouponRepository {
             + "AND status = 'ISSUED' ORDER BY id FOR UPDATE", MAPPER, ticketId, boothId);
     }
 
-    public List<Coupon> findByTicketAndBooth(long ticketId, long boothId) {
-        return jdbc.query("SELECT * FROM coupon WHERE ticket_id = ? AND booth_id = ? ORDER BY id",
-            MAPPER, ticketId, boothId);
+    /** Voids a coupon that is not void yet; false when there was nothing to change. */
+    public boolean voidCoupon(long id) {
+        return jdbc.update("UPDATE coupon SET status = 'VOID' WHERE id = ? AND status <> 'VOID'", id) > 0;
+    }
+
+    /** Gives a void coupon back as unused, with no trace of a hand-over it no longer stands for. */
+    public boolean restore(long id) {
+        return jdbc.update("UPDATE coupon SET status = 'ISSUED', redeemed_at = NULL, redeemed_gate = NULL "
+            + "WHERE id = ? AND status = 'VOID'", id) > 0;
     }
 
     public void redeem(long id, String gateId, Timestamp at) {

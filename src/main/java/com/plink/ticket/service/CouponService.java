@@ -77,6 +77,23 @@ public class CouponService {
     }
 
     /**
+     * Rewords an offer. Coupons already given keep the wording they were given under:
+     * the holder was promised that, not whatever the offer says later.
+     */
+    public CouponOffer updateOffer(long offerId, String title, String detail) {
+        CouponOffer offer = requireOffer(offerId);
+        String name = required(title, "쿠폰 이름을 입력해 주세요.");
+        if (name.length() > 80) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 이름은 80자까지예요.");
+        }
+        boolean taken = offers.findByBooth(offer.boothId).stream()
+            .anyMatch(other -> other.id != offer.id && other.title.equals(name));
+        if (taken) throw new ResponseStatusException(HttpStatus.CONFLICT, "같은 부스에 같은 이름의 쿠폰이 이미 있어요.");
+        offers.update(offer.id, name, blankToNull(detail));
+        return offers.findById(offer.id).orElseThrow();
+    }
+
+    /**
      * Switches an offer on or off. Off stops it being given; coupons already given keep
      * working, because they were promised.
      */
@@ -212,12 +229,12 @@ public class CouponService {
      * A read that is waiting for the counter to choose: which ticket, at which terminal,
      * and whether the choice is what to use up or what to give.
      */
-    private record Pick(String kind, String gateId, long ticketId, Long boothId, Instant expires) {}
+    private record Pick(String kind, String gateId, long ticketId, Instant expires) {}
 
-    private String newPick(String kind, Gate gate, long ticketId, Long boothId, Instant now) {
+    private String newPick(String kind, Gate gate, long ticketId, Instant now) {
         picks.values().removeIf(pick -> pick.expires.isBefore(now));
         String id = Secrets.randomAlnum(24);
-        picks.put(id, new Pick(kind, gate.id, ticketId, boothId, now.plus(PICK_WINDOW)));
+        picks.put(id, new Pick(kind, gate.id, ticketId, now.plus(PICK_WINDOW)));
         return id;
     }
 
@@ -253,15 +270,32 @@ public class CouponService {
     private final Map<String, Pick> picks = new ConcurrentHashMap<>();
 
     /**
-     * The booth terminal's read: prove the code, then hand over, or ask what to hand over.
-     *
-     * <p>The grant is consumed either way, exactly as at a door. A code that has been
-     * shown to a stand is spent whether or not there was anything to give, so nobody can
-     * try the same code around the room.
-     *
-     * <p>One coupon waiting is handed over on the spot; there is nothing to choose. More
-     * than one and the counter decides - which kinds, and how many of each - so the
-     * answer is a list and a short-lived pick that {@link #redeemPicked} spends.
+     * The holder opens one coupon's own code to show at its booth. Only an unused coupon
+     * of this ticket's opens; the code names it, so the booth needs to ask nothing.
+     */
+    @Transactional
+    public Map<String, Object> openCode(Ticket holder, long couponId) {
+        // Read again under lock: a ticket on its way to someone else spends nothing on the way.
+        Ticket ticket = tickets.lockById(holder.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (!ticket.bound()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+        }
+        Coupon coupon = coupons.findById(couponId).filter(c -> c.ticketId == ticket.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰을 찾을 수 없어요."));
+        if (coupon.redeemed()) throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 사용한 쿠폰이에요.");
+        if ("VOID".equals(coupon.status)) throw new ResponseStatusException(HttpStatus.CONFLICT, "운영팀이 거둔 쿠폰이에요.");
+        Map<String, Object> result = presentations.issueForCoupon(ticket, coupon.id);
+        result.put("title", coupon.title);
+        result.put("booth", requireBooth(ticket.sessionId, coupon.boothId).name);
+        return result;
+    }
+
+    /**
+     * The booth terminal's read of a coupon's own code: that coupon, handed over on the
+     * spot. A code that reaches the hand-over is spent, as at a door, so a screenshot
+     * cannot be tried at another stand; a refusal (wrong booth, the entry code) spends
+     * nothing.
      */
     @Transactional
     public Map<String, Object> redeemByCode(Gate gate, String code) {
@@ -270,80 +304,40 @@ public class CouponService {
         }
         Booth booth = requireBooth(gate.sessionId, gate.boothId);
         PresentationService.Verified verified = presentations.verify(code);
+        if (!verified.grant.forCoupon()) {
+            throw deny("입장 QR이에요. 관람객 화면의 쿠폰에서 쓸 쿠폰의 QR을 열어 달라고 해 주세요.");
+        }
         Ticket ticket = tickets.lockById(verified.grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
-        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 쿠폰이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        if (!ticket.bound()) throw deny("양도 중인 입장권의 쿠폰은 쓸 수 없어요.");
+        Coupon coupon = coupons.findById(verified.grant.couponId).filter(c -> c.ticketId == ticket.id)
+            .orElseThrow(() -> deny("쿠폰을 찾을 수 없어요."));
+        if (coupon.boothId != booth.id) {
+            Booth owner = requireBooth(gate.sessionId, coupon.boothId);
+            throw deny(owner.name + " 쿠폰이에요. 이 부스에서는 쓸 수 없어요.");
+        }
         presentations.consume(verified.grant, verified.counter);
 
         List<Coupon> live = coupons.lockLiveFor(ticket.id, booth.id);
-        if (live.isEmpty()) {
-            List<Coupon> all = coupons.findByTicketAndBooth(ticket.id, booth.id);
-            Coupon spent = all.stream().filter(Coupon::redeemed).reduce((first, second) -> second).orElse(null);
-            if (spent != null) {
-                // Already collected: the terminal says when, so staff can settle it on
-                // the spot instead of sending somebody to the desk.
-                Map<String, Object> result = describe(spent, booth, ticket);
-                result.put("outcome", "ALREADY");
-                result.put("message", "이미 사용한 쿠폰이에요.");
-                announce(ticket, booth, spent.title, "ALREADY");
-                return result;
+        if (coupon.redeemed() || live.stream().noneMatch(c -> c.id == coupon.id)) {
+            if ("VOID".equals(coupons.findById(coupon.id).map(c -> c.status).orElse("VOID"))) {
+                throw deny("운영팀이 거둔 쿠폰이에요.");
             }
-            throw deny(booth.name + "에서 쓸 수 있는 쿠폰이 없어요.");
+            // Already collected: the terminal says when, so staff can settle it on the spot.
+            Coupon spent = coupons.findById(coupon.id).orElse(coupon);
+            Map<String, Object> result = describe(spent, booth, ticket);
+            result.put("outcome", "ALREADY");
+            result.put("message", "이미 사용한 쿠폰이에요.");
+            announce(ticket, booth, spent.title, "ALREADY");
+            return result;
         }
-        if (live.size() == 1) return handOver(gate, booth, ticket, live, Map.of(live.get(0).title, 1));
-
-        Instant now = Instant.now();
-        String id = newPick("REDEEM", gate, ticket.id, booth.id, now);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("outcome", "CHOOSE");
-        result.put("pick", id);
-        result.put("expiresAt", now.plus(PICK_WINDOW).toString());
-        // How long, rather than until when: the tablet's clock is not the server's.
-        result.put("ttlMs", PICK_WINDOW.toMillis());
-        result.put("booth", booth.name);
-        result.put("ticketRef", ticket.ticketRef);
-        result.put("seat", ticket.seat);
-        result.put("choices", choices(live));
-        return result;
-    }
-
-    /**
-     * The counter's answer to a pick: how many of each kind to hand over now. The pick is
-     * spent whatever is chosen, so a terminal cannot keep drawing on one read.
-     */
-    @Transactional
-    public Map<String, Object> redeemPicked(Gate gate, String pickId, Map<String, Integer> wanted) {
-        Pick pick = takePick(gate, pickId, "REDEEM");
-        try {
-            return redeemChosen(gate, pick, wanted);
-        } catch (RuntimeException refused) {
-            giveBack(pickId, pick);
-            throw refused;
-        }
-    }
-
-    private Map<String, Object> redeemChosen(Gate gate, Pick pick, Map<String, Integer> wanted) {
-        checkCounts(wanted.values());
-        Booth booth = requireBooth(gate.sessionId, pick.boothId);
-        Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
-        if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        Map<String, Integer> chosen = new LinkedHashMap<>();
-        wanted.forEach((title, count) -> { if (count != null && count > 0) chosen.put(title, count); });
-        if (chosen.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사용할 쿠폰을 골라 주세요.");
-        }
-        List<Coupon> live = coupons.lockLiveFor(ticket.id, booth.id);
-        for (Map.Entry<String, Integer> entry : chosen.entrySet()) {
-            long held = live.stream().filter(coupon -> coupon.title.equals(entry.getKey())).count();
-            if (entry.getValue() > held) {
-                // Another terminal got there first, or the console took one back.
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "'" + entry.getKey() + "'은(는) " + held + "장만 남아 있어요.");
-            }
-        }
-        return handOver(gate, booth, ticket, live, chosen);
+        // This coupon first, so the hand-over spends the one that was shown.
+        List<Coupon> ordered = new ArrayList<>();
+        live.stream().filter(c -> c.id == coupon.id).forEach(ordered::add);
+        live.stream().filter(c -> c.id != coupon.id).forEach(ordered::add);
+        return handOver(gate, booth, ticket, ordered, Map.of(coupon.title, 1));
     }
 
     /**
@@ -404,6 +398,7 @@ public class CouponService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이 단말에서 줄 수 있는 쿠폰이 없어요.");
         }
         PresentationService.Verified verified = presentations.verify(code);
+        if (verified.grant.forCoupon()) throw deny("쿠폰 QR이에요. 쿠폰을 받을 때는 입장권 화면의 QR을 보여 주세요.");
         Ticket ticket = tickets.lockById(verified.grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
@@ -422,7 +417,7 @@ public class CouponService {
         Instant now = Instant.now();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("outcome", "CHOOSE");
-        result.put("pick", newPick("GRANT", gate, ticket.id, null, now));
+        result.put("pick", newPick("GRANT", gate, ticket.id, now));
         result.put("expiresAt", now.plus(PICK_WINDOW).toString());
         // How long, rather than until when: the tablet's clock is not the server's.
         result.put("ttlMs", PICK_WINDOW.toMillis());
@@ -612,6 +607,7 @@ public class CouponService {
             row.put("detail", coupon.detail);
             row.put("status", coupon.status);
             row.put("redeemedAt", coupon.redeemedAt == null ? null : coupon.redeemedAt.toInstant().toString());
+            row.put("issuedAt", coupon.issuedAt == null ? null : coupon.issuedAt.toInstant().toString());
             result.add(row);
         }
         return result;
@@ -656,5 +652,27 @@ public class CouponService {
 
     private ResponseStatusException deny(String message) {
         return new ResponseStatusException(HttpStatus.FORBIDDEN, message);
+    }
+
+    /**
+     * The console moving many coupons at once. Each moves only where that makes sense -
+     * an unused one can be marked used or voided, a used one voided, a void one given back
+     * as unused - and each move is made only if the coupon is still where it was read, so
+     * a booth handing one over at the same moment is not overwritten or miscounted.
+     */
+    @Transactional
+    public Map<String, Object> setStatuses(long sessionId, List<Long> ids, String status) {
+        Timestamp now = Timestamp.from(Instant.now());
+        int changed = 0, skipped = 0;
+        for (Long id : ids) {
+            Coupon coupon = id == null ? null : coupons.findById(id).filter(c -> c.sessionId == sessionId).orElse(null);
+            boolean moved = coupon != null && switch (status) {
+                case "REDEEMED" -> coupons.redeemByStaff(coupon.id, now);
+                case "VOID" -> coupons.voidCoupon(coupon.id);
+                default -> coupons.restore(coupon.id);
+            };
+            if (moved) changed++; else skipped++;
+        }
+        return Map.of("changed", changed, "skipped", skipped, "status", status);
     }
 }

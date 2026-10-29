@@ -34,11 +34,13 @@ public class TicketController {
     private final EmailOtpService otp;
     private final com.plink.ticket.repository.AdmissionRepository admissions;
     private final com.plink.ticket.live.LiveSnapshots snapshots;
+    private final com.plink.ticket.service.CouponService coupons;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
             TransferService transfers, FaceService faces,
             EmailOtpService otp, com.plink.ticket.repository.AdmissionRepository admissions,
-            com.plink.ticket.live.LiveSnapshots snapshots) {
+            com.plink.ticket.live.LiveSnapshots snapshots, com.plink.ticket.service.CouponService coupons) {
+        this.coupons = coupons;
         this.admissions = admissions;
         this.snapshots = snapshots;
         this.tickets = tickets;
@@ -139,6 +141,18 @@ public class TicketController {
         Map<String, String> input = body == null ? Map.of() : body;
         return passkeyService.presentForViewer(resolved.ticket, input.get("direction"),
             decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
+    }
+
+    /** One coupon's own code, to show at its booth. Opened like the entry code, without a fresh passkey. */
+    @PostMapping("/coupons/{couponId}/present")
+    public Map<String, Object> presentCoupon(@PathVariable long sessionId, @PathVariable String token,
+            @PathVariable long couponId, HttpSession session) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        if (resolved.viaTransfer() || !resolved.ticket.claimed() || resolved.ticket.revoked()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "입장권 등록을 먼저 완료해 주세요.");
+        }
+        requireViewer(resolved, session);
+        return coupons.openCode(resolved.ticket, couponId);
     }
 
     /** The sender can call off a transfer until the recipient finishes registering. */

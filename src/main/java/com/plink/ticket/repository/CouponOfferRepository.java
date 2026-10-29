@@ -58,6 +58,10 @@ public class CouponOfferRepository {
         return jdbc.query("SELECT * FROM coupon_offer WHERE booth_id = ? ORDER BY id", MAPPER, boothId);
     }
 
+    public void update(long id, String title, String detail) {
+        jdbc.update("UPDATE coupon_offer SET title = ?, detail = ? WHERE id = ?", title, detail, id);
+    }
+
     public void setActive(long id, boolean active) {
         jdbc.update("UPDATE coupon_offer SET active = ? WHERE id = ?", active, id);
     }

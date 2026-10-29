@@ -91,6 +91,7 @@ public class AdmissionService {
     public Map<String, Object> admit(Gate gate, String code, String method) {
         PresentationService.Verified verified = presentations.verify(code);
         Grant grant = verified.grant;
+        if (grant.forCoupon()) throw deny("쿠폰 QR이에요. 입장권 화면의 입장·퇴장 QR을 보여 주세요.");
 
         Ticket ticket = tickets.lockById(grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));

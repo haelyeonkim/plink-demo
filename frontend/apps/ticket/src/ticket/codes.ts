@@ -5,7 +5,12 @@
 export interface Grant {
   grantId: string;
   secret: string;
-  direction: 'IN' | 'OUT';
+  /** CPN is a coupon's own code: shown at its booth, refused at a door. */
+  direction: 'IN' | 'OUT' | 'CPN';
+  couponId?: number;
+  /** For a coupon's code: what it spends, and where. */
+  title?: string;
+  booth?: string;
   prefix: string;
   periodSeconds: number;
   expiresAt: string;

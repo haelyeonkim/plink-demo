@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import {
   ApiError, gateFaceChallenge, gateFaceScan, gateGrantConfirm, gateGrantScan, gateInfo,
-  gateRedeemCoupons, gateRenew, gateScan, gateSync,
+  gateRenew, gateScan, gateSync,
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import BoothBoard from './BoothBoard';
@@ -105,8 +105,8 @@ function grantVerdict(result: Record<string, unknown>): Omit<Verdict, 'at' | 'le
  * over the table. The pick is the server's handle on that read and lapses on its own.
  */
 interface Picking {
-  /** USE spends what the ticket holds here; GRANT adds to it. */
-  kind: 'USE' | 'GRANT';
+  /** Only giving asks the counter what: using reads one coupon's own code. */
+  kind: 'GRANT';
   pick: string;
   ticket: string;
   choices: Choice[];
@@ -302,14 +302,7 @@ export default function GateScanner() {
       }
       const result = await gateScan(gateId.trim(), gateToken.trim(), code);
       if (gate?.role === 'BOOTH') {
-        if (result.outcome === 'CHOOSE') {
-          const rows = (result.choices as { title: string; detail: string | null; available: number }[]) ?? [];
-          choose('USE', result, rows.map(row => ({
-            key: row.title, title: row.title, detail: row.detail,
-            note: `보유 ${row.available}장`, max: row.available,
-          })));
-          return;
-        }
+        // Each coupon has its own code, so a read is one coupon handed over: nothing to choose.
         const handed = couponVerdict(result);
         announce({ ...handed, ledger: ledgerLine(handed.tone === 'repeat' ? '이미 사용' : '사용됨') },
           typeof result.count === 'number' ? result.count : 1);
@@ -374,11 +367,6 @@ export default function GateScanner() {
         // Giving is not handing over stock, so it has its own count.
         announce({ ...grantVerdict(result), ledger: ledgerLine('부여됨') }, 0);
         setGivenOut(count => count + (typeof result.count === 'number' ? result.count : 1));
-      } else {
-        const result = await gateRedeemCoupons(gateId.trim(), gateToken.trim(), picking.pick,
-          chosen.map(({ choice, count }) => ({ title: choice.title, count })));
-        announce({ ...couponVerdict(result), ledger: ledgerLine('사용됨') },
-          typeof result.count === 'number' ? result.count : 1);
       }
       refreshOffers();
     } catch (err) {
@@ -408,9 +396,7 @@ export default function GateScanner() {
       setPicking(null);
       announce({
         tone: 'repeat', headline: '선택 시간 지남',
-        detail: picking.kind === 'GRANT'
-          ? '부여한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.'
-          : '사용한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.',
+        detail: '부여한 쿠폰은 없어요. 입장 QR을 다시 비춰 주세요.',
         ledger: ledgerLine('취소됨'),
       });
     }, Math.max(0, picking.expiresAt - Date.now() - 1000));
@@ -615,7 +601,7 @@ export default function GateScanner() {
             <span className="result-dot result-dot-idle" aria-hidden="true" />
             <span className="result-detail">
               {giving ? '쿠폰을 줄 입장 QR을 비춰 주세요'
-                : gate.role === 'BOOTH' ? '입장 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
+                : gate.role === 'BOOTH' ? '쿠폰 QR을 비춰 주세요' : '입장권을 비춰 주세요'}
             </span>
             {giving && (
               <span className="booth-shelf">
@@ -665,7 +651,6 @@ export default function GateScanner() {
         {flash && !picking && <GateVerdict key={flash.at} verdict={flash} rest={hold(flash.tone)} />}
         {picking && (() => {
           const total = Object.values(picking.counts).reduce((sum, count) => sum + count, 0);
-          const everything = picking.choices.reduce((sum, choice) => sum + choice.max, 0);
           const verb = picking.kind === 'GRANT' ? '부여' : '사용';
           return (
             <div className="coupon-pick" role="dialog" aria-modal="true" aria-labelledby="coupon-pick-title">
@@ -700,13 +685,6 @@ export default function GateScanner() {
               <footer>
                 <button type="button" className="btn-ghost" onClick={cancelPick}>{verb} 안 함</button>
                 {/* Giving has no natural "all": it would be twenty of everything. */}
-                {picking.kind === 'USE' && <button type="button" className="btn-ghost" disabled={total === everything}
-                  onClick={() => setPicking(current => (current ? {
-                    ...current,
-                    counts: Object.fromEntries(current.choices.map(choice => [choice.key, choice.max])),
-                  } : current))}>
-                  전부 선택
-                </button>}
                 <button type="button" className="btn-primary" disabled={total === 0 || sending}
                   onClick={() => { void confirmPick(); }}>
                   {sending ? '처리 중…' : total === 0 ? '쿠폰을 골라 주세요' : `${total}장 ${verb}`}

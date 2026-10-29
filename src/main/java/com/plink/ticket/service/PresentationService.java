@@ -54,11 +54,32 @@ public class PresentationService {
 
     /** Issued only after a successful user-verifying assertion on the bound passkey. */
     public Map<String, Object> issue(Ticket ticket, String direction, boolean uv, GeoCheck.Result geo) {
+        return issue(ticket, direction, uv, geo, null);
+    }
+
+    /**
+     * A coupon's own code, for a booth to read. It counts against the same hourly limit
+     * and, like any new code, closes the one open before it.
+     */
+    public Map<String, Object> issueForCoupon(Ticket ticket, long couponId) {
+        Map<String, Object> result = issue(ticket, COUPON, true, new GeoCheck.Result(null, null, null), couponId);
+        result.put("couponId", couponId);
+        return result;
+    }
+
+    /** The direction a coupon's code carries: neither in nor out. */
+    public static final String COUPON = "CPN";
+
+    private Map<String, Object> issue(Ticket ticket, String direction, boolean uv, GeoCheck.Result geo, Long couponId) {
         Instant now = Instant.now();
-        if (grants.countSince(ticket.id, Timestamp.from(now.minus(1, ChronoUnit.HOURS)))
-                >= properties.getPresentationsPerHour()) {
+        Timestamp hourAgo = Timestamp.from(now.minus(1, ChronoUnit.HOURS));
+        if (grants.countSince(ticket.id, hourAgo) >= properties.getPresentationsPerHour()) {
+            Timestamp oldest = grants.oldestSince(ticket.id, hourAgo);
+            long minutes = oldest == null ? 1 : Math.max(1, (long) Math.ceil(
+                java.time.Duration.between(now, oldest.toInstant().plus(1, ChronoUnit.HOURS)).toSeconds() / 60.0));
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                "잠시 후에 다시 시도해 주세요. 반복 요청이 감지되었어요.");
+                "QR은 1시간에 " + properties.getPresentationsPerHour() + "번까지 열 수 있어요. "
+                + minutes + "분 뒤에 다시 열어 주세요.");
         }
         // Only one live grant per ticket: opening a new one kills the previous QR.
         grants.revokeOpenGrants(ticket.id);
@@ -67,6 +88,7 @@ public class PresentationService {
         grant.id = Secrets.randomAlnum(12);
         grant.ticketId = ticket.id;
         grant.direction = direction;
+        grant.couponId = couponId;
         grant.secret = Secrets.randomToken(32);
         grant.uv = uv;
         grant.geoOk = geo.ok;
