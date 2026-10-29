@@ -146,6 +146,36 @@ class TicketClaimTest {
             .andExpect(jsonPath("$.sent").value(true));
     }
 
+    /**
+     * The passkey that opened the ticket also opens its codes: on that browser an entry
+     * code needs no second prompt, and without it the link alone opens nothing.
+     */
+    @Test void theProvenBrowserOpensCodesWithoutAnotherPasskey(
+            @Autowired com.plink.ticket.repository.TicketRepository ticketRows,
+            @Autowired com.plink.ticket.service.TicketPasskeyService passkeys) throws Exception {
+        long ticketId = tickets.resolve(sessionId, token).ticket.id;
+        var present = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/present")
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+            .header("User-Agent", PHONE).contentType("application/json").content("{\"direction\":\"IN\"}");
+        // Not registered yet: there is nobody to prove anything for.
+        mvc.perform(present).andExpect(status().isConflict());
+
+        long holderId = holders.findByEmail("holder@example.com").map(h -> h.id)
+            .orElseGet(() -> holders.create("holder@example.com", tickets.userHandleFor("holder@example.com")));
+        ticketRows.bind(ticketId, holderId, "holder@example.com");
+        mvc.perform(present).andExpect(status().isForbidden());
+
+        org.springframework.mock.web.MockHttpSession proven = new org.springframework.mock.web.MockHttpSession();
+        passkeys.markViewer(proven, ticketRows.findById(ticketId).orElseThrow());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/present")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                .header("User-Agent", PHONE).session(proven).contentType("application/json")
+                .content("{\"direction\":\"IN\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.grantId").exists())
+            .andExpect(jsonPath("$.direction").value("IN"));
+    }
+
     /** Recovering onto a new phone ends what the old phone could see, at once. */
     @Test void aRebindEndsTheOldPhonesView(
             @Autowired com.plink.ticket.repository.TicketRepository ticketRows,

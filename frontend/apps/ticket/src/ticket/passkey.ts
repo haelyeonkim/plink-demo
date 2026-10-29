@@ -39,7 +39,7 @@ export type CeremonyStage = 'preparing' | 'signing' | 'verifying';
  * blocks: a refusal or a slow fix simply leaves the reading out, and the server treats
  * an absent reading as unknown rather than as a failure.
  */
-async function coarsePosition(): Promise<Record<string, string>> {
+export async function coarsePosition(): Promise<Record<string, string>> {
   if (!navigator.geolocation) return {};
   return new Promise(resolve => {
     const done = (value: Record<string, string>) => resolve(value);

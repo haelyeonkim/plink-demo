@@ -124,6 +124,23 @@ public class TicketController {
             request.getRemoteAddr(), trim(request.getHeader("User-Agent")));
     }
 
+    /**
+     * The entry or exit code, for a holder whose passkey has already opened this ticket on
+     * this browser: one check at the door of the page, not one per code.
+     */
+    @PostMapping("/present")
+    public Map<String, Object> present(@PathVariable long sessionId, @PathVariable String token,
+            @RequestBody(required = false) Map<String, String> body, HttpSession session) {
+        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
+        if (resolved.viaTransfer() || !resolved.ticket.claimed()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "입장권 등록을 먼저 완료해 주세요.");
+        }
+        requireViewer(resolved, session);
+        Map<String, String> input = body == null ? Map.of() : body;
+        return passkeyService.presentForViewer(resolved.ticket, input.get("direction"),
+            decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
+    }
+
     /** The sender can call off a transfer until the recipient finishes registering. */
     @PostMapping("/transfer/cancel")
     public Map<String, Object> cancelTransfer(@PathVariable long sessionId, @PathVariable String token,

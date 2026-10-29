@@ -274,6 +274,31 @@ public class TicketPasskeyService {
         }
     }
 
+    /**
+     * Opens an entry or exit code for a holder who has already proved, on this browser,
+     * that the ticket is theirs (see {@link #markViewer}). The passkey that opened the
+     * ticket is what this rests on, so the code opens without asking again; where the
+     * holder is and how often codes are opened are still checked, as before.
+     */
+    @Transactional
+    public Map<String, Object> presentForViewer(Ticket ticket, String rawDirection,
+            Double lat, Double lon, Double accuracy) {
+        String direction = PresentationService.direction(rawDirection);
+        Ticket current = tickets.lockById(ticket.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (!current.bound()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+        }
+        EventSession eventSession = ticketService.requireSession(current.sessionId);
+        GeoCheck.Result geo = GeoCheck.evaluate(eventSession, lat, lon, accuracy);
+        if ("ENFORCE".equals(eventSession.geoMode) && Boolean.FALSE.equals(geo.ok)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "공연장 근처에서만 입장 코드를 열 수 있어요.");
+        }
+        // The viewer mark was set by a user-verifying assertion, so the grant records it as such.
+        return presentations.issue(current, direction, true, geo);
+    }
+
     @Transactional
     public Map<String, Object> finish(TicketService.Resolved resolved, JsonNode credential,
             HttpSession session, String ip, String userAgent) {
