@@ -6,195 +6,34 @@ import IssuedLink from './IssuedLink';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
 import CatalogEditor from './CatalogEditor';
 import BulkImport from '@shared/components/BulkImport';
-import EntityPicker from '@shared/components/EntityPicker';
+import EventTable from './EventTable';
+import EventNav, { type ConsoleTab } from './EventNav';
+import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
 import { openLive } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
+import {
+  BoothRow, CouponFilter, CouponRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, OfferRow, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+} from '../console/model';
 
-interface SessionRow {
-  id: number; name: string; venue: string | null; startsAt: string; gateOpensAt: string | null;
-  reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
-  exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
-  claimRequiresOtp: boolean;
-  /** A rehearsal: recipient emails are shown in full in the console's lists. */
-  testEvent: boolean;
-  /** Close open entries once the venue's day turns over, at this hour (venue time). */
-  dayCloseExit: boolean; dayCloseHour: number;
-  seats: string[]; tiers: string[];
-  /** Issued so far; the list of events says it without opening each one. */
-  ticketCount?: number;
-  crowdBusyPercent: number; crowdSteadyPercent: number;
-  /** What a ticket in this event carries, as the organiser defined it. */
-  fields: TicketFieldRow[];
-  /** Place to capacity, for the places the organiser has measured. */
-  zoneCapacity: Record<string, number>;
-}
-interface TicketFieldRow { id: number; label: string; kind: 'SEAT' | 'TIER' | 'CUSTOM'; values: string[] }
-
-interface TicketRow {
-  ticketId: number; ticketRef: string; seat: string | null; status: string;
-  issuedToEmail: string; holderEmail: string | null; reissueCount: number;
-  tier: string | null;
-  inside: boolean; entryCount: number; reentryCount: number;
-  lastEventAt: string | null; lastExitAt: string | null; insideSince: string | null;
-  phone: string | null; deliveredVia: string | null;
-  attributes: Record<string, string>;
-}
-
-/** Whether an event is still ahead, is today, or has been, by the calendar day. */
-function eventWhen(startsAt: string): 'upcoming' | 'today' | 'past' {
-  const start = new Date(startsAt);
-  const day = (d: Date) => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
-  const today = day(new Date());
-  return day(start) === today ? 'today' : day(start) < today ? 'past' : 'upcoming';
-}
-
-/** What the ticket itself is: issued, claimed by a person, or switched off. */
-function ticketState(row: TicketRow): { label: string; tone: string } {
-  if (row.status === 'REVOKED') return { label: '비활성', tone: 'off' };
-  if (row.status === 'TRANSFER_PENDING') return { label: '양도 중', tone: 'warn' };
-  if (row.holderEmail) return { label: '등록 완료', tone: 'ok' };
-  return { label: '미등록', tone: 'wait' };
-}
-
-/** Where the holder is, which is a different question from what the ticket is. */
-function presenceState(row: TicketRow): { label: string; tone: string; since: string | null } {
-  if (row.inside) return { label: '장내', tone: 'in', since: row.insideSince };
-  if (row.entryCount > 0) return { label: '퇴장', tone: 'out', since: row.lastExitAt ?? row.lastEventAt };
-  return { label: '미입장', tone: 'wait', since: null };
-}
-
-function shortTime(value: string | null): string {
-  if (!value) return '';
-  return new Date(value).toLocaleString('ko-KR', {
-    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-
-interface IssuedTicket {
-  ticketId: number; ticketRef: string; url: string; deliveredVia: string;
-  /** Where the link should appear: under the issue form, or in the row it came from. */
-  from: 'issue' | 'row';
-}
-
-interface GateRow {
-  gateId: string; label: string | null; zone: string | null; direction: string;
-  role: string; boothId: number | null;
-  boundDevice: string | null; lastSeenAt: string | null;
-  setupUrl: string | null; setupCode: string | null; setupExpiresAt: string | null;
-  /** Null for a terminal registered before tokens had an end date. */
-  tokenExpiresAt: string | null; tokenExpired: boolean;
-  /** Offers this terminal may give, and whether it gives them by itself on entry. */
-  grants: { offerId: number; auto: boolean }[];
-}
-
-/** Whether a terminal admits anybody, which is what giving on entry hangs on. */
-const admitsPeople = (gate: GateRow) => gate.role !== 'BOOTH' && gate.direction !== 'OUT';
-
-/** How a terminal's remaining time reads: the number of days, and how alarming it is. */
-function validity(gate: GateRow): { label: string; tone: string } {
-  if (gate.tokenExpiresAt === null) return { label: '유효기간 없음', tone: 'wait' };
-  const days = Math.ceil((new Date(gate.tokenExpiresAt).getTime() - Date.now()) / 86400000);
-  if (gate.tokenExpired || days <= 0) return { label: '유효기간 지남', tone: 'off' };
-  return { label: `유효기간 ${days}일 남음`, tone: days <= 3 ? 'warn' : 'ok' };
-}
-
-/** Something a booth may give, and how it has gone. */
-interface OfferRow {
-  offerId: number; title: string; detail: string | null; active: boolean;
-  issued: number; redeemed: number; voided: number; waiting: number;
-}
-
-interface BoothRow {
-  boothId: number; name: string; note: string | null;
-  offers: OfferRow[];
-}
-
-/** What the console needs from the tickets without loading the tickets. */
-interface TicketSummary {
-  counts: { all: number; unclaimed: number; bound: number; inside: number; revoked: number; live: number };
-  seats: string[]; tiers: string[]; attributes: Record<string, string[]>;
-}
-
-type TicketFilter = 'ALL' | 'UNCLAIMED' | 'BOUND' | 'INSIDE' | 'REVOKED';
-/** What happens to somebody who left without scanning out. */
-const UNMATCHED_LABEL: Record<string, string> = {
-  STRICT: '안내 데스크에서만 정리',
-  LENIENT: '다시 들어올 때 자동 보정',
-  AUTO_EXIT: '시간이 지나면 자동 퇴장',
+type Tab = ConsoleTab;
+/** Each screen's title, which is also its entry in the event's menu. */
+const TAB_TITLES: Record<Tab, string> = {
+  overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
+  gates: '게이트', coupons: '쿠폰', settings: '행사 설정',
 };
-/** 0 -> "자정", 5 -> "새벽 5시", 14 -> "오후 2시": how the hour is said, not written. */
-function hourLabel(hour: number): string {
-  if (hour === 0) return '자정';
-  if (hour < 6) return `새벽 ${hour}시`;
-  if (hour < 12) return `오전 ${hour}시`;
-  if (hour === 12) return '정오';
-  return `오후 ${hour - 12}시`;
-}
-
-/** What a gate does, in the words on the screen rather than the ones in the database. */
-const DIRECTION_LABEL: Record<string, string> = { IN: '입장 전용', OUT: '퇴장 전용', BIDIRECTIONAL: '입·퇴장 겸용' };
-type CouponFilter = 'ALL' | 'ISSUED' | 'REDEEMED' | 'VOID';
-/** The most of one offer a ticket can hold; the server says the same. */
-const MAX_PER_TICKET = 20;
-const PAGE_SIZE = 50;
-
-interface CouponRow {
-  couponId: number; boothId: number | null; booth: string | null; offerId: number | null;
-  title: string; detail: string | null;
-  status: string; ticketId: number; ticketRef: string | null; seat: string | null;
-  issuedToEmail: string | null; redeemedAt: string | null;
-}
-
-type Tab = 'issue' | 'tickets' | 'gates' | 'coupons' | 'movements' | 'settings';
-/** The settings tab is itself a stack of unrelated forms, so it carries its own tabs. */
+/** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
-const TABS: Array<[Tab, string]> = [
-  ['issue', '발급'],
-  ['tickets', '발급 현황'],
-  ['gates', '게이트'],
-  ['coupons', '쿠폰'],
-  ['movements', '입·퇴장'],
-  ['settings', '설정'],
-];
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
   ['event', '행사 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['fields', '발급 항목'],
 ];
-interface Occupancy {
-  inside: number; everEntered: number; tickets: number; bound: number;
-  stillInside: Array<Record<string, unknown>>;
-  recent: Array<Record<string, unknown>>;
-  byGate: Array<Record<string, unknown>>;
-  byZone: Array<Record<string, unknown>>;
-}
 
-function text(value: unknown): string { return value == null ? '' : String(value); }
-function count(value: unknown): number { return Number(value ?? 0); }
-
-/** The ledger stores outcomes in the wire vocabulary; the console reads them aloud. */
-const OUTCOMES: Record<string, string> = {
-  ADMITTED: '입장', EXITED: '퇴장', DENIED: '거부', DUPLICATE: '중복', TRANSFERRED: '양도',
-};
-
-/** "yyyy-MM-ddTHH:mm" in the operator's own zone, which is what the input speaks. */
-function localInput(value: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-async function read(response: Response) {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '요청을 처리하지 못했어요.');
-  return data;
-}
 
 export default function TicketAdmin() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   // The event is the address: a console someone opened can be handed to a colleague.
   const selected = Number(sessionId) || null;
   // 발급 현황 is read a page at a time; the counts and taken values come separately so
@@ -239,17 +78,17 @@ export default function TicketAdmin() {
   // through the tabs the way it walks back through the pages.
   const [params, setParams] = useSearchParams();
   const requestedTab = params.get('tab');
-  const tab: Tab = TABS.some(([key]) => key === requestedTab) ? (requestedTab as Tab) : 'issue';
+  const tab: Tab = requestedTab !== null && requestedTab in TAB_TITLES ? (requestedTab as Tab) : 'overview';
+  // An older link may still name a settings section; the page scrolls to it.
   const requestedSection = params.get('sec');
-  const settingsTab: SettingsTab = SETTINGS_TABS.some(([key]) => key === requestedSection)
-    ? (requestedSection as SettingsTab) : 'event';
 
   function setTab(next: Tab) {
-    setParams(next === 'settings' ? { tab: next, sec: settingsTab } : { tab: next });
+    setParams({ tab: next });
   }
-  function setSettingsTab(next: SettingsTab) {
-    setParams({ tab: 'settings', sec: next });
-  }
+  useEffect(() => {
+    if (tab !== 'settings' || !requestedSection) return;
+    document.getElementById(`settings-${requestedSection}`)?.scrollIntoView({ block: 'start' });
+  }, [tab, requestedSection, sessions.length]);
   // Which booth the 쿠폰 tab is looking at. It lives in the address like the other
   // tabs do, so the back button walks back through the stands.
   const boothTab = params.get('booth') === null ? null : Number(params.get('booth'));
@@ -269,6 +108,7 @@ export default function TicketAdmin() {
   const loadSessions = useCallback(async () => {
     try { setSessions(await read(await fetch('/api/admin/sessions'))); }
     catch (err) { setError(err instanceof Error ? err.message : '행사를 불러오지 못했어요.'); }
+    finally { setSessionsLoaded(true); }
   }, []);
 
   const loadSession = useCallback(async (id: number) => {
@@ -775,143 +615,61 @@ export default function TicketAdmin() {
     ...Object.keys(session?.zoneCapacity ?? {}),
   ])].sort((a, b) => a.localeCompare(b, 'ko'));
   return (
-    <section className="page-section page-wide">
-      <div className="page-head">
-        <h2>
-          {session ? <Link className="crumb-link" to="/tickets">입장권 관리</Link> : <span aria-current="page">입장권 관리</span>}
-          {session
-            ? <><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">{session.name}</span></>
-            : <span className="count">{sessions.length}</span>}
-        </h2>
-        {!session && (
+    <section className="page-section page-wide console">
+      {!session && (<>
+        <div className="page-head">
+          <h2><span aria-current="page">행사</span><span className="count">{sessions.length}</span></h2>
           <span className="page-actions">
             <Link className="btn-primary" to="/tickets/sessions/new">행사 추가</Link>
           </span>
-        )}
-      </div>
+        </div>
+        {notice && <p className="notice-text" role="status">{notice}</p>}
+        {error && <p className="error-text" role="alert">{error}</p>}
+        <EventTable sessions={sessions} loading={!sessionsLoaded} />
+      </>)}
+
+      {selected !== null && !session && sessionsLoaded && (
+        <p className="console-none">이 행사를 찾을 수 없어요. <Link to="/tickets">행사 목록</Link>으로 돌아가세요.</p>
+      )}
 
       {session && (
-        <div className="picked-bar">
-          <span className="picked-meta">
-            {shortTime(session.startsAt)}{session.venue ? ` · ${session.venue}` : ''}
-            {` · 발급 ${counts.all.toLocaleString()}장`}
-          </span>
-        </div>
-      )}
+      <div className="console-layout">
+        <EventNav session={session} tab={tab} issued={counts.all}
+          inside={occupancy?.inside ?? counts.inside}
+          gatesUp={gates.filter(gate => gate.boundDevice).length} gatesAll={gates.length} />
+        <div className="console-main">
+          <div className="console-head">
+            <div>
+              <h2>{TAB_TITLES[tab]}</h2>
+              <p>{dayTime(session.startsAt)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
+                {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 행사' : ''}</p>
+            </div>
+            <div className="console-actions">
+              {tab === 'overview' && eventWhen(session.startsAt) === 'today' && (
+                <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
+              )}
+              {tab === 'overview' && eventWhen(session.startsAt) === 'upcoming' && (
+                <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
+              )}
+              {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
+              {tab === 'coupons' && (
+                <button className="btn-primary" type="button" disabled={givingBooths.length === 0}
+                  onClick={() => openCouponSheet(null, boothTab ?? undefined)}>쿠폰 발급</button>
+              )}
+            </div>
+          </div>
 
-      {notice && <p className="notice-text" role="status">{notice}</p>}
-      {error && <p className="error-text" role="alert">{error}</p>}
+          {notice && <p className="notice-text" role="status">{notice}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
 
-      {/* Every tab is about one event, so there is nothing for them to show until one
-          is picked. */}
-      {session && (
-        <div className="tabs" role="tablist">
-          {TABS.map(([key, label]) => (
-            <button key={key} role="tab" aria-selected={tab === key}
-              className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label}</button>
-          ))}
-        </div>
-      )}
-
-      {!session && (
-        <EntityPicker
-          items={[...sessions]
-            // What is coming up reads first, soonest at the top; what has already run
-            // follows, most recent first, quieter.
-            .sort((a, b) => {
-              const pa = eventWhen(a.startsAt) === 'past', pb = eventWhen(b.startsAt) === 'past';
-              if (pa !== pb) return pa ? 1 : -1;
-              const ta = new Date(a.startsAt).getTime(), tb = new Date(b.startsAt).getTime();
-              return pa ? tb - ta : ta - tb;
-            })
-            .map(row => {
-              const when = eventWhen(row.startsAt);
-              return {
-                id: row.id,
-                title: row.name,
-                muted: when === 'past',
-                meta: <>
-                  <span>{shortTime(row.startsAt)}</span>
-                  {row.venue && <span>{row.venue}</span>}
-                  {row.gateOpensAt && <span>입장 {shortTime(row.gateOpensAt)}</span>}
-                  {row.ticketCount !== undefined && <span>발급 {row.ticketCount.toLocaleString()}장</span>}
-                  {row.testEvent && <span>테스트 행사</span>}
-                </>,
-                badge: <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'off' : 'in'}`}>
-                  {when === 'today' ? '오늘' : when === 'past' ? '지난 행사' : '예정'}
-                </span>,
-              };
-            })}
-          onOpen={id => navigate(`/tickets/admin/${id}?tab=issue`)}
-          empty="등록된 행사가 없어요. 행사 추가로 먼저 만들어 주세요." />
-      )}
+          {tab === 'overview' && (
+            <EventOverview session={session} summary={summary} occupancy={occupancy} gates={gates} />
+          )}
 
       {session && tab === 'issue' && (
-        <div className="tab-panel tab-split">
-          <form onSubmit={e => { e.preventDefault(); issueTicket(e.currentTarget); }}>
-            <h3>입장권 발급</h3>
-            <div className="field">
-              <label htmlFor="ticket-to">수신 이메일</label>
-              <input id="ticket-to" name="email" type="email" required />
-            </div>
-            {/* One input per field the organiser defined. A field with a list is a
-                choice; one without takes whatever is typed. */}
-            {fieldList.length > 0 && (
-              <div className="form-row">
-                {fieldList.map(field => (
-                  <div className="field" key={field.id}>
-                    <label htmlFor={`field-${field.id}`}>{field.label}</label>
-                    {field.values.length > 0 ? (
-                      <select id={`field-${field.id}`} name={`field:${field.label}`} defaultValue="">
-                        <option value="">선택 안 함</option>
-                        {field.values.map(value => {
-                          const taken = field.kind === 'SEAT' && takenSeats.has(value);
-                          return (
-                            <option key={value} value={value} disabled={taken}>
-                              {value}{taken ? ' · 발급됨' : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    ) : (
-                      <input id={`field-${field.id}`} name={`field:${field.label}`} placeholder="직접 입력" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {fieldList.length === 0 && (
-              <p className="hint-text form-note">
-                발급 항목이 없습니다. 설정 <Icon name="arrow-right" /> 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
-                여기에서 고를 수 있어요.
-              </p>
-            )}
-            <div className="field">
-              <label htmlFor="ticket-phone">휴대폰 (선택 · 문자 발송)</label>
-              <input id="ticket-phone" name="phone" inputMode="tel" placeholder="01012345678" />
-            </div>
-            <button className="btn-primary" type="submit">발급하고 보내기</button>
-            {issued?.from === 'issue' && (
-              <IssuedLink url={issued.url}
-                note={`${issued.ticketRef} · 이 링크는 지금만 보여집니다. 다시 보려면 새로 발급해야 해요.`} />
-            )}
-          </form>
-          <div>
-            <h3>이 행사</h3>
-            <dl className="ticket-meta">
-              <dt>발급</dt><dd>{counts.all.toLocaleString()}장</dd>
-              <dt>등록 완료</dt><dd>{counts.bound.toLocaleString()}장</dd>
-              <dt>남은 좌석</dt>
-              <dd>{session.seats.length > 0 ? `${session.seats.length - takenSeats.size}석` : '제한 없음'}</dd>
-              <dt>발급 항목</dt>
-              <dd>{fieldList.length === 0 ? '없음' : fieldList.map(f => f.label).join(' · ')}</dd>
-            </dl>
-            <p className="hint-text">
-              발급하면 수신 이메일로 개인 링크가 갑니다. 휴대폰을 넣으면 문자로도 보냅니다.
-              한 이메일에는 한 장만 발급됩니다 - 다시 보내려면 <b>재발송</b>을, 다른 사람에게 주려면
-              기존 입장권을 삭제하세요. 발급된 목록은 <b>발급 현황</b> 탭에 있어요.
-            </p>
-
+        <div className="console-split">
+          {/* The list is the usual way in; the form beside it is for the one late addition. */}
+          <section className="console-card issue-bulk" aria-label="명단으로 여러 장 발급">
             <BulkImport
               fields={[
                 { key: 'email', label: '이메일', match: ['email', '이메일', '메일'], required: true },
@@ -926,16 +684,73 @@ export default function TicketAdmin() {
               sampleName="입장권-발급-양식.csv"
               notifyLabel="발급하면서 수신자에게 메일·문자 보내기"
               onSubmit={issueBulk} />
-          </div>
+          </section>
+          <aside className="console-aside">
+            <form className="console-card" onSubmit={e => { e.preventDefault(); issueTicket(e.currentTarget); }}>
+              <h3>한 장 발급</h3>
+              <div className="field">
+                <label htmlFor="ticket-to">수신 이메일</label>
+                <input id="ticket-to" name="email" type="email" required />
+              </div>
+              {/* One input per field the organiser defined. A field with a list is a
+                  choice; one without takes whatever is typed. */}
+              {fieldList.length > 0 && (
+                <div className="form-row">
+                  {fieldList.map(field => (
+                    <div className="field" key={field.id}>
+                      <label htmlFor={`field-${field.id}`}>{field.label}</label>
+                      {field.values.length > 0 ? (
+                        <select id={`field-${field.id}`} name={`field:${field.label}`} defaultValue="">
+                          <option value="">선택 안 함</option>
+                          {field.values.map(value => {
+                            const taken = field.kind === 'SEAT' && takenSeats.has(value);
+                            return (
+                              <option key={value} value={value} disabled={taken}>
+                                {value}{taken ? ' · 발급됨' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <input id={`field-${field.id}`} name={`field:${field.label}`} placeholder="직접 입력" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {fieldList.length === 0 && (
+                <p className="hint-text form-note">
+                  발급 항목이 없습니다. 설정 <Icon name="arrow-right" /> 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
+                  여기에서 고를 수 있어요.
+                </p>
+              )}
+              <div className="field">
+                <label htmlFor="ticket-phone">휴대폰 (선택 · 문자 발송)</label>
+                <input id="ticket-phone" name="phone" inputMode="tel" placeholder="01012345678" />
+              </div>
+              <button className="btn-secondary" type="submit">한 장 발급하기</button>
+              {issued?.from === 'issue' && (
+                <IssuedLink url={issued.url}
+                  note={`${issued.ticketRef} · 이 링크는 지금만 보여집니다. 다시 보려면 새로 발급해야 해요.`} />
+              )}
+            </form>
+            <div className="console-card">
+              <h3>이 행사</h3>
+              <dl className="ticket-meta">
+              <dt>발급</dt><dd>{counts.all.toLocaleString()}장</dd>
+              <dt>등록 완료</dt><dd>{counts.bound.toLocaleString()}장</dd>
+              <dt>남은 좌석</dt>
+              <dd>{session.seats.length > 0 ? `${session.seats.length - takenSeats.size}석` : '제한 없음'}</dd>
+              <dt>발급 항목</dt>
+              <dd>{fieldList.length === 0 ? '없음' : fieldList.map(f => f.label).join(' · ')}</dd>
+              </dl>
+            </div>
+          </aside>
         </div>
       )}
 
       {session && tab === 'tickets' && (
         <div className="tab-panel">
-          <div className="panel-head">
-            <h3>발급 현황 ({counts.all.toLocaleString()})</h3>
-            <button className="btn-tiny" onClick={() => setTab('issue')}>발급하기</button>
-          </div>
           {/* The chips are the labels on the rows: choosing one shows exactly the rows
               wearing it, and each says how many there are before it is chosen. */}
           <ListFilter<TicketFilter>
@@ -1033,129 +848,163 @@ export default function TicketAdmin() {
         </div>
       )}
 
-      {session && tab === 'gates' && (
-        <div className="tab-panel tab-split">
-          <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
-            <h3>단말 등록</h3>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="gate-new-label">이름</label>
-                <input id="gate-new-label" name="label" />
-              </div>
-              <div className="field">
-                <label htmlFor="gate-new-zone">장소</label>
-                <input id="gate-new-zone" name="zone" required placeholder="예: 메인홀" />
-              </div>
-            </div>
-            {/* A booth terminal reads the same code, but to hand something over. */}
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="gate-new-role">역할</label>
-                <select id="gate-new-role" name="role" value={gateRole}
-                  onChange={e => setGateRole(e.target.value)}>
-                  <option value="ADMISSION">입장 게이트</option>
-                  <option value="BOOTH" disabled={booths.length === 0}>
-                    {booths.length === 0 ? '부스 단말 (부스를 먼저 만드세요)' : '부스 단말 · 쿠폰'}
-                  </option>
-                </select>
-              </div>
-              {/* A door has a way in and a way out; a booth has neither. */}
-              {gateRole !== 'BOOTH' && (
-                <div className="field">
-                  <label htmlFor="gate-new-direction">방향</label>
-                  <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
-                    <option value="BIDIRECTIONAL">입장·퇴장 겸용</option>
-                    <option value="IN">입장 전용</option>
-                    <option value="OUT">퇴장 전용</option>
-                  </select>
-                </div>
-              )}
-              {gateRole === 'BOOTH' && (
-                <div className="field">
-                  <label htmlFor="gate-new-booth">부스</label>
-                  <select id="gate-new-booth" name="boothId" required>
-                    {booths.map(booth => (
-                      <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-            <details className="more-fields">
-              <summary>게이트 ID 직접 정하기</summary>
-              <div className="field">
-                <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
-                <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
-                  placeholder="예: main-door-1" />
-              </div>
-            </details>
-            <button className="btn-primary" type="submit">단말 등록</button>
-            {gateSetup && (
-              <div className="issued-link">
-                <p className="hint-text">
-                  <b>{gateSetup.gateId}</b> · 이 링크를 태블릿에서 열고 아래 인증번호를 입력하면 연결됩니다.
-                </p>
-                <code title={gateSetup.setupUrl}>{gateSetup.setupUrl}</code>
-                <p className="code-timer">인증번호 {gateSetup.setupCode}</p>
-                <div className="share-row">
-                  <button type="button" onClick={() => navigator.clipboard?.writeText(gateSetup.setupUrl)}>
-                    링크 복사
-                  </button>
-                </div>
-              </div>
+      {session && tab === 'gates' && (() => {
+        // A gate that needs someone goes first: no tablet, then a date about to run out.
+        const rank = (gate: GateRow) => !gate.boundDevice ? 0 : ['warn', 'off'].includes(validity(gate).tone) ? 1 : 2;
+        const sorted = [...gates].sort((a, b) => rank(a) - rank(b));
+        const offline = gates.filter(gate => !gate.boundDevice).length;
+        const expiring = gates.filter(gate => ['warn', 'off'].includes(validity(gate).tone)).length;
+        return (
+          <div className="console-stack">
+            {gates.length > 0 && (
+              <p className="console-summary">
+                연결됨 {gates.length - offline} · 연결 안 됨 {offline} · 유효기간 임박 {expiring}
+              </p>
             )}
-          </form>
-          <div>
-            <h3>등록된 단말 ({gates.length})</h3>
-            {gates.map(gate => (
-              <div className="gate-row" key={gate.gateId}>
-                <div>
-                  <b>{gate.label || gate.gateId}</b> · {gate.role === 'BOOTH' ? '부스 단말' : DIRECTION_LABEL[gate.direction] ?? gate.direction}
-                  {gate.role === 'BOOTH'
-                    ? ` · ${booths.find(booth => booth.boothId === gate.boothId)?.name ?? '부스 없음'}`
-                    : gate.zone && ` · ${gate.zone}`}
-                  <br />
-                  <code title={gate.setupUrl ?? ''}>{gate.setupUrl ?? '(설정 링크 없음 - 재발급이 필요합니다)'}</code>
-                  {gate.setupCode && <span className="gate-code">인증번호 {gate.setupCode}</span>}
-                  <div className="gate-meta">
-                    <span className={`pill pill-${validity(gate).tone}`}>{validity(gate).label}</span>
-                    {gate.tokenExpiresAt && (
-                      <span> {new Date(gate.tokenExpiresAt).toLocaleDateString('ko-KR')}까지</span>
-                    )}
-                    {' · '}
-                    {gate.boundDevice
-                      ? `단말 ${gate.boundDevice}… 연결됨${gate.lastSeenAt ? ` · 최근 ${new Date(gate.lastSeenAt).toLocaleTimeString('ko-KR')}` : ''}`
-                      : '연결된 단말 없음'}
+            <div className="gate-grid">
+              {sorted.map(gate => {
+                const valid = validity(gate);
+                const problem = rank(gate);
+                return (
+                  <article key={gate.gateId} className={`gate-card${problem === 0 ? ' is-offline' : problem === 1 ? ' is-expiring' : ''}`}>
+                    <div className="gate-card-head">
+                      <div>
+                        <h3>{gate.label || gate.gateId}</h3>
+                        <div className="gate-card-tags">
+                          <span className={`pill pill-${gate.role === 'BOOTH' ? 'warn' : gate.direction === 'OUT' ? 'out' : 'ok'}`}>
+                            {gate.role === 'BOOTH' ? '부스 단말' : DIRECTION_LABEL[gate.direction] ?? gate.direction}</span>
+                          <span className="muted">
+                            {gate.role === 'BOOTH'
+                              ? booths.find(booth => booth.boothId === gate.boothId)?.name ?? '부스 없음'
+                              : gate.zone || '장소 없음'}
+                          </span>
+                        </div>
+                      </div>
+                      <RowMenu label={`${gate.label || gate.gateId} 관리`} items={[
+                        { label: '쿠폰 부여 설정', onSelect: () => openGrantSheet(gate) },
+                        'separator',
+                        { label: '설정 링크 재발급', onSelect: () => reopenSetup(gate.gateId) },
+                        { label: '유효기간 연장', onSelect: () => renewGate(gate.gateId) },
+                        ...(gate.tokenExpiresAt !== null
+                          ? [{ label: '유효기간 없애기', onSelect: () => renewGate(gate.gateId, 0) }] : []),
+                        { label: '단말 연결 해제', onSelect: () => releaseGate(gate.gateId), disabled: !gate.boundDevice },
+                        'separator',
+                        { label: '토큰 폐기', onSelect: () => rotateGateToken(gate.gateId), danger: true },
+                      ]} />
+                    </div>
+                    <div className={`gate-status${gate.boundDevice ? ' on' : ''}`}>
+                      <span className="gate-dot" aria-hidden="true" />
+                      <b>{gate.boundDevice ? '연결됨' : '연결 안 됨'}</b>
+                      <span className="muted">
+                        {gate.boundDevice
+                          ? `단말 ${gate.boundDevice}…${gate.lastSeenAt ? ` · 최근 ${clock(gate.lastSeenAt)}` : ''}`
+                          : '태블릿에서 설정 링크를 열어 주세요'}
+                      </span>
+                    </div>
+                    <dl className="gate-facts">
+                      <div><dt>유효기간</dt><dd className={`tone-${valid.tone}`}>
+                        {gate.tokenExpiresAt ? `${new Date(gate.tokenExpiresAt).toLocaleDateString('ko-KR')}까지` : '기한 없음'}
+                        <small>{valid.label.replace('유효기간 ', '')}</small></dd></div>
+                      <div><dt>쿠폰</dt><dd>{(gate.grants ?? []).length === 0 ? '없음'
+                        : `${gate.grants.length}종${gate.grants.some(grant => grant.auto) ? ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}` : ''}`}</dd></div>
+                      {!gate.boundDevice && gate.setupCode && (
+                        <div><dt>인증번호</dt><dd className="mono">{gate.setupCode}</dd></div>
+                      )}
+                    </dl>
+                    <div className="gate-card-actions">
+                      {!gate.boundDevice ? (
+                        <button className="btn-primary" type="button" disabled={!gate.setupUrl}
+                          onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>설정 링크 복사</button>
+                      ) : problem === 1 ? (
+                        <button className="btn-secondary" type="button" onClick={() => renewGate(gate.gateId)}>유효기간 연장</button>
+                      ) : (
+                        <button className="btn-secondary" type="button" onClick={() => openGrantSheet(gate)}>쿠폰 부여 설정</button>
+                      )}
+                      {!gate.boundDevice && !gate.setupUrl && (
+                        <button className="btn-secondary" type="button" onClick={() => reopenSetup(gate.gateId)}>설정 링크 재발급</button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            {gates.length === 0 && (
+              <p className="console-none">아직 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
+            )}
+            <details className="console-card add-card" open={gates.length === 0}>
+              <summary>게이트 추가</summary>
+              <p className="hint-text">이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요. 부스 단말이면 쿠폰을 고를 수 있어요.</p>
+              <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="gate-new-label">이름</label>
+                    <input id="gate-new-label" name="label" />
                   </div>
-                  {(gate.grants ?? []).length > 0 && (
-                    <div className="gate-meta">
-                      쿠폰 부여 {gate.grants.length}종
-                      {gate.grants.some(grant => grant.auto)
-                        && ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}종`}
+                  <div className="field">
+                    <label htmlFor="gate-new-zone">장소</label>
+                    <input id="gate-new-zone" name="zone" required placeholder="예: 메인홀" />
+                  </div>
+                </div>
+                {/* A booth terminal reads the same code, but to hand something over. */}
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="gate-new-role">역할</label>
+                    <select id="gate-new-role" name="role" value={gateRole}
+                      onChange={e => setGateRole(e.target.value)}>
+                      <option value="ADMISSION">입장 게이트</option>
+                      <option value="BOOTH" disabled={booths.length === 0}>
+                        {booths.length === 0 ? '부스 단말 (부스를 먼저 만드세요)' : '부스 단말 · 쿠폰'}
+                      </option>
+                    </select>
+                  </div>
+                  {/* A door has a way in and a way out; a booth has neither. */}
+                  {gateRole !== 'BOOTH' && (
+                    <div className="field">
+                      <label htmlFor="gate-new-direction">방향</label>
+                      <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
+                        <option value="BIDIRECTIONAL">입장·퇴장 겸용</option>
+                        <option value="IN">입장 전용</option>
+                        <option value="OUT">퇴장 전용</option>
+                      </select>
+                    </div>
+                  )}
+                  {gateRole === 'BOOTH' && (
+                    <div className="field">
+                      <label htmlFor="gate-new-booth">부스</label>
+                      <select id="gate-new-booth" name="boothId" required>
+                        {booths.map(booth => (
+                          <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
+                        ))}
+                      </select>
                     </div>
                   )}
                 </div>
-                <div className="gate-actions">
-                  <button className="btn-tiny" disabled={!gate.setupUrl}
-                    onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>
-                    링크 복사
-                  </button>
-                  <RowMenu label={`${gate.label || gate.gateId} 단말 작업`} items={[
-                    { label: '쿠폰 부여 설정', onSelect: () => openGrantSheet(gate) },
-                    'separator',
-                    { label: '설정 링크 재발급', onSelect: () => reopenSetup(gate.gateId) },
-                    { label: '유효기간 갱신', onSelect: () => renewGate(gate.gateId) },
-                    ...(gate.tokenExpiresAt !== null
-                      ? [{ label: '유효기간 무제한으로', onSelect: () => renewGate(gate.gateId, 0) }] : []),
-                    { label: '단말 연결 해제', onSelect: () => releaseGate(gate.gateId), disabled: !gate.boundDevice },
-                    'separator',
-                    { label: '토큰 폐기', onSelect: () => rotateGateToken(gate.gateId), danger: true },
-                  ]} />
-                </div>
-              </div>
-            ))}
-            {gates.length === 0 && <p className="hint-text">등록된 단말이 없어요.</p>}
-            <p className="hint-text">
+                <details className="more-fields">
+                  <summary>게이트 ID 직접 정하기</summary>
+                  <div className="field">
+                    <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
+                    <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
+                      placeholder="예: main-door-1" />
+                  </div>
+                </details>
+                <button className="btn-secondary" type="submit">게이트 추가</button>
+                {gateSetup && (
+                  <div className="issued-link">
+                    <p className="hint-text">
+                      <b>{gateSetup.gateId}</b> · 이 링크를 태블릿에서 열고 아래 인증번호를 입력하면 연결됩니다.
+                    </p>
+                    <code title={gateSetup.setupUrl}>{gateSetup.setupUrl}</code>
+                    <p className="code-timer">인증번호 {gateSetup.setupCode}</p>
+                    <div className="share-row">
+                      <button type="button" onClick={() => navigator.clipboard?.writeText(gateSetup.setupUrl)}>
+                        링크 복사
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </form>
+            </details>
+            <p className="hint-text console-help">
               태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 - 긴 토큰을 직접 입력할 일은 없어요.
               게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
               장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.
@@ -1164,24 +1013,12 @@ export default function TicketAdmin() {
               단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.
             </p>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {session && tab === 'settings' && (
-        <div className="tab-panel settings-panel">
-          <div className="tabs tabs-inner" role="tablist">
-            {SETTINGS_TABS.map(([key, label]) => (
-              <button key={key} role="tab" aria-selected={settingsTab === key}
-                className={settingsTab === key ? 'active' : ''}
-                onClick={() => setSettingsTab(key)}>{label}</button>
-            ))}
-          </div>
-
-          {/* What is in force for this section, right above the form that changes it.
-              The whole list at the top of every section said everything twice and
-              made each page twice as long. */}
-          <dl className="settings-now">
-            {(({
+      {session && tab === 'settings' && (() => {
+        // What is in force for each section, beside the form that changes it.
+        const NOW: Record<SettingsTab, Array<[string, string]>> = {
               event: [
                 ['행사 시각', shortTime(session.startsAt) || '-'],
                 ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
@@ -1207,12 +1044,24 @@ export default function TicketAdmin() {
                 ['발급 항목', fieldList.length === 0 ? '없음'
                   : fieldList.map(f => `${f.label}(${f.values.length || '자유'})`).join(' · ')],
               ],
-            } as Record<SettingsTab, Array<[string, string]>>)[settingsTab]).map(([label, value]) => (
-              <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
-            ))}
-          </dl>
-
-          {settingsTab === 'event' && (
+            };
+        return (
+          <div className="settings-page">
+            <nav className="settings-quick" aria-label="설정 항목">
+              {SETTINGS_TABS.map(([key, label]) => (
+                <a key={key} href={`#settings-${key}`}>{label}</a>
+              ))}
+              <a className="danger" href="#settings-delete">행사 삭제</a>
+            </nav>
+            <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
+              <div className="settings-side">
+                <h3 id="settings-event-title">행사 정보</h3>
+                <p>관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</p>
+                <dl className="settings-now">
+                  {NOW.event.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+              </div>
+              <div className="settings-body">
             <form key={`details-${session.id}`} className="settings-form"
               onSubmit={e => { e.preventDefault(); submitDetails(e.currentTarget); }}>
               <div className="field">
@@ -1247,20 +1096,20 @@ export default function TicketAdmin() {
                 입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
                 있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
               </p>
-              <button className="btn-primary" type="submit">행사 정보 저장</button>
+              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
 
-              <div className="danger-zone">
-                <h3>행사 삭제</h3>
-                <p className="hint-text">
-                  발급된 입장권, 입·퇴장 기록, 등록된 단말이 함께 사라집니다. 되돌릴 수 없어요.
-                </p>
-                <button className="btn-danger" type="button"
-                  onClick={() => setConfirmDelete(true)}>이 행사 삭제</button>
-              </div>
             </form>
-          )}
-
-          {settingsTab === 'policy' && (
+              </div>
+            </section>
+            <section id="settings-policy" className="settings-section" aria-labelledby="settings-policy-title">
+              <div className="settings-side">
+                <h3 id="settings-policy-title">재입장 · 퇴장</h3>
+                <p>입장한 사람이 다시 들어올 수 있는지, 퇴장을 찍지 않은 사람을 언제 내보낼지 정합니다. 저장하면 다음 스캔부터 바로 적용돼요.</p>
+                <dl className="settings-now">
+                  {NOW.policy.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+              </div>
+              <div className="settings-body">
             <form key={`policy-${session.id}`} className="settings-form"
               onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
               <div className="form-row">
@@ -1333,11 +1182,19 @@ export default function TicketAdmin() {
                 장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
                 어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
               </p>
-              <button className="btn-primary" type="submit">정책 저장</button>
+              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
             </form>
-          )}
-
-          {settingsTab === 'crowd' && (
+              </div>
+            </section>
+            <section id="settings-crowd" className="settings-section" aria-labelledby="settings-crowd-title">
+              <div className="settings-side">
+                <h3 id="settings-crowd-title">혼잡도</h3>
+                <p>장소별 수용 인원과 혼잡 기준입니다. 관람객 입장권 화면에도 같은 단계가 보여요.</p>
+                <dl className="settings-now">
+                  {NOW.crowd.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+              </div>
+              <div className="settings-body">
             <form key={`crowd-${session.id}`} className="settings-form"
               onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
               <div className="form-row">
@@ -1371,11 +1228,19 @@ export default function TicketAdmin() {
               <p className="hint-text">
                 정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.
               </p>
-              <button className="btn-primary" type="submit">혼잡도 기준 저장</button>
+              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
             </form>
-          )}
-
-          {settingsTab === 'fields' && (
+              </div>
+            </section>
+            <section id="settings-fields" className="settings-section" aria-labelledby="settings-fields-title">
+              <div className="settings-side">
+                <h3 id="settings-fields-title">발급 항목</h3>
+                <p>입장권마다 붙는 항목입니다. 좌석은 같은 값을 두 장에 줄 수 없어요.</p>
+                <dl className="settings-now">
+                  {NOW.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+              </div>
+              <div className="settings-body">
             <div className="settings-form">
               <p className="hint-text">
                 입장권이 무엇을 담을지는 행사마다 다릅니다. 좌석과 등급도 여기서 만드는 항목 중
@@ -1420,9 +1285,23 @@ export default function TicketAdmin() {
                 <button className="btn-primary" type="submit">항목 추가</button>
               </form>
             </div>
-          )}
-        </div>
-      )}
+              </div>
+            </section>
+            <section id="settings-delete" className="settings-section danger" aria-labelledby="settings-delete-title">
+              <div className="settings-side">
+                <h3 id="settings-delete-title">행사 삭제</h3>
+                <p>입장권, 입·퇴장 기록, 등록된 단말이 함께 사라지고 되돌릴 수 없어요.</p>
+              </div>
+              <div className="settings-body">
+                {eventWhen(session.startsAt) === 'today' && (
+                  <p className="error-text">오늘 진행 중인 행사입니다. 행사가 끝난 뒤에 지우는 것을 권해요.</p>
+                )}
+                <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 행사 삭제…</button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
 
       {grantGate && (
         <div className="modal-backdrop sheet-backdrop" role="presentation" onClick={() => setGrantGate(null)}>
@@ -1756,56 +1635,58 @@ export default function TicketAdmin() {
         onCancel={() => setConfirmDelete(false)}
       />
 
-      {session && tab === 'coupons' && (
-        <div className="tab-panel tab-split">
-          <div>
-            <form onSubmit={e => { e.preventDefault(); addBooth(e.currentTarget); }}>
-              <h3>부스</h3>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="booth-name">이름</label>
-                  <input id="booth-name" name="name" required placeholder="예: 커피 스탠드" />
-                </div>
-                <div className="field">
-                  <label htmlFor="booth-note">위치 안내</label>
-                  <input id="booth-note" name="note" placeholder="예: 로비 왼쪽" />
-                </div>
-              </div>
-              <button className="btn-primary" type="submit">부스 추가</button>
-            </form>
-
-            <p className="hint-text">
-              부스를 만든 뒤 그 부스 탭에서 <b>쿠폰 종류</b>를 정하세요. 입장권에는 정해 둔 종류 중
-              발급 중인 것만 줄 수 있어요. 쿠폰은 부스 단말에 입장 QR을 비추면 사용됩니다 - 받는
-              사람은 새로 받을 것도, 설치할 것도 없어요.
-            </p>
-          </div>
-
-          <div>
-            {/* One stand at a time: a room full of booths is a room full of separate
-                counters, and the console reads better the same way. The counts come from
-                the booths' own tallies, so they are right whatever page is showing. */}
-            {(() => {
-              const given = (rows: BoothRow[]) => rows.reduce((sum, row) =>
-                sum + row.offers.reduce((inner, offer) => inner + offer.issued, 0), 0);
-              const used = (rows: BoothRow[]) => rows.reduce((sum, row) =>
-                sum + row.offers.reduce((inner, offer) => inner + offer.redeemed, 0), 0);
-              const booth = booths.find(row => row.boothId === boothTab) ?? null;
-              const scope = booth ? [booth] : booths;
-              return (<>
-                <div className="inner-tabs" role="tablist">
-                  <button role="tab" aria-selected={boothTab === null}
-                    className={boothTab === null ? 'active' : ''}
-                    onClick={() => setBoothTab(null)}>전체 <b>{given(booths).toLocaleString()}</b></button>
-                  {booths.map(row => (
-                    <button key={row.boothId} role="tab" aria-selected={boothTab === row.boothId}
-                      className={boothTab === row.boothId ? 'active' : ''}
-                      onClick={() => setBoothTab(row.boothId)}>
-                      {row.name} <b>{given([row]).toLocaleString()}</b>
-                    </button>
-                  ))}
-                </div>
-
+      {session && tab === 'coupons' && (() => {
+        // One stand at a time: a room full of booths is a room full of separate counters.
+        // The counts come from the booths' own tallies, so they are right whatever page
+        // of coupons is showing.
+        const given = (rows: BoothRow[]) => rows.reduce((sum, row) =>
+          sum + row.offers.reduce((inner, offer) => inner + offer.issued, 0), 0);
+        const used = (rows: BoothRow[]) => rows.reduce((sum, row) =>
+          sum + row.offers.reduce((inner, offer) => inner + offer.redeemed, 0), 0);
+        const booth = booths.find(row => row.boothId === boothTab) ?? null;
+        const scope = booth ? [booth] : booths;
+        const entry = (key: number | null, name: string, rows: BoothRow[], note: string) => (
+          <button key={key ?? 'all'} type="button" aria-current={boothTab === key ? 'true' : undefined}
+            className={boothTab === key ? 'on' : ''} onClick={() => setBoothTab(key)}>
+            <b>{name}</b>
+            <small>{note}</small>
+            <span className="meter">
+              <span className="meter-track"><span style={{ width: `${percent(used(rows), given(rows))}%` }} /></span>
+              <span className="meter-value">{given(rows) > 0 ? `${percent(used(rows), given(rows))}%` : '–'}</span>
+            </span>
+          </button>
+        );
+        return (
+          <div className="console-split reverse">
+            <aside className="console-aside">
+              <nav className="booth-list" aria-label="부스">
+                {entry(null, '부스 전체', booths, `지급 ${given(booths).toLocaleString()} · 사용 ${used(booths).toLocaleString()}`)}
+                {booths.map(row => entry(row.boothId, row.name, [row],
+                  `쿠폰 ${row.offers.length}종 · 지급 ${given([row]).toLocaleString()} · 사용 ${used([row]).toLocaleString()}`))}
+              </nav>
+              <details className="console-card add-card" open={booths.length === 0}>
+                <summary>부스 추가</summary>
+                <form onSubmit={e => { e.preventDefault(); addBooth(e.currentTarget); }}>
+                  <div className="form-row">
+                    <div className="field">
+                      <label htmlFor="booth-name">이름</label>
+                      <input id="booth-name" name="name" required placeholder="예: 커피 스탠드" />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="booth-note">위치 안내</label>
+                      <input id="booth-note" name="note" placeholder="예: 로비 왼쪽" />
+                    </div>
+                  </div>
+                  <button className="btn-secondary" type="submit">부스 추가</button>
+                </form>
+              </details>
+              <p className="hint-text console-help">
+                부스를 만든 뒤 왼쪽 목록에서 부스를 골라 <b>쿠폰 종류</b>를 정하세요. 입장권에는 정해 둔 종류 중
+                발급 중인 것만 줄 수 있어요. 쿠폰은 부스 단말에 입장 QR을 비추면 사용됩니다 - 받는
+                사람은 새로 받을 것도, 설치할 것도 없어요.
+              </p>
+            </aside>
+            <div className="console-card">
                 <div className="panel-head">
                   <h3>
                     {booth ? booth.name : '부스 전체'}
@@ -1815,9 +1696,6 @@ export default function TicketAdmin() {
                     </small>
                   </h3>
                   <div className="gate-actions">
-                    <button className="btn-tiny"
-                      disabled={!(booth ? [booth] : booths).some(row => row.offers.some(offer => offer.active))}
-                      onClick={() => openCouponSheet(null, booth?.boothId)}>쿠폰 발급</button>
                     {booth && (
                       <button className="btn-tiny btn-tiny-danger"
                         onClick={() => setConfirmBooth(booth)}>부스 삭제</button>
@@ -1954,98 +1832,128 @@ export default function TicketAdmin() {
                   </table>
                 </div>
                 <Pager page={couponPage} unit="장" onPage={setCouponPageNo} />
-              </>);
-            })()}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {session && tab === 'movements' && (
-        <div className="tab-panel">
-          <h3>실시간 장내</h3>
-          {occupancy && (
-            <dl className="stat-grid stat-grid-4">
-              <div><dt>장내</dt><dd>{occupancy.inside}</dd></div>
-              <div><dt>입장 이력</dt><dd>{occupancy.everEntered}</dd></div>
-              <div><dt>등록 완료</dt><dd>{occupancy.bound}</dd></div>
-              <div><dt>발급</dt><dd>{occupancy.tickets}</dd></div>
-            </dl>
-          )}
-          <h3>장소별 혼잡도</h3>
-          {occupancy && occupancy.byZone.length === 0 ? (
-            <p className="empty">등록된 게이트가 없어요.</p>
-          ) : (
-            <ul className="zone-list">
-              {(() => {
-                const zones = occupancy?.byZone ?? [];
-                const now = (row: Record<string, unknown>) =>
-                  Math.max(0, count(row.admitted) - count(row.exited));
-                const busiest = Math.max(1, ...zones.map(now));
-                return zones.map((row, index) => (
-                  <li key={index}>
-                    <div className="zone-head">
-                      <b>{text(row.zone)}</b>
-                      <span className="hint-text">게이트 {count(row.gates)}대</span>
-                      <strong className="zone-now">{now(row)}명</strong>
-                    </div>
-                    <div className="zone-bar" aria-hidden="true">
-                      <span style={{ width: `${Math.round((now(row) / busiest) * 100)}%` }} />
-                    </div>
-                    <div className="entity-meta">
-                      <span>입장 {count(row.admitted)}</span>
-                      <span>퇴장 {count(row.exited)}</span>
-                      {count(row.denied) > 0 && <span className="expired">거부 {count(row.denied)}</span>}
-                      {text(row.last_at) !== '' && <span>마지막 {shortTime(text(row.last_at))}</span>}
-                    </div>
-                  </li>
-                ));
-              })()}
-            </ul>
-          )}
+      {session && tab === 'movements' && (() => {
+        const zones = (occupancy?.byZone ?? []).map(row => {
+          const now = Math.max(0, count(row.admitted) - count(row.exited));
+          const zone = text(row.zone);
+          const cap = session.zoneCapacity?.[zone];
+          return { row, zone, now, cap, level: crowdLevel(session, now, cap) };
+        });
+        const busiest = Math.max(1, ...zones.map(z => z.now));
+        const capacity = Object.values(session.zoneCapacity ?? {}).reduce((sum, n) => sum + n, 0);
+        const denied = (occupancy?.byGate ?? []).reduce((sum, row) => sum + count(row.denied), 0);
+        return (
+          <div className="console-stack">
+            {occupancy && (
+              <div className="kpi-grid">
+                <div className="kpi kpi-accent">
+                  <span className="kpi-label">지금 장내</span>
+                  <strong className="kpi-num">{occupancy.inside.toLocaleString()}</strong>
+                  <span className="kpi-note">{capacity > 0 ? `수용 ${capacity.toLocaleString()} 중 ${percent(occupancy.inside, capacity)}%` : '장소별 수용 인원 미설정'}</span>
+                </div>
+                <div className="kpi">
+                  <span className="kpi-label">입장한 사람</span>
+                  <strong className="kpi-num">{occupancy.everEntered.toLocaleString()}</strong>
+                  <span className="kpi-note">등록 완료 {occupancy.bound.toLocaleString()}명 중</span>
+                </div>
+                <div className="kpi">
+                  <span className="kpi-label">발급</span>
+                  <strong className="kpi-num">{occupancy.tickets.toLocaleString()}</strong>
+                  <span className="kpi-note">미입장 {Math.max(0, occupancy.tickets - occupancy.everEntered).toLocaleString()}</span>
+                </div>
+                <div className="kpi">
+                  <span className="kpi-label">입장 거부</span>
+                  <strong className={`kpi-num${denied > 0 ? ' tone-off' : ''}`}>{denied.toLocaleString()}</strong>
+                  <span className="kpi-note">게이트별 표에서 확인</span>
+                </div>
+              </div>
+            )}
 
-          <h3>게이트별</h3>
-          {occupancy && occupancy.byGate.length === 0 ? (
-            <p className="empty">아직 게이트를 지난 기록이 없어요.</p>
-          ) : (
-            <ul className="entity-list">
-              {occupancy?.byGate.map((row, index) => (
-                <li key={index}>
-                  <div className="entity-main">
-                    <span className="entity-title">
-                      {text(row.gate_label) || text(row.gate_id)}
-                      <small className="cell-note">{text(row.gate_id)}</small>
+            <div className="console-two">
+              <section className="console-card" aria-labelledby="live-zones">
+                <h3 id="live-zones">장소별 혼잡도</h3>
+                {zones.length === 0 ? (
+                  <p className="console-none">등록된 게이트가 없어요.</p>
+                ) : zones.map(z => (
+                  <div className="zone-meter" key={z.zone}>
+                    <div className="zone-meter-head">
+                      <b>{z.zone}</b>
+                      <span>{z.now.toLocaleString()}{z.cap ? ` / ${z.cap.toLocaleString()}` : '명'}
+                        {z.level && <em className={`level level-${z.level.tone}`}>{z.level.label}</em>}</span>
+                    </div>
+                    <span className={`meter-track meter-lg level-${z.level?.tone ?? 'none'}`}>
+                      <span style={{ width: `${z.level ? Math.min(100, z.level.pct) : percent(z.now, busiest)}%` }} />
                     </span>
-                    <span className="entity-meta">
-                      <span>입장 {count(row.admitted)}</span>
-                      <span>퇴장 {count(row.exited)}</span>
-                      {count(row.denied) > 0 && <span className="expired">거부 {count(row.denied)}</span>}
-                      {count(row.duplicate) > 0 && <span>중복 {count(row.duplicate)}</span>}
-                      <span>마지막 {shortTime(text(row.last_at) || null)}</span>
-                    </span>
+                    <div className="zone-meter-foot">
+                      입장 {count(z.row.admitted)} · 퇴장 {count(z.row.exited)}
+                      {count(z.row.denied) > 0 && ` · 거부 ${count(z.row.denied)}`}
+                      {text(z.row.last_at) !== '' && ` · 마지막 ${clock(text(z.row.last_at))}`}
+                    </div>
                   </div>
-                  <div className="entity-actions">
-                    <span className="pill pill-wait">{count(row.total)}건</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                ))}
+                <p className="console-foot">관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">행사 설정</Link>에서 바꿔요.</p>
+              </section>
 
-          <h3>최근 기록</h3>
-          {occupancy?.recent.length === 0 && <p className="empty">기록이 없어요.</p>}
-          <ul className="event-list">
-            {occupancy?.recent.map((row, index) => (
-              <li key={index} className={text(row.result) === 'DENIED' ? 'denied' : ''}>
-                <span>{shortTime(text(row.occurred_at) || null)}</span>
-                <span>{OUTCOMES[text(row.result)] ?? text(row.result)}</span>
-                <span>{text(row.direction) === 'IN' ? '입' : text(row.direction) === 'OUT' ? '퇴' : '-'}</span>
-                <span>{text(row.gate_label) || text(row.gate_id) || '-'}</span>
-                <span>{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}</span>
-                <span>{text(row.reason)}</span>
-              </li>
-            ))}
-          </ul>
+              <section className="console-card" aria-labelledby="live-gates">
+                <h3 id="live-gates">게이트별</h3>
+                {(occupancy?.byGate ?? []).length === 0 ? (
+                  <p className="console-none">아직 게이트를 지난 기록이 없어요.</p>
+                ) : (
+                  <div className="console-table-box flat">
+                    <table className="console-table">
+                      <thead><tr><th>게이트</th><th className="num">입장</th><th className="num">퇴장</th><th className="num">거부</th><th className="num">마지막</th></tr></thead>
+                      <tbody>
+                        {occupancy?.byGate.map((row, index) => (
+                          <tr key={index}>
+                            <td className="strong">{text(row.gate_label) || text(row.gate_id)}</td>
+                            <td className="num">{count(row.admitted)}</td>
+                            <td className="num">{count(row.exited)}</td>
+                            <td className={`num${count(row.denied) > 0 ? ' tone-off' : ''}`}>{count(row.denied)}</td>
+                            <td className="num muted">{clock(text(row.last_at) || null) || '–'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <section className="console-card" aria-labelledby="live-log">
+              <h3 id="live-log">최근 기록</h3>
+              {(occupancy?.recent ?? []).length === 0 ? (
+                <p className="console-none">기록이 없어요.</p>
+              ) : (
+                <div className="console-table-box flat">
+                  <table className="console-table">
+                    <thead><tr><th>시각</th><th>구분</th><th>입장권</th><th>게이트</th><th>비고</th></tr></thead>
+                    <tbody>
+                      {occupancy?.recent.map((row, index) => (
+                        <tr key={index}>
+                          <td className="muted">{shortTime(text(row.occurred_at) || null)}</td>
+                          <td><span className={`pill pill-${outcomeTone(text(row.result))}`}>
+                            {OUTCOMES[text(row.result)] ?? text(row.result)}</span>
+                            {text(row.direction) !== '' && <small className="cell-note">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
+                          <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}</td>
+                          <td>{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                          <td className="muted">{text(row.reason)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      })()}
         </div>
+      </div>
       )}
     </section>
   );

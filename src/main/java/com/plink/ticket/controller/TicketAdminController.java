@@ -84,12 +84,17 @@ public class TicketAdminController {
 
     @GetMapping("/sessions")
     public List<Map<String, Object>> listSessions() {
-        // How many tickets each event has, counted together rather than one event at a time.
-        Map<Long, Long> issued = tickets.countBySession();
+        // Issued, registered and inside for every event, counted together rather than one
+        // event at a time.
+        Map<Long, TicketRepository.ListCounts> counts = tickets.listCounts();
+        TicketRepository.ListCounts none = new TicketRepository.ListCounts(0, 0, 0);
         List<Map<String, Object>> result = new ArrayList<>();
         for (EventSession session : sessions.findAll()) {
             Map<String, Object> row = describe(session);
-            row.put("ticketCount", issued.getOrDefault(session.id, 0L));
+            TicketRepository.ListCounts count = counts.getOrDefault(session.id, none);
+            row.put("ticketCount", count.issued());
+            row.put("boundCount", count.bound());
+            row.put("insideCount", count.inside());
             result.add(row);
         }
         return result;

@@ -26,7 +26,7 @@ export default function TicketIntro() {
             <div className="th-ticket-head">
               <small>ADMISSION</small>
               <b>2026 가을 아트페어</b>
-              <span>11월 8일 (토) · 10:00 – 18:00</span>
+              <span>11월 8일 (일) · 10:00 – 18:00</span>
             </div>
             <div className="th-ticket-body">
               <div className="th-qr">

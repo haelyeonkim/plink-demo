@@ -360,14 +360,24 @@ class ConsoleOperationsTest {
         assertTrue(hours >= 23 && hours <= 24, "setup window " + hours + "h");
     }
 
-    /** The list of events says how many tickets each has, without opening them. */
+    /** The list of events says how many tickets each has, registered and inside, without opening them. */
     @Test void theEventListCountsItsTickets() {
         long sessionId = newSession();
-        tickets.issue(sessionId, "one@example.com", null, null, null);
+        long one = ((Number) tickets.issue(sessionId, "one@example.com", null, null, null).get("ticketId")).longValue();
         tickets.issue(sessionId, "two@example.com", null, null, null);
+        jdbc.update("UPDATE ticket SET status = 'BOUND', holder_id = ?, holder_email = ? WHERE id = ?",
+            holderFor("one@example.com"), "one@example.com", one);
+        jdbc.update("UPDATE ticket_presence SET state = 'INSIDE' WHERE ticket_id = ?", one);
         Map<String, Object> row = adminController.listSessions().stream()
             .filter(r -> ((Number) r.get("id")).longValue() == sessionId).findFirst().orElseThrow();
         assertEquals(2L, row.get("ticketCount"));
+        assertEquals(1L, row.get("boundCount"));
+        assertEquals(1L, row.get("insideCount"));
+        // An event with no tickets still says so, rather than leaving the counts out.
+        long empty = newSession();
+        Map<String, Object> none = adminController.listSessions().stream()
+            .filter(r -> ((Number) r.get("id")).longValue() == empty).findFirst().orElseThrow();
+        assertEquals(0L, none.get("insideCount"));
     }
 
     @Test void oneSeatCannotBeIssuedTwice() {

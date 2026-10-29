@@ -124,11 +124,21 @@ public class TicketRepository {
         return jdbc.query("SELECT * FROM ticket WHERE session_id = ? ORDER BY id", MAPPER, sessionId);
     }
 
-    /** Tickets per event, for the list of events. */
-    public Map<Long, Long> countBySession() {
-        Map<Long, Long> result = new java.util.HashMap<>();
-        jdbc.query("SELECT session_id, COUNT(*) AS issued FROM ticket GROUP BY session_id",
-            rs -> { result.put(rs.getLong("session_id"), rs.getLong("issued")); });
+    /** What the list of events shows for each one, counted for all events at once. */
+    public record ListCounts(long issued, long bound, long inside) {}
+
+    public Map<Long, ListCounts> listCounts() {
+        Map<Long, long[]> tally = new java.util.HashMap<>();
+        jdbc.query("SELECT session_id, COUNT(*) AS issued, "
+            + "SUM(CASE WHEN status = 'BOUND' THEN 1 ELSE 0 END) AS bound "
+            + "FROM ticket GROUP BY session_id",
+            rs -> { tally.put(rs.getLong("session_id"),
+                new long[] { rs.getLong("issued"), rs.getLong("bound"), 0 }); });
+        jdbc.query("SELECT session_id, COUNT(*) AS inside FROM ticket_presence "
+            + "WHERE state = 'INSIDE' GROUP BY session_id",
+            rs -> { tally.computeIfAbsent(rs.getLong("session_id"), id -> new long[3])[2] = rs.getLong("inside"); });
+        Map<Long, ListCounts> result = new java.util.HashMap<>();
+        tally.forEach((id, n) -> result.put(id, new ListCounts(n[0], n[1], n[2])));
         return result;
     }
 
