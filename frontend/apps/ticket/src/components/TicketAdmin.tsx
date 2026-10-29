@@ -13,6 +13,8 @@ import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
 import GateSetupQr, { type SetupTarget } from './GateSetupQr';
+import ConsoleChat from './ConsoleChat';
+import ConsoleAds from './ConsoleAds';
 import {
   BoothRow, CouponFilter, CouponRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, OfferRow, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
@@ -21,7 +23,7 @@ type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
-  gates: '게이트', coupons: '쿠폰', settings: '행사 설정',
+  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '광고판', settings: '행사 설정',
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
@@ -54,6 +56,8 @@ export default function TicketAdmin() {
   // Whether the numbers on screen are live, and when they last changed.
   const [liveState, setLiveState] = useState<LiveState>('connecting');
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  // Bumped whenever the room's chat or board changes, so their screens read again.
+  const [roomTick, setRoomTick] = useState(0);
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
   // A setup link shown as a QR code for the tablet's camera.
   const [setupQr, setSetupQr] = useState<SetupTarget | null>(null);
@@ -194,6 +198,7 @@ export default function TicketAdmin() {
     const live = openLive(`/ws/admin/sessions/${selected}`, message => {
       if (message.type === 'OCCUPANCY') { setOccupancy(message as unknown as Occupancy); setUpdatedAt(new Date()); }
       if (message.type === 'MOVEMENT') void loadSession(selected);
+      if (['CHAT', 'CHAT_REPORT', 'CHAT_HIDE', 'CHAT_LIKE', 'ADS'].includes(message.type)) setRoomTick(value => value + 1);
     }, setLiveState);
     const timer = window.setInterval(() => { void loadSession(selected); }, 30000);
     return () => { live.close(); window.clearInterval(timer); };
@@ -748,6 +753,12 @@ export default function TicketAdmin() {
           {tab === 'overview' && (
             <EventOverview session={session} summary={summary} occupancy={occupancy} gates={gates} />
           )}
+          {tab === 'chat' && (
+            <ConsoleChat sessionId={session.id} tick={roomTick} onNotice={setNotice} onError={setError} />
+          )}
+          {tab === 'ads' && (
+            <ConsoleAds sessionId={session.id} booths={booths} tick={roomTick} onNotice={setNotice} onError={setError} />
+          )}
 
       {session && tab === 'issue' && (
         <div className="console-split">
@@ -893,7 +904,7 @@ export default function TicketAdmin() {
                     </th>
                     <th>입장권</th>
                     {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
-                    <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th aria-label="상세" />
+                    <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th className="link-col" aria-label="링크" />
                   </tr>
                 </thead>
                 <tbody>
@@ -919,12 +930,9 @@ export default function TicketAdmin() {
                         </td>
                         <td className="muted">{row.holderEmail ?? row.issuedToEmail}</td>
                         <td className="muted">{DELIVERY[row.deliveredVia ?? ''] ?? row.deliveredVia ?? '–'}</td>
-                        <td className="chev">
-                          <button type="button" aria-label={`${row.ticketRef} 상세 ${isOpen ? '닫기' : '열기'}`}
-                            onClick={() => setOpenTicket(isOpen ? null : row)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-                          </button>
+                        <td className="row-actions link-col">
+                          <button type="button" className="btn-tiny" onClick={() => { setOpenTicket(row); void showLink(row.ticketId); }}>
+                            링크 보기</button>
                         </td>
                       </tr>
                     );
@@ -942,6 +950,7 @@ export default function TicketAdmin() {
               <Pager page={ticketPage} unit="장" onPage={setTicketPageNo} />
             </div>
 
+            {open && <div className="ticket-detail-scrim" aria-hidden="true" onClick={() => setOpenTicket(null)} />}
             {open && (
               <aside className="ticket-detail" aria-label={`${open.ticketRef} 상세`}>
                 <div className="ticket-detail-head">
@@ -965,6 +974,7 @@ export default function TicketAdmin() {
                   <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
                 </dl>
 
+                {error && <p className="error-text" role="alert">{error}</p>}
                 {issued?.from === 'row' && issued.ticketId === open.ticketId && (
                   <IssuedLink url={issued.url} note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
                 )}

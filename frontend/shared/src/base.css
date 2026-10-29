@@ -1182,6 +1182,7 @@ select, .field select, select.artwork-status {
 .bulk-gap { flex: 1; }
 .tickets-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .tickets-layout.with-detail { grid-template-columns: minmax(0, 1fr) 340px; }
+.ticket-detail-scrim { display: none; }
 .ticket-list { min-width: 760px; }
 .ticket-list td, .ticket-list th { padding: 11px 12px; }
 .ticket-list .check { width: 32px; }
@@ -1238,7 +1239,13 @@ select, .field select, select.artwork-status {
 @media (max-width: 1100px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tickets-layout.with-detail { grid-template-columns: minmax(0, 1fr); }
-  .ticket-detail { position: static; max-height: none; }
+  .ticket-detail-scrim { display: block; position: fixed; inset: 0; z-index: 59; background: rgba(18, 33, 69, .28); }
+  /* No room beside the list: the detail comes over it from the right, so what was
+     clicked is answered where the eye already is, not below every row. */
+  .ticket-detail {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 60; width: min(420px, 100%);
+    max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: -18px 0 40px rgba(18, 33, 69, .16);
+  }
   .console-two, .console-split, .console-split.reverse { grid-template-columns: minmax(0, 1fr); }
 }
 /* Tablet and phone: the menu turns into a row across the top that scrolls sideways. */
@@ -1282,3 +1289,8 @@ select, .field select, select.artwork-status {
 .settings-side .settings-now dt { font-size: 12px; font-weight: 600; color: var(--muted); }
 .settings-side .settings-now dd { margin: 3px 0 0; font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
 .settings-body .settings-form > .btn-primary { margin-top: 16px; }
+/* A cell of buttons stays a table cell: flex on a <td> takes it out of the table's columns. */
+.console-table td.row-actions { display: table-cell; text-align: right; white-space: nowrap; }
+.console-table td.row-actions > * + * { margin-left: 6px; }
+.console-table td.row-actions.stack > * { display: block; width: 100%; margin: 0 0 6px; }
+.console-table td.wrap { white-space: normal; min-width: 200px; overflow-wrap: anywhere; }

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  cancelTransfer, fetchFaceStatus, fetchTicket, reissueTicket, requestOtp, verifyOtp,
-  type TicketCoupon, type TicketView,
+  ApiError, cancelTransfer, fetchCommunity, fetchFaceStatus, fetchTicket, presentTicket, reissueTicket, requestOtp, verifyOtp,
+  type CommunitySummary, type TicketCoupon, type TicketView,
 } from '../ticket/api';
-import { passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
+import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import FaceEnrolment from './FaceEnrolment';
 import Crowding from './Crowding';
@@ -15,6 +15,24 @@ import CouponList from './CouponList';
 import CouponFlash, { type Handover } from './CouponFlash';
 import { reducedMotion } from '../motion';
 import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
+import TicketChat from './TicketChat';
+import TicketAds from './TicketAds';
+
+/** The ticket's own screens, along the bottom once it is registered and open. */
+type View = 'ticket' | 'coupons' | 'chat' | 'ads';
+const VIEWS: View[] = ['ticket', 'coupons', 'chat', 'ads'];
+
+/** What this phone has already read, so the tabs can say when there is more. */
+interface Seen { chat: number; ads: number; alert: number }
+function readSeen(key: string): Seen {
+  try { return { chat: 0, ads: 0, alert: 0, ...JSON.parse(window.localStorage.getItem(key) ?? '{}') }; }
+  catch { return { chat: 0, ads: 0, alert: 0 }; }
+}
+
+function clockOf(value: string): string {
+  const d = new Date(value);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 type Direction = 'IN' | 'OUT';
 
@@ -43,10 +61,6 @@ const RING = (() => {
     + `V${inset + radius}A${radius} ${radius} 0 0 1 ${inset + radius} ${inset}Z`;
 })();
 
-/** A beat, so a finished seal is seen closing rather than only reported. */
-function beat(ms: number): Promise<void> {
-  return new Promise(resolve => { window.setTimeout(resolve, reducedMotion() ? 0 : ms); });
-}
 
 /**
  * How long each step of the ceremony is held on screen.
@@ -86,6 +100,30 @@ export default function TicketPage() {
   const [coupon, setCoupon] = useState<TicketCoupon | null>(null);
   const [used, setUsed] = useState<Handover | null>(null);
   const wasInside = useRef<boolean | null>(null);
+
+  // Which screen is open is part of the address, so the back button walks back through them.
+  const [params, setParams] = useSearchParams();
+  const view: View = VIEWS.includes(params.get('view') as View) ? params.get('view') as View : 'ticket';
+  const go = useCallback((next: View) => {
+    setParams(next === 'ticket' ? {} : { view: next });
+    window.scrollTo(0, 0);
+  }, [setParams]);
+  // The room's chat and board: whether they are open to this holder, and a nudge each
+  // time something new is said there.
+  const [community, setCommunity] = useState<CommunitySummary | null>(null);
+  const [tick, setTick] = useState(0);
+  const seenKey = `plink.seen.${sessionId}.${token.slice(0, 12)}`;
+  const [seen, setSeen] = useState<Seen>(() => readSeen(seenKey));
+  const markSeen = useCallback((kind: keyof Seen, id: number) => {
+    setSeen(current => {
+      if (current[kind] >= id) return current;
+      const next = { ...current, [kind]: id };
+      try { window.localStorage.setItem(seenKey, JSON.stringify(next)); } catch { /* the badge just stays */ }
+      return next;
+    });
+  }, [seenKey]);
+  const markChat = useCallback((id: number) => markSeen('chat', id), [markSeen]);
+  const markAds = useCallback((id: number) => markSeen('ads', id), [markSeen]);
 
   // Set once a fresh link has been mailed: this link is dead from then on, and the page
   // keeps saying where the new one went instead of failing to reload a token that is gone.
@@ -128,9 +166,30 @@ export default function TicketPage() {
       if (message.type === 'PRESENCE' || message.type === 'MOVEMENT' || message.type === 'COUPON') {
         void reload();
       }
+      // The room said something: only that it did, the content comes from the server,
+      // which checks this holder is in.
+      if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE', 'ADS', 'ALERT'].includes(message.type)) setTick(value => value + 1);
     });
     return () => live.close();
   }, [sessionId, token, reload, showing]);
+
+  const presenceKey = ticket?.presence ? `${ticket.presence.inside}` : '';
+  useEffect(() => {
+    if (!showing) return;
+    fetchCommunity(sessionId, token).then(setCommunity).catch(() => setCommunity(null));
+  }, [sessionId, token, showing, tick, presenceKey]);
+
+  // An organiser alert that arrives while the page is open buzzes the phone once; one that
+  // was already there when the page opened only shows.
+  const alertId = community?.alert?.id ?? 0;
+  const lastAlert = useRef<number | null>(null);
+  useEffect(() => {
+    if (community === null) return;
+    if (lastAlert.current !== null && alertId > lastAlert.current && alertId > seen.alert) {
+      try { navigator.vibrate?.(200); } catch { /* not every phone lets a page buzz */ }
+    }
+    lastAlert.current = alertId;
+  }, [community, alertId, seen.alert]);
 
   // A network that will not carry the socket still has to show the holder that they were
   // read: the poll notices the ledger moved, and the screen says so with what it knows.
@@ -250,18 +309,23 @@ export default function TicketPage() {
     await reload();
   });
 
+  /**
+   * The code opens on the passkey that opened the ticket: no second prompt. Only when
+   * that proof has lapsed (idle too long, or hours later) is the passkey asked for again,
+   * and the code follows straight after.
+   */
   const present = (direction: Direction) => guard(async () => {
-    const result = await sealed('open', onStage => runCeremony(sessionId, token, { direction, onStage }));
-    if (result.mode === 'authenticate' && result.intent === 'PRESENT') {
-      // The seal closes, and only then does the code appear - the order the holder is
-      // being told the story in.
-      await beat(600);
-      setGrant(result.grant);
-      return;
+    const open = async () => presentTicket(sessionId, token, direction, await coarsePosition());
+    try {
+      setGrant(await open());
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 403) throw err;
+      const view = await fetchTicket(sessionId, token);
+      if (!view.locked) throw err;
+      await sealed('unlock', onStage => runCeremony(sessionId, token, { intent: 'VIEW', onStage }));
+      await reload();
+      setGrant(await open());
     }
-    // The server answered with a registration: this device is not the bound one.
-    setNotice('이 기기가 입장권에 등록되어 있지 않아요. 등록을 먼저 완료해 주세요.');
-    await reload();
   });
 
   const startTransfer = () => guard(async () => {
@@ -423,16 +487,8 @@ export default function TicketPage() {
 
   const skipOtp = ticketRequiresNoOtp(ticket);
 
-  return (
-    <section className="page-section page-tight ticket-page">
-      <div className="access-card">
-        {/* Both overlays sit on the card itself: what is being decided is this ticket. */}
-        {ceremony && <CeremonySeal ceremony={ceremony} />}
-        {movement && !ceremony && (
-          <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
-        )}
-        {used && !ceremony && !movement && <CouponFlash used={used} spent={false} />}
-        {coupon && (
+  // What a coupon actually promises, opened from the ticket or from the coupon tab.
+  const couponDialog = coupon && (
           <div className="coupon-detail" role="dialog" aria-label="쿠폰 상세">
             <p className="eyebrow center"><span></span> {coupon.booth ?? '쿠폰'}</p>
             <h3>{coupon.title}</h3>
@@ -448,7 +504,94 @@ export default function TicketPage() {
             </dl>
             <button className="btn-secondary" onClick={() => setCoupon(null)}>닫기</button>
           </div>
+  );
+
+  const tabs = ticket.claimed;
+  const entered = community?.entered === true;
+  const liveCoupons = ticket.coupons?.filter(row => row.status !== 'REDEEMED' && row.status !== 'VOID').length ?? 0;
+  const newChat = entered && (community?.latestChatId ?? 0) > seen.chat;
+  const newAds = entered && (community?.latestAdId ?? 0) > seen.ads;
+
+  const alert = community?.alert && community.alert.id > seen.alert ? community.alert : null;
+  const alertBanner = alert && (
+    <aside className="ticket-alert" role="status" aria-live="polite">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8" /></svg>
+      <span>
+        <b>운영팀 알림 <small>{clockOf(alert.createdAt)}</small></b>
+        <span>{alert.body}</span>
+      </span>
+      <button type="button" aria-label="알림 닫기" onClick={() => markSeen('alert', alert.id)}>✕</button>
+    </aside>
+  );
+
+  const tabBar = tabs && (
+    <nav className="ticket-tabs" aria-label="입장권 메뉴">
+      {([
+        ['ticket', '입장권', 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z', null, false],
+        ['coupons', '쿠폰', 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z',
+          liveCoupons > 0 ? String(liveCoupons) : null, false],
+        ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !entered],
+        ['ads', '광고판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
+      ] as Array<[View, string, string, string | null, boolean]>).map(([key, label, icon, badge, locked]) => (
+        <button key={key} type="button" aria-current={view === key ? 'page' : undefined}
+          className={view === key ? 'on' : ''} disabled={locked}
+          aria-label={locked ? `${label} · 입장 후 이용` : badge ? `${label} · ${badge === '새' ? '새 소식' : `${badge}장`}` : label}
+          onClick={() => go(key)}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={locked ? 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4' : icon} /></svg>
+          <span>{label}</span>
+          {badge && !locked && <em aria-hidden="true">{badge}</em>}
+        </button>
+      ))}
+    </nav>
+  );
+
+  if (tabs && view !== 'ticket') {
+    return (
+      <>
+        <section className={`page-section page-tight ticket-tab ticket-tab-${view}`}>
+          {view !== 'chat' && alertBanner}
+          {view === 'coupons' && (
+            <div className="coupon-tab">
+              <header className="tab-head">
+                <h2>쿠폰</h2>
+                <span>쓸 수 있는 쿠폰 {liveCoupons}장</span>
+              </header>
+              {couponDialog}
+              {(ticket.coupons ?? []).length === 0
+                ? <p className="console-none">아직 받은 쿠폰이 없어요. 입장하거나 부스를 지나면 쿠폰이 생길 수 있어요.</p>
+                : <CouponList coupons={ticket.coupons} onOpen={setCoupon} />}
+              <p className="hint-text">쿠폰은 부스 단말에 <b>입장 QR</b>을 비추면 사용돼요. 따로 보여 줄 화면은 없어요.</p>
+            </div>
+          )}
+          {view === 'chat' && (entered
+            ? <TicketChat sessionId={sessionId} token={token} tick={tick} onSeen={markChat} />
+            : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
+          {view === 'ads' && (entered
+            ? <TicketAds sessionId={sessionId} token={token} tick={tick} seenId={seen.ads} onSeen={markAds}
+                onCoupons={() => go('coupons')} />
+            : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
+        </section>
+        {tabBar}
+      </>
+    );
+  }
+
+  return (
+    <>
+    <section className={`page-section page-tight ticket-page${tabs ? ' with-tabs' : ''}`}>
+      {alertBanner}
+      <div className="access-card">
+        {/* Both overlays sit on the card itself: what is being decided is this ticket. */}
+        {ceremony && <CeremonySeal ceremony={ceremony} />}
+        {movement && !ceremony && (
+          <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
         )}
+        {used && !ceremony && !movement && <CouponFlash used={used} spent={false} />}
+        {view === 'ticket' && couponDialog}
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
         <h2>
           {ticket.seat ? `${ticket.seat} 좌석` : '입장권'}
@@ -508,13 +651,32 @@ export default function TicketPage() {
 
             {!faceEnrolled && (
               <p className="hint-text">
-                지문·얼굴 인증을 거친 뒤에만 QR이 열립니다. QR은 10초마다 새로 만들어져요.
+                입장권을 열 때 한 본인 확인으로 QR이 바로 열려요. 오래 쉬었다 오면 지문·얼굴 확인을 한 번 더
+                물어요. QR은 10초마다 새로 만들어져요.
               </p>
             )}
 
-            {/* On the ticket, not behind a menu: a coupon nobody can see is not a
-                coupon. Tapping one opens what it actually promises. */}
-            <CouponList coupons={ticket.coupons} onOpen={setCoupon} />
+            {/* The room's channels, one tap from the ticket once the holder is in. */}
+            <section className="room-tiles" aria-labelledby="room-title">
+              <h3 id="room-title">장내 소식</h3>
+              {entered ? (<>
+                <button type="button" className="room-tile" onClick={() => go('chat')}>
+                  <b>장내 채팅{newChat && <em>새</em>}</b>
+                  {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
+                  <small>{community?.lastMessage
+                    ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
+                    : '아직 메시지가 없어요'}</small>
+                </button>
+                <button type="button" className="room-tile" onClick={() => go('ads')}>
+                  <b>광고판{newAds && <em>새</em>}</b>
+                  <small>{community?.topAd
+                    ? <><strong>{community.topAd.booth}</strong> {community.topAd.title}</>
+                    : '아직 올라온 소식이 없어요'}</small>
+                </button>
+              </>) : (
+                <p className="room-locked">입장하면 장내 채팅과 광고판이 열려요.</p>
+              )}
+            </section>
 
             {/* Folded by default: the door comes first, and the rest is housekeeping. */}
             <button className="manage-toggle" aria-expanded={manage}
@@ -610,6 +772,8 @@ export default function TicketPage() {
       {/* Under the ticket, where somebody standing in the queue is already looking. */}
       {ticket.claimed && !manage && <Crowding sessionId={sessionId} token={token} />}
     </section>
+    {tabBar}
+    </>
   );
 }
 

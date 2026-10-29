@@ -5,6 +5,7 @@ import {
   gateRedeemCoupons, gateRenew, gateScan, gateSync,
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
+import BoothBoard from './BoothBoard';
 import GateVerdict, { type Verdict } from './GateVerdict';
 import type { SealTone } from './SealMark';
 import { clockText } from '../motion';
@@ -175,6 +176,8 @@ export default function GateScanner() {
   // Giving mode: the next code read gets coupons rather than an entry or a handover.
   // Not remembered across reloads, so a tablet never wakes up quietly handing things out.
   const [giving, setGiving] = useState(false);
+  // A booth's own notices on the event's board, written here between scans.
+  const [board, setBoard] = useState(false);
   const [givenOut, setGivenOut] = useState(0);
   const modeGeneration = useRef(0);
   const [sending, setSending] = useState(false);
@@ -765,6 +768,9 @@ export default function GateScanner() {
             {giving ? '쿠폰 부여 끝내기' : '쿠폰 부여'}
           </button>
         )}
+        {gate.role === 'BOOTH' && !giving && (
+          <button className="btn-ghost" onClick={() => { setScanning(false); setBoard(true); }}>광고판</button>
+        )}
         {gate.role !== 'BOOTH' && !giving && (
           <button className="btn-ghost" onClick={() => {
             if (!faceMode) { faceFailures.current = 0; setError(''); }
@@ -778,6 +784,10 @@ export default function GateScanner() {
         )}
       </footer>
       {error && <p className="gate-error" role="alert">{error}</p>}
+      {board && (
+        <BoothBoard gateId={gateId} gateToken={gateToken} booth={gate.booth ?? gate.label ?? '부스'}
+          place={gate.zone} onClose={() => { setBoard(false); setScanning(true); }} />
+      )}
     </section>
   );
 }

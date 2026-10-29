@@ -33,6 +33,7 @@ export default function IssuedLink({ url, phone, note }: { url: string; phone?: 
       <code title={url}>{url}</code>
       <div className="share-row">
         <button type="button" onClick={copy}>{copied ? '복사됨' : '링크 복사'}</button>
+        <a href={url} target="_blank" rel="noopener noreferrer">열기</a>
         <a href={smsHref}>문자로 보내기</a>
         {canShare && <button type="button" onClick={share}>공유 (카카오톡 등)</button>}
       </div>

@@ -1,4 +1,5 @@
 import { mutate } from '@shared/auth';
+import type { Grant } from './codes';
 
 export interface TicketTransfer {
   status: string;
@@ -102,6 +103,18 @@ export async function verifyOtp(sessionId: string, token: string, email: string,
   return read(await mutate(`${ticketBase(sessionId, token)}/otp/verify`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }),
   }));
+}
+
+/**
+ * Opens an entry or exit code on the browser whose passkey already opened this ticket.
+ * Refused with 403 once that proof has lapsed; the page asks for the passkey again.
+ */
+export async function presentTicket(sessionId: string, token: string, direction: 'IN' | 'OUT',
+    position: Record<string, string>): Promise<Grant> {
+  return read(await mutate(`${ticketBase(sessionId, token)}/present`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction, ...position }),
+  })) as Promise<Grant>;
 }
 
 export async function cancelTransfer(sessionId: string, token: string) {
@@ -235,4 +248,118 @@ export async function gateGrantConfirm(gateId: string, gateToken: string, pick: 
     method: 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify({ pick, items }),
   });
   return read(response);
+}
+
+// ---- The room's chat and board, from the holder's ticket ----
+
+export interface CommunitySummary {
+  entered: boolean;
+  latestChatId?: number;
+  inside?: number;
+  notice?: string | null;
+  lastMessage?: { author: string; body: string };
+  adCount?: number;
+  latestAdId?: number;
+  topAd?: { booth: string; title: string };
+  /** An organiser notice raised on every holder's ticket, entered or not. */
+  alert?: { id: number; body: string; createdAt: string };
+}
+
+export interface ChatMessage {
+  id: number; author: string; staff: boolean; notice: boolean; mine: boolean;
+  body: string; likes: number; liked: boolean; createdAt: string; pinnedUntil: string | null;
+  reply?: { id: number; author: string; body: string };
+}
+
+export interface ChatView {
+  me: { nickname: string; canWrite: boolean; blocked: string | null; nextAt: string | null };
+  cooldownSeconds: number; maxLength: number; hotLikes: number; inside: number;
+  notice: ChatMessage | null; hot: ChatMessage | null;
+  messages: ChatMessage[];
+}
+
+export interface AdPost {
+  id: number; category: 'SALE' | 'PROGRAM' | 'NOTICE'; title: string; body?: string;
+  booth: string; boothId: number | null; place: string | null;
+  startsAt: string; endsAt: string | null; pinned: boolean; views: number; createdAt: string;
+  imageId: string | null;
+}
+
+const community = (sessionId: string, token: string) => `${ticketBase(sessionId, token)}/community`;
+
+export async function fetchCommunity(sessionId: string, token: string): Promise<CommunitySummary> {
+  return read(await fetch(community(sessionId, token))) as Promise<CommunitySummary>;
+}
+
+export async function fetchChat(sessionId: string, token: string): Promise<ChatView> {
+  return read(await fetch(`${community(sessionId, token)}/chat`)) as Promise<ChatView>;
+}
+
+export async function sendChat(sessionId: string, token: string, body: string, replyTo: number | null): Promise<ChatMessage> {
+  return read(await mutate(`${community(sessionId, token)}/chat`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, replyTo }),
+  })) as Promise<ChatMessage>;
+}
+
+export async function likeChat(sessionId: string, token: string, id: number): Promise<{ likes: number; liked: boolean }> {
+  return read(await mutate(`${community(sessionId, token)}/chat/${id}/like`, { method: 'POST' })) as
+    Promise<{ likes: number; liked: boolean }>;
+}
+
+export async function reportChat(sessionId: string, token: string, id: number) {
+  return read(await mutate(`${community(sessionId, token)}/chat/${id}/report`, { method: 'POST' }));
+}
+
+export async function fetchAds(sessionId: string, token: string): Promise<AdPost[]> {
+  return read(await fetch(`${community(sessionId, token)}/ads`)) as Promise<AdPost[]>;
+}
+
+export async function fetchAd(sessionId: string, token: string, id: number): Promise<AdPost> {
+  return read(await fetch(`${community(sessionId, token)}/ads/${id}`)) as Promise<AdPost>;
+}
+
+/** A notice's photo; the version in the query keeps a replaced photo from coming out of cache. */
+export function adImageUrl(sessionId: string, token: string, ad: AdPost): string | null {
+  return ad.imageId ? `${community(sessionId, token)}/ads/${ad.id}/image?v=${ad.imageId.slice(0, 8)}` : null;
+}
+
+/** What a board notice is about, as the page says it. */
+export const AD_CATEGORY: Record<string, string> = { SALE: '할인·이벤트', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
+
+// ---- A booth's own notices, from its terminal ----
+
+export interface BoothAd extends AdPost { body: string; hidden: boolean; state: 'LIVE' | 'SCHEDULED' | 'ENDED' | 'HIDDEN' }
+
+export async function gateAds(gateId: string, gateToken: string): Promise<BoothAd[]> {
+  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/ads`, { headers: gateHeaders(gateToken) })) as Promise<BoothAd[]>;
+}
+
+export async function gateAdSave(gateId: string, gateToken: string, body: Record<string, unknown>, id?: number): Promise<BoothAd> {
+  const url = `/api/gates/${encodeURIComponent(gateId)}/ads${id ? `/${id}` : ''}`;
+  return read(await fetch(url, {
+    method: id ? 'PUT' : 'POST', headers: gateHeaders(gateToken, true), body: JSON.stringify(body),
+  })) as Promise<BoothAd>;
+}
+
+export async function gateAdEnd(gateId: string, gateToken: string, id: number) {
+  return read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/ads/${id}/end`, {
+    method: 'POST', headers: gateHeaders(gateToken),
+  }));
+}
+
+/** Uploads a photo for a notice the booth is writing; it is attached when the notice is saved. */
+export async function gateAdPhoto(gateId: string, gateToken: string, photo: Blob): Promise<string> {
+  const form = new FormData();
+  form.append('file', photo, 'photo.jpg');
+  const result = await read(await fetch(`/api/gates/${encodeURIComponent(gateId)}/ads/images`, {
+    method: 'POST', headers: gateHeaders(gateToken), body: form,
+  })) as { imageId: string };
+  return result.imageId;
+}
+
+/** A booth notice's photo, as an address the page can show: the terminal's token rides in a header. */
+export async function gateAdPhotoUrl(gateId: string, gateToken: string, id: number): Promise<string> {
+  const response = await fetch(`/api/gates/${encodeURIComponent(gateId)}/ads/${id}/image`, { headers: gateHeaders(gateToken) });
+  if (!response.ok) throw new Error('사진을 불러오지 못했어요.');
+  return URL.createObjectURL(await response.blob());
 }

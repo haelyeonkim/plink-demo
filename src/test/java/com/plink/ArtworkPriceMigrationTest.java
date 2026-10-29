@@ -28,7 +28,7 @@ class ArtworkPriceMigrationTest {
         for (int i = 0; i < prices.length; i++) jdbc.update(
             "INSERT INTO artwork(owner_sub,source_content_id,position,title,price_text,sale_status) VALUES ('user',1,?,'Work',?,'sold')", i, prices[i]);
         var current = Flyway.configure().dataSource(source).locations("classpath:db/migration").load();
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(37 - previousVersion);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(39 - previousVersion);
         current.validate();
         assertThat(jdbc.queryForObject("SELECT price_amount FROM artwork WHERE position=0", java.math.BigDecimal.class)).isEqualByComparingTo("5000.25");
         assertThat(jdbc.queryForObject("SELECT price_currency FROM artwork WHERE position=0", String.class)).isEqualTo("USD");
