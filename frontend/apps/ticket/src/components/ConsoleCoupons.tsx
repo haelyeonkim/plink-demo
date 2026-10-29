@@ -365,7 +365,7 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
                     <input type="checkbox" aria-label="이 페이지 전체 선택" checked={allPicked}
                       onChange={() => setPicked(allPicked ? new Set() : new Set(page.items.map(row => row.couponId)))} />
                   </th>
-                  <th>쿠폰</th><th>입장권</th><th>받은 때</th><th>상태</th><th>사용</th>
+                  <th>쿠폰</th><th>입장권</th><th>발급일시</th><th>상태</th><th>사용</th>
                 </tr>
               </thead>
               <tbody>
@@ -426,7 +426,7 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
               <section className="ticket-detail-part">
                 <h4>기록</h4>
                 <ol className="timeline">
-                  {open.issuedAt && <li><span className="muted">{shortTime(open.issuedAt)}</span><span>받음</span></li>}
+                  {open.issuedAt && <li><span className="muted">{shortTime(open.issuedAt)}</span><span>발급</span></li>}
                   {open.redeemedAt && <li><span className="muted">{shortTime(open.redeemedAt)}</span><span>사용 · {open.redeemedAtGate ?? '운영자 처리'}</span></li>}
                   {open.status === 'VOID' && <li><span className="muted">–</span><span>운영자가 무효로 함</span></li>}
                 </ol>

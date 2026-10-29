@@ -3,6 +3,13 @@ import type { TicketCoupon } from '../ticket/api';
 import { boothColor, boothInitial, liveGroups, type CouponGroup } from '../ticket/coupons';
 import { clockText } from '../motion';
 
+/** "10.29 13:45": the day as well as the time, since a coupon can wait from one day to the next. */
+function issuedText(at: string): string {
+  const d = new Date(at);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const QrIcon = ({ size = 20 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -51,9 +58,9 @@ export default function CouponWallet({ coupons, busy, onCode, onNews }: {
 
       <div className="wallet-tabs" role="tablist" aria-label="쿠폰 보기">
         <button type="button" role="tab" aria-selected={shown === 'live'} className={shown === 'live' ? 'on' : ''}
-          onClick={() => setShown('live')}>쓸 수 있음 {liveCount}</button>
+          onClick={() => setShown('live')}>보유쿠폰 {liveCount}</button>
         <button type="button" role="tab" aria-selected={shown === 'used'} className={shown === 'used' ? 'on' : ''}
-          onClick={() => setShown('used')}>쓴 쿠폰 {used.length}</button>
+          onClick={() => setShown('used')}>사용함 {used.length}</button>
       </div>
 
       {shown === 'live' && (<>
@@ -93,7 +100,7 @@ export default function CouponWallet({ coupons, busy, onCode, onNews }: {
       </>)}
 
       {shown === 'used' && (
-        used.length === 0 ? <p className="console-none">아직 쓴 쿠폰이 없어요.</p> : (
+        used.length === 0 ? <p className="console-none">아직 사용한 쿠폰이 없어요.</p> : (
           <ul className="stub-list">
             {used.map(coupon => (
               <li key={coupon.couponId} className="stub stub-used">
@@ -133,7 +140,7 @@ export default function CouponWallet({ coupons, busy, onCode, onNews }: {
               <li>한 장이 쓰이고, 남은 장수가 바로 보여요</li>
             </ol>
             <dl className="wallet-facts">
-              {current.first.issuedAt && <><dt>받은 때</dt><dd>{clockText(current.first.issuedAt)}</dd></>}
+              {current.first.issuedAt && <><dt>발급일시</dt><dd>{issuedText(current.first.issuedAt)}</dd></>}
               <dt>남은 장수</dt><dd>{current.ids.length}장{current.ids.length > 1 ? ' · 한 번에 한 장씩 써요' : ''}</dd>
             </dl>
             <button type="button" className="btn-primary wallet-use" disabled={busy}
