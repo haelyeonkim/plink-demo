@@ -573,8 +573,7 @@ export default function TicketPage() {
             ? <TicketChat sessionId={sessionId} token={token} tick={tick} onSeen={markChat} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'ads' && (entered
-            ? <TicketAds sessionId={sessionId} token={token} tick={tick} seenId={seen.ads} onSeen={markAds}
-                onCoupons={() => go('coupons')} />
+            ? <TicketAds sessionId={sessionId} token={token} tick={tick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
         </section>
         {tabBar}

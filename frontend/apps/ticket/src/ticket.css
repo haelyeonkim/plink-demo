@@ -917,13 +917,6 @@ body:has(.ticket-tabs) .footer { padding-bottom: 90px; }
 .ad-tag.pin { background: var(--ink); color: white; }
 .ad-tag.fresh { background: var(--accent-soft); color: color-mix(in srgb, var(--blue) 75%, black); }
 .ad-detail { text-align: left; display: flex; flex-direction: column; gap: 12px; }
-.ad-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; font-size: 14px; font-weight: 700; color: var(--ink); padding: 8px 0; cursor: pointer; }
-.ad-detail h2 { font-size: 21px; line-height: 1.35; margin: 0; letter-spacing: -0.5px; }
-.ad-detail .muted { font-size: 11.5px; color: var(--muted); }
-.ad-booth { display: flex; gap: 10px; align-items: center; background: #f7f8fb; border-radius: 12px; padding: 10px 12px; }
-.ad-booth .ad-thumb { width: 36px; height: 36px; font-size: 15px; border-radius: 10px; }
-.ad-booth b, .ad-booth small { display: block; }
-.ad-booth small { font-size: 12px; color: var(--muted); }
 .ad-body { font-size: 14.5px; line-height: 1.7; color: #3d4663; white-space: pre-line; margin: 0; }
 
 /* The chat: a room that fills the screen above the tabs. */
@@ -1025,9 +1018,6 @@ body:has(.ticket-tabs) .footer { padding-bottom: 90px; }
 
 /* A notice's photo: in the list it takes the place of the booth's initial. */
 img.ad-thumb { object-fit: cover; padding: 0; background: #f1f2f7; }
-.ad-photo {
-  display: block; width: 100%; max-height: 340px; object-fit: cover; border-radius: 14px; background: #f1f2f7;
-}
 .booth-board-label { font-size: 14px; font-weight: 700; color: #c9cfe0; }
 .booth-board-label small, .booth-board-form label small { font-weight: 400; color: #a9b1c6; }
 .booth-board-photo { display: flex; flex-direction: column; gap: 8px; }
@@ -1399,3 +1389,30 @@ body:has(.chat-room) .header { display: none; }
 .cr-sheet-actions button.danger { color: #b3362b; }
 .cr-sheet-close { border: 0; background: #f1f2f7; color: var(--ink); font: inherit; font-size: 15px; font-weight: 700; padding: 13px; border-radius: 14px; cursor: pointer; }
 body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
+
+/* A notice read on its own: the photo across the screen, then what, until when, where. */
+.ad-hero { position: relative; margin: -10px -16px 4px; background: #f1f2f7; }
+.ad-hero img { display: block; width: 100%; max-height: 300px; object-fit: cover; }
+@media (min-width: 621px) { .ad-hero { margin: 0 0 4px; border-radius: 14px; overflow: hidden; } }
+.ad-back {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none;
+  font: inherit; font-size: 15px; font-weight: 700; color: var(--ink); padding: 8px 4px 8px 0; cursor: pointer;
+}
+.ad-back.on-photo {
+  position: absolute; left: 12px; top: 12px; width: 40px; height: 40px; padding: 0; justify-content: center;
+  border-radius: 99px; background: rgba(18, 33, 69, .55); color: white;
+}
+.ad-detail .ad-tag { font-size: 11.5px; padding: 2px 8px; border-radius: 6px; }
+.ad-detail .ad-tag.notice { background: var(--ink); color: white; }
+.ad-when { font-size: 12px; font-weight: 700; color: #1c6b50; }
+.ad-when.always { color: var(--muted); }
+.ad-detail h2 { font-size: 22px; line-height: 1.35; margin: 0; letter-spacing: -0.6px; }
+.ad-where { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: #3d4663; flex-wrap: wrap; }
+.ad-where svg, .ad-where span { color: var(--muted); }
+.ad-where .ad-dot { color: #c4c8d4; }
+.ad-detail hr { width: 100%; border: 0; border-top: 1px solid #eceef4; margin: 2px 0; }
+.ad-detail .ad-body { font-size: 15px; line-height: 1.75; color: #2b3450; }
+.ad-meta { margin: 4px 0 0; font-size: 11.5px; color: #8a90a2; }
+.ad-detail .ad-tag.pin { background: #fff4dc; color: #8a5300; }
+/* The last coupon clears the tab bar with room to spare, home indicator included. */
+.ticket-tab-coupons { padding-bottom: calc(128px + env(safe-area-inset-bottom)); }

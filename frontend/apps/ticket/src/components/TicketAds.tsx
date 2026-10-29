@@ -9,15 +9,24 @@ function hm(value: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** "15:00까지 · 2시간 남음": how long a notice still stands, for the holder reading it now. */
+function remaining(ad: AdPost): string {
+  if (!ad.endsAt) return '종일';
+  const minutes = Math.max(0, Math.round((new Date(ad.endsAt).getTime() - Date.now()) / 60000));
+  const left = minutes >= 60 ? `${Math.floor(minutes / 60)}시간${minutes % 60 ? ` ${minutes % 60}분` : ''} 남음`
+    : minutes > 0 ? `${minutes}분 남음` : '곧 끝나요';
+  return `${hm(ad.endsAt)}까지 · ${left}`;
+}
+
 /** "~15:00", or "종일" for a notice with no end. */
 function until(ad: AdPost): string {
   return ad.endsAt ? `~${hm(ad.endsAt)}` : '종일';
 }
 
 /** The event's board: booth and organiser notices, the organiser's pinned first. */
-export default function TicketAds({ sessionId, token, tick, seenId, onSeen, onCoupons }: {
+export default function TicketAds({ sessionId, token, tick, seenId, onSeen }: {
   sessionId: string; token: string; tick: number; seenId: number;
-  onSeen: (latestId: number) => void; onCoupons: () => void;
+  onSeen: (latestId: number) => void;
 }) {
   const [ads, setAds] = useState<AdPost[] | null>(null);
   const [filter, setFilter] = useState<Filter>('ALL');
@@ -43,26 +52,39 @@ export default function TicketAds({ sessionId, token, tick, seenId, onSeen, onCo
   }
 
   if (open) {
+    const back = (
+      <button type="button" className={open.imageId ? 'ad-back on-photo' : 'ad-back'} aria-label="알림판으로" onClick={() => setOpen(null)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        {!open.imageId && <span>알림판</span>}
+      </button>
+    );
     return (
       <article className="ad-detail">
-        <button type="button" className="ad-back" onClick={() => setOpen(null)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
-            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-          알림판</button>
-        {open.imageId && <img className="ad-photo" src={adImageUrl(sessionId, token, open)!} alt={`${open.booth} 사진`} />}
+        {open.imageId ? (
+          <div className="ad-hero">
+            <img src={adImageUrl(sessionId, token, open)!} alt={`${open.booth} 사진`} />
+            {back}
+          </div>
+        ) : back}
         <div className="ad-tags">
           <span className={`ad-tag ${open.category.toLowerCase()}`}>{AD_CATEGORY[open.category]}</span>
-          <span className="muted">{hm(open.createdAt)} 올림 · 조회 {open.views.toLocaleString()}</span>
+          {open.pinned && <span className="ad-tag pin">고정</span>}
+          <span className={`ad-when${open.endsAt ? '' : ' always'}`}>{remaining(open)}</span>
         </div>
         <h2>{open.title}</h2>
-        <div className="ad-booth">
-          <span className={`ad-thumb ${open.category.toLowerCase()}`} aria-hidden="true">{open.booth.slice(0, 1)}</span>
-          <span><b>{open.booth}</b><small>{[open.place, open.endsAt ? `${hm(open.endsAt)}까지` : '종일'].filter(Boolean).join(' · ')}</small></span>
-        </div>
+        <p className="ad-where">
+          <b>{open.booth}</b>
+          {open.place && <>
+            <span aria-hidden="true" className="ad-dot">·</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>
+            <span>{open.place}</span>
+          </>}
+        </p>
+        <hr />
         <p className="ad-body">{open.body}</p>
-        {open.boothId !== null && (
-          <button type="button" className="btn-secondary" onClick={onCoupons}>내 쿠폰 보기</button>
-        )}
+        <p className="ad-meta">{hm(open.createdAt)} 올림 · 조회 {open.views.toLocaleString()}</p>
       </article>
     );
   }
