@@ -96,6 +96,8 @@ export default function TicketAdmin() {
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
   const [booths, setBooths] = useState<BoothRow[]>([]);
+  // Booth notices waiting for approval: the 알림판 entry in the menu says how many.
+  const [adsPending, setAdsPending] = useState(0);
   // The hand-out sheet: open with a ticket to give to that one person, or with null to
   // choose the recipients inside. `pickTickets` is that choice - everybody, or a few.
   const [couponSheet, setCouponSheet] =
@@ -172,9 +174,10 @@ export default function TicketAdmin() {
     const get = (path: string) =>
       fetch(`/api/admin/sessions/${id}/${path}`, { signal: controller.signal }).then(read);
     try {
-      const [nextSummary, nextOccupancy, nextGates, nextBooths] =
-        await Promise.all([get('tickets/summary'), get('occupancy'), get('gates'), get('booths')]);
+      const [nextSummary, nextOccupancy, nextGates, nextBooths, nextAds] =
+        await Promise.all([get('tickets/summary'), get('occupancy'), get('gates'), get('booths'), get('ads/summary')]);
       if (controller.signal.aborted) return;
+      setAdsPending((nextAds as { pending: number }).pending ?? 0);
       setSummary(nextSummary);
       setOccupancy(nextOccupancy);
       setGates(nextGates);
@@ -202,6 +205,7 @@ export default function TicketAdmin() {
     setOccupancy(null);
     setGates([]);
     setBooths([]);
+    setAdsPending(0);
     setTicketPage(EMPTY_PAGE);
     return () => { sessionLoad.current?.abort(); };
   }, [selected]);
@@ -254,6 +258,12 @@ export default function TicketAdmin() {
       if (message.type === 'OCCUPANCY') { setOccupancy(message as unknown as Occupancy); setUpdatedAt(new Date()); }
       if (message.type === 'MOVEMENT') reloadSoon();
       if (['CHAT', 'CHAT_REPORT', 'CHAT_HIDE', 'CHAT_LIKE', 'ADS'].includes(message.type)) setRoomTick(value => value + 1);
+      // A booth sent a notice in, or one was answered: only the badge's count is read again.
+      if (message.type === 'ADS') {
+        fetch(`/api/admin/sessions/${selected}/ads/summary`).then(read)
+          .then(next => setAdsPending((next as { pending: number }).pending ?? 0))
+          .catch(() => { /* the next full read brings it */ });
+      }
     }, setLiveState);
     const timer = window.setInterval(() => { void loadSession(selected); }, 30000);
     return () => {
@@ -843,7 +853,8 @@ export default function TicketAdmin() {
           gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
           gatesAll={gates.filter(gate => gate.role !== 'BOOTH').length}
           terminalsUp={gates.filter(gate => gate.role === 'BOOTH' && gate.boundDevice).length}
-          terminalsAll={gates.filter(gate => gate.role === 'BOOTH').length} />
+          terminalsAll={gates.filter(gate => gate.role === 'BOOTH').length}
+          adsPending={adsPending} />
         <div className="console-main">
           <div className="console-head">
             <div>

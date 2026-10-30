@@ -6,11 +6,13 @@ export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates
 const WHEN_LABEL = { today: '오늘 진행', upcoming: '예정', past: '종료' } as const;
 
 /** An event's own menu, down the left of its console. */
-export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll, terminalsUp, terminalsAll }: {
+export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll, terminalsUp, terminalsAll, adsPending = 0 }: {
   session: SessionRow; tab: ConsoleTab;
   issued: number; inside: number; gatesUp: number; gatesAll: number;
   /** Booth terminals, counted apart from the doors. */
   terminalsUp: number; terminalsAll: number;
+  /** Booth notices waiting for the organiser's approval. */
+  adsPending?: number;
 }) {
   const when = eventWhen(session.startsAt);
   const groups: Array<[string, ConsoleNavEntry<ConsoleTab>[]]> = [
@@ -32,7 +34,8 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
     ]],
     ['장내 소통', [
       { key: 'chat', label: '장내 채팅', icon: NAV_ICONS.chat },
-      { key: 'ads', label: '알림판', icon: NAV_ICONS.ads },
+      { key: 'ads', label: '알림판', icon: NAV_ICONS.ads,
+        ...(adsPending > 0 ? { badge: adsPending.toLocaleString(), badgeLabel: `승인 대기 ${adsPending}건`, warn: true } : {}) },
     ]],
     ['설정', [{ key: 'settings', label: '이벤트 설정', icon: NAV_ICONS.settings }]],
   ];

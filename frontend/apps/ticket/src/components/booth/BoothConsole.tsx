@@ -6,12 +6,13 @@ import BoothOffers from './BoothOffers';
 import BoothIssue from './BoothIssue';
 import BoothScan from './BoothScan';
 import BoothCoupons from './BoothCoupons';
+import BoothBoard from './BoothBoard';
 
-export type BoothTab = 'overview' | 'offers' | 'issue' | 'scan' | 'coupons';
+export type BoothTab = 'overview' | 'offers' | 'issue' | 'scan' | 'coupons' | 'board';
 
 /** A manager opens on the booth at a glance; a terminal opens on its camera. */
-export const MANAGER_TABS: BoothTab[] = ['overview', 'offers', 'issue', 'scan', 'coupons'];
-export const TERMINAL_TABS: BoothTab[] = ['scan', 'overview', 'offers', 'issue', 'coupons'];
+export const MANAGER_TABS: BoothTab[] = ['overview', 'offers', 'issue', 'scan', 'coupons', 'board'];
+export const TERMINAL_TABS: BoothTab[] = ['scan', 'overview', 'offers', 'issue', 'coupons', 'board'];
 
 const TAB: Record<BoothTab, [string, string]> = {
   overview: ['현황', 'M4 20V10M10 20V4M16 20v-7M22 20H2'],
@@ -19,6 +20,7 @@ const TAB: Record<BoothTab, [string, string]> = {
   issue: ['발급', 'M22 2 11 13M22 2l-7 20-4-9-9-4z'],
   scan: ['스캔', 'M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M7 12h10'],
   coupons: ['쿠폰 목록', 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01'],
+  board: ['알림판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12'],
 };
 
 /**
@@ -29,7 +31,8 @@ export function BoothTabBar({ tabs, tab, onTab, dark = false, disabled = false }
   tabs: BoothTab[]; tab: BoothTab; onTab: (tab: BoothTab) => void; dark?: boolean; disabled?: boolean;
 }) {
   return (
-    <nav className={`booth-tabs${dark ? ' booth-tabs-dark' : ''}`} aria-label="부스 관리">
+    <nav className={`booth-tabs${dark ? ' booth-tabs-dark' : ''}`} aria-label="부스 관리"
+      style={{ '--tabs': tabs.length } as React.CSSProperties}>
       {tabs.map(key => {
         const [label, icon] = TAB[key];
         return (
@@ -106,6 +109,7 @@ export default function BoothConsole({ client, tabs, tab, onTab, onLost, onNotic
         {tab === 'issue' && <BoothIssue {...props} />}
         {tab === 'scan' && <BoothScan {...props} />}
         {tab === 'coupons' && <BoothCoupons {...props} />}
+        {tab === 'board' && <BoothBoard {...props} />}
       </div>
       {bar}
     </section>
