@@ -4,6 +4,7 @@ import {
 } from '../ticket/api';
 import { boothColor } from '../ticket/coupons';
 import type { ChatCounts } from '../ticket/coalesce';
+import { ThumbDown, ThumbUp } from './Thumbs';
 
 function clock(value: string): string {
   const d = new Date(value);
@@ -63,20 +64,6 @@ function useFitToScreen(onFit: () => void) {
     };
   }, [onFit]);
 }
-
-const ThumbUp = ({ filled = false, size = 14 }: { filled?: boolean; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
-    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM7 11l4-8a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 17.3 20H7" />
-  </svg>
-);
-
-const ThumbDown = ({ filled = false, size = 14 }: { filled?: boolean; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
-    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M17 13V4h3a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1zM17 13l-4 8a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-2-2.3l1.2-7A2 2 0 0 1 6.7 4H17" />
-  </svg>
-);
 
 /** Who said a line, as a key: a run of lines from one person shows their name once. */
 const speaker = (m: ChatMessage) => (m.staff ? 'staff' : m.mine ? 'me' : m.author);

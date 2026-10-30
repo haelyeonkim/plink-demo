@@ -1598,3 +1598,6 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
 
 /* Naming a terminal. */
 .gate-name { max-width: 460px; width: calc(100% - 32px); }
+.reactions .reaction { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-variant-numeric: tabular-nums; }
+.reactions .reaction:first-child { margin-left: 0; }
+.reactions .reaction.none { color: #9aa1b3; }

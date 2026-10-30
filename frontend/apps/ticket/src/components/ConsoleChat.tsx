@@ -5,6 +5,7 @@ import { read, shortTime } from '../console/model';
 import { openLive } from '../ticket/live';
 import { chatCounts, useCoalesced } from '../ticket/coalesce';
 import ConsoleChatPeople, { type BanTarget, type ChatPerson } from './ConsoleChatPeople';
+import { ThumbDown, ThumbUp } from './Thumbs';
 
 interface FeedRow {
   id: number; author: string; ticketId: number | null; ticketRef: string | null; staff: boolean; notice: boolean;
@@ -173,8 +174,11 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
                       <small className="cell-note">{shortTime(row.createdAt)}{row.ticketRef ? ` · ${row.ticketRef}` : ''}</small></td>
                     <td className="chat-feed-body">{row.body}</td>
                     <td className="num reactions">
-                      <span title="좋아요">♥ {row.likes}</span>
-                      {row.dislikes > 0 && <small className="cell-note" title="싫어요">싫어요 {row.dislikes}</small>}
+                      {/* As holders see them: thumbs up and down, both always counted. */}
+                      <span className={`reaction${row.likes > 0 ? '' : ' none'}`} aria-label={`좋아요 ${row.likes}`}>
+                        <ThumbUp size={13} /> {row.likes}</span>
+                      <span className={`reaction${row.dislikes > 0 ? '' : ' none'}`} aria-label={`싫어요 ${row.dislikes}`}>
+                        <ThumbDown size={13} /> {row.dislikes}</span>
                     </td>
                     <td>
                       <span className={`pill pill-${row.hidden ? 'wait' : row.reports > 0 ? 'off' : row.pinned ? 'in' : row.staff ? 'out' : 'ok'}`}>
