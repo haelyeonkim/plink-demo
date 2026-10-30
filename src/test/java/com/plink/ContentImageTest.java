@@ -3,6 +3,7 @@ package com.plink;
 import com.plink.service.ContentImageService;
 import com.plink.repository.LinkRepository;
 import com.plink.repository.LinkRecipientRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,8 @@ class ContentImageTest {
     }
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+
+    @BeforeEach void admins() { AdminArtworkTest.ensureAdmins(jdbc); }
     @Autowired ContentImageService images;
     @Autowired LinkRepository links;
     @Autowired LinkRecipientRepository recipients;

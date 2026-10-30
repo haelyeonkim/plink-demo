@@ -3,6 +3,7 @@ package com.plink;
 import com.plink.account.AdminAccount;
 import com.plink.account.AdminPrincipal;
 import com.plink.repository.ContentRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,9 +30,24 @@ class AdminArtworkTest {
     @Autowired ContentRepository contents;
     @Autowired JdbcTemplate jdbc;
 
+    @BeforeEach void accounts() { ensureAdmins(jdbc); }
+
+    /**
+     * The session check holds a principal to its row, so the accounts {@link #admin}
+     * signs in as have to exist. Idempotent, for classes that keep their rows.
+     */
+    static void ensureAdmins(JdbcTemplate jdbc) {
+        for (long id : new long[] { 998, 999 }) {
+            jdbc.update("MERGE INTO admin_account (id, email, password_hash, slug, can_links, can_tickets, is_owner) "
+                + "KEY (id) VALUES (?, ?, 'unused', ?, TRUE, TRUE, ?)",
+                id, "admin" + id + "@example.com", "admin-" + id, id == 999);
+        }
+    }
+
     static RequestPostProcessor admin(boolean owner) {
         var account = new AdminAccount();
-        account.id = 999; account.email = "admin@example.com";
+        account.id = owner ? 999 : 998; account.email = "admin" + account.id + "@example.com";
+        account.passwordHash = "unused";
         account.owner = owner; account.canLinks = true; account.canTickets = true;
         var principal = new AdminPrincipal(account);
         return authentication(new UsernamePasswordAuthenticationToken(principal, null,

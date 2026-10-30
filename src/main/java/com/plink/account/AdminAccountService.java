@@ -11,6 +11,8 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
+import com.plink.service.AttemptLimiter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,13 +25,17 @@ import java.util.Locale;
 /**
  * Local administrator sign-in.
  *
- * <p>Failures are counted per account and lock it for a while, so a password is not
- * open to unlimited guessing; a wrong address and a wrong password give the same answer,
- * so the form does not reveal which addresses exist.
+ * <p>Failures are counted per account and client address together, and lock that pair
+ * for a while, so a password is not open to unlimited guessing - yet somebody guessing
+ * from elsewhere cannot lock the owner out of their own account. A client is also capped
+ * across all accounts. A wrong address and a wrong password give the same answer, so the
+ * form does not reveal which addresses exist.
  */
 @Service
 public class AdminAccountService {
     static final int MAX_FAILURES = 5;
+    /** Per client across every account: enough for a shared office, not for a sweep. */
+    static final int MAX_CLIENT_FAILURES = 20;
     static final Duration LOCKOUT = Duration.ofMinutes(15);
     static final int MIN_PASSWORD_LENGTH = 10;
 
@@ -37,11 +43,15 @@ public class AdminAccountService {
 
     private final AdminAccountRepository accounts;
     private final PasswordEncoder encoder;
+    private final AttemptLimiter limiter;
     private final HttpSessionSecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
+    private final HttpSessionCsrfTokenRepository csrfTokens = new HttpSessionCsrfTokenRepository();
 
-    public AdminAccountService(AdminAccountRepository accounts, PasswordEncoder encoder) {
+    public AdminAccountService(AdminAccountRepository accounts, PasswordEncoder encoder,
+            AttemptLimiter limiter) {
         this.accounts = accounts;
         this.encoder = encoder;
+        this.limiter = limiter;
     }
 
     public static String normalize(String email) {
@@ -58,21 +68,23 @@ public class AdminAccountService {
     public AdminPrincipal signIn(String rawEmail, String password, HttpServletRequest request,
             jakarta.servlet.http.HttpServletResponse response) {
         String email = normalize(rawEmail);
-        AdminAccount account = accounts.findByEmail(email).orElse(null);
-        if (account == null || password == null || password.isEmpty()) {
-            throw refuse();
-        }
-        if (account.locked()) {
+        String client = request.getRemoteAddr();
+        String pair = "admin:" + email + "|" + client;
+        String anyAccount = "admin-client:" + client;
+        if (limiter.blocked(pair, MAX_FAILURES) || limiter.blocked(anyAccount, MAX_CLIENT_FAILURES)) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "로그인 시도가 많아 잠시 잠겼어요. 15분 후에 다시 시도해 주세요.");
         }
-        if (!encoder.matches(password, account.passwordHash)) {
-            int failures = account.failedLogins + 1;
-            Timestamp lockedUntil = failures >= MAX_FAILURES
-                ? Timestamp.from(Instant.now().plus(LOCKOUT)) : null;
-            accounts.recordFailure(account.id, lockedUntil);
+        AdminAccount account = accounts.findByEmail(email).orElse(null);
+        if (account == null || password == null || password.isEmpty()
+                || !encoder.matches(password, account.passwordHash)) {
+            limiter.fail(pair, LOCKOUT);
+            limiter.fail(anyAccount, LOCKOUT);
+            // Still counted on the row, for the record, but no longer a lock on it.
+            if (account != null) accounts.recordFailure(account.id, null);
             throw refuse();
         }
+        limiter.clear(pair);
         accounts.recordSuccess(account.id);
 
         // A fresh session id on sign-in, so a session fixed before login cannot be reused.
@@ -82,6 +94,18 @@ public class AdminAccountService {
         } else {
             request.getSession(true);
         }
+        // And a fresh CSRF token: one read before sign-in must not carry over into it.
+        // The next read of the session issues a new one.
+        csrfTokens.saveToken(null, request, response);
+        return establish(account, request, response);
+    }
+
+    /**
+     * Puts this account's current state into the request's session: at sign-in, and
+     * again after the account changed under a session that is allowed to keep going.
+     */
+    public AdminPrincipal establish(AdminAccount account, HttpServletRequest request,
+            jakarta.servlet.http.HttpServletResponse response) {
         AdminPrincipal principal = new AdminPrincipal(account);
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
             principal, null, AuthorityUtils.createAuthorityList(
@@ -91,6 +115,11 @@ public class AdminAccountService {
         SecurityContextHolder.setContext(context);
         contexts.saveContext(context, request, response);
         return principal;
+    }
+
+    /** Re-reads the signed-in account, so the session that just changed it stays valid. */
+    public void refresh(long id, HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        accounts.findById(id).ifPresent(account -> establish(account, request, response));
     }
 
     @Transactional

@@ -1,6 +1,10 @@
 package com.plink.config;
 
+import com.plink.account.AdminAccountRepository;
 import com.plink.account.AdminPrincipal;
+import com.plink.account.AdminSessionCheck;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +17,11 @@ import org.springframework.security.config.oauth2.client.CommonOAuth2Provider;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.core.Authentication;
@@ -21,9 +30,14 @@ import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 @Configuration
 public class SecurityConfig {
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+
+    /** The error code a refused Google account carries to the failure handler. */
+    static final String GOOGLE_DENIED = "access_denied";
 
     /**
      * Grants a console to an account that carries its scope.
@@ -57,7 +71,10 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             @Value("${plink.auth.google-client-id}") String clientId,
             @Value("${plink.auth.google-client-secret}") String clientSecret,
-            @Value("${plink.auth.base-url}") String baseUrl) throws Exception {
+            @Value("${plink.auth.base-url}") String baseUrl,
+            @Value("${plink.auth.google-allowed-domains:}") String allowedDomains,
+            @Value("${plink.auth.google-allowed-emails:}") String allowedEmails,
+            AdminAccountRepository accounts) throws Exception {
         http.authorizeHttpRequests(auth -> auth
                 // Live channels authorise themselves at the handshake: the holder's by
                 // the token in the path, the console's by the signed-in session.
@@ -98,6 +115,8 @@ public class SecurityConfig {
         // Gate terminals carry no session cookie: their authority is the X-Gate-Token
         // header, which a cross-site page cannot set, so CSRF adds nothing there.
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/gates/**", "/ws/**"));
+        // Before any authorisation decision: a session reflects the account as it is now.
+        http.addFilterAfter(new AdminSessionCheck(accounts), SecurityContextHolderFilter.class);
         if (!clientId.trim().isEmpty() && !clientSecret.trim().isEmpty()) {
             ClientRegistration google = CommonOAuth2Provider.GOOGLE.getBuilder("google")
                 .clientId(clientId).clientSecret(clientSecret)
@@ -110,12 +129,31 @@ public class SecurityConfig {
                 new DefaultOAuth2AuthorizationRequestResolver(registrations, "/oauth2/authorization");
             resolver.setAuthorizationRequestCustomizer(request -> request
                 .additionalParameters(parameters -> parameters.put("prompt", "select_account")));
+            GoogleAccess access = new GoogleAccess(allowedDomains, allowedEmails);
+            if (!access.configured()) {
+                log.warn("Google sign-in is configured but GOOGLE_ALLOWED_DOMAINS and GOOGLE_ALLOWED_EMAILS "
+                    + "are both empty, so every Google account will be refused.");
+            }
+            OidcUserService oidcUsers = new OidcUserService();
+            OAuth2UserService<OidcUserRequest, OidcUser> allowListed = request -> {
+                OidcUser user = oidcUsers.loadUser(request);
+                if (!access.allows(user)) {
+                    throw new OAuth2AuthenticationException(new OAuth2Error(GOOGLE_DENIED,
+                        "This Google account is not allowed to sign in here.", null));
+                }
+                return user;
+            };
             http.oauth2Login(oauth -> oauth
                 .clientRegistrationRepository(registrations)
                 .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(resolver))
+                .userInfoEndpoint(userInfo -> userInfo.oidcUserService(allowListed))
                 .loginPage(baseUrl + "/login")
                 .defaultSuccessUrl(baseUrl + "/", true)
-                .failureUrl(baseUrl + "/login?error=google"));
+                // A refused account is told so; anything else is a sign-in that failed.
+                .failureHandler((request, response, error) -> response.sendRedirect(baseUrl + "/login?error="
+                    + (error instanceof OAuth2AuthenticationException oauthError
+                        && GOOGLE_DENIED.equals(oauthError.getError().getErrorCode())
+                        ? "google-denied" : "google"))));
         }
         return http.build();
     }
