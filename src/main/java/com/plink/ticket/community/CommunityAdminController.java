@@ -64,6 +64,22 @@ public class CommunityAdminController {
         return Map.of("muted", muted);
     }
 
+    /** The people who have written in the chat, or been muted or banned, a page at a time. */
+    @GetMapping("/chat/people")
+    public Map<String, Object> people(@PathVariable long id, @RequestParam(defaultValue = "") String q,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return community.chatPeople(id, q, page, size);
+    }
+
+    /** Puts a ticket out of the chat - no writing, and its lines kept from holders - or lets it back. */
+    @PostMapping("/chat/ban")
+    public Map<String, Object> ban(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        if (!(body.get("ticketId") instanceof Number ticketId)) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "입장권을 골라 주세요.");
+        }
+        return community.setBanned(id, ticketId.longValue(), Boolean.TRUE.equals(body.get("banned")));
+    }
+
     @PutMapping("/chat/settings")
     public Map<String, Object> settings(@PathVariable long id, @RequestBody Map<String, Object> body) {
         return community.saveSettings(id, body);
