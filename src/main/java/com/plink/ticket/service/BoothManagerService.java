@@ -5,6 +5,7 @@ import com.plink.ticket.model.Booth;
 import com.plink.ticket.model.BoothManager;
 import com.plink.ticket.model.CouponOffer;
 import com.plink.ticket.model.EventSession;
+import com.plink.ticket.model.Gate;
 import com.plink.ticket.repository.BoothManagerRepository;
 import com.plink.ticket.repository.BoothRepository;
 import com.plink.ticket.repository.CouponRepository;
@@ -223,11 +224,34 @@ public class BoothManagerService {
         return managers.countOpenBySession(sessionId);
     }
 
-    // ---- The manager's console ------------------------------------------------------------
+    // ---- The booth's console ------------------------------------------------------------------
+    //
+    // Everything below works against a counter - which event, which booth, and who is at
+    // it - so a manager's phone and a terminal standing at the booth run the same console
+    // under the same rules. The manager overloads only say which counter that is.
+
+    /**
+     * A booth terminal as the console's counter. Only a terminal that stands at a booth,
+     * and at one that still exists, may run it: an admission door has no booth to run.
+     */
+    public CouponService.Counter terminal(Gate gate) {
+        if (!gate.booth()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "부스 단말에서만 쓸 수 있어요.");
+        }
+        if (gate.boothId == null
+                || booths.findById(gate.boothId).filter(b -> b.sessionId == gate.sessionId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이 단말에 연결된 부스가 없어요.");
+        }
+        return CouponService.Counter.at(gate);
+    }
 
     public Map<String, Object> dashboard(BoothManager manager) {
-        Booth booth = requireBooth(manager);
-        EventSession session = ticketService.requireSession(manager.sessionId);
+        return dashboard(counter(manager));
+    }
+
+    public Map<String, Object> dashboard(CouponService.Counter counter) {
+        Booth booth = requireBooth(counter);
+        EventSession session = ticketService.requireSession(counter.sessionId());
         Map<String, Object> result = new LinkedHashMap<>();
         Map<String, Object> boothRow = new LinkedHashMap<>();
         boothRow.put("boothId", booth.id);
@@ -239,12 +263,12 @@ public class BoothManagerService {
         event.put("startsAt", session.startsAt == null ? null : session.startsAt.toInstant().toString());
         event.put("venue", session.venue);
         result.put("event", event);
-        result.put("liveTickets", tickets.liveIds(manager.sessionId).size());
-        result.put("inside", managers.insideIds(manager.sessionId).size());
-        result.put("offers", offers(manager));
+        result.put("liveTickets", tickets.liveIds(counter.sessionId()).size());
+        result.put("inside", managers.insideIds(counter.sessionId()).size());
+        result.put("offers", offers(counter));
         List<Map<String, Object>> recent = new ArrayList<>();
         CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(booth.id, null, null, null);
-        for (CouponRepository.Listed coupon : couponRows.search(manager.sessionId, filter, RECENT, 0)) {
+        for (CouponRepository.Listed coupon : couponRows.search(counter.sessionId(), filter, RECENT, 0)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("couponId", coupon.id());
             row.put("title", coupon.title());
@@ -258,11 +282,12 @@ public class BoothManagerService {
     }
 
     /** The booth's offers with how each has gone, as the dashboard lists them. */
-    private List<Map<String, Object>> offers(BoothManager manager) {
-        Map<Long, Integer> holders = managers.holdersByOffer(manager.boothId);
+    private List<Map<String, Object>> offers(CouponService.Counter counter) {
+        long boothId = boothOf(counter);
+        Map<Long, Integer> holders = managers.holdersByOffer(boothId);
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> offer : coupons.offersByBooth(manager.sessionId)
-                .getOrDefault(manager.boothId, List.of())) {
+        for (Map<String, Object> offer : coupons.offersByBooth(counter.sessionId())
+                .getOrDefault(boothId, List.of())) {
             Map<String, Object> row = new LinkedHashMap<>(offer);
             row.put("holders", holders.getOrDefault((Long) offer.get("offerId"), 0));
             result.add(row);
@@ -270,51 +295,76 @@ public class BoothManagerService {
         return result;
     }
 
-    private Map<String, Object> offerRow(BoothManager manager, long offerId) {
-        return offers(manager).stream().filter(row -> ((Long) row.get("offerId")) == offerId)
+    private Map<String, Object> offerRow(CouponService.Counter counter, long offerId) {
+        return offers(counter).stream().filter(row -> ((Long) row.get("offerId")) == offerId)
             .findFirst().orElseThrow(this::offerNotFound);
     }
 
     /** One of this booth's offers; another booth's reads as missing. */
-    private CouponOffer ownOffer(BoothManager manager, long offerId) {
+    private CouponOffer ownOffer(CouponService.Counter counter, long offerId) {
         CouponOffer offer = coupons.requireOffer(offerId);
-        if (offer.boothId != manager.boothId || offer.sessionId != manager.sessionId) throw offerNotFound();
+        if (offer.boothId != boothOf(counter) || offer.sessionId != counter.sessionId()) throw offerNotFound();
         return offer;
     }
 
     @Transactional
     public Map<String, Object> defineOffer(BoothManager manager, String title, String detail) {
-        CouponOffer offer = coupons.defineOffer(manager.sessionId, manager.boothId, title, detail);
-        return offerRow(manager, offer.id);
+        return defineOffer(counter(manager), title, detail);
+    }
+
+    @Transactional
+    public Map<String, Object> defineOffer(CouponService.Counter counter, String title, String detail) {
+        CouponOffer offer = coupons.defineOffer(counter.sessionId(), boothOf(counter), title, detail);
+        return offerRow(counter, offer.id);
     }
 
     @Transactional
     public Map<String, Object> updateOffer(BoothManager manager, long offerId, String title, String detail) {
-        coupons.updateOffer(ownOffer(manager, offerId).id, title, detail);
-        return offerRow(manager, offerId);
+        return updateOffer(counter(manager), offerId, title, detail);
+    }
+
+    @Transactional
+    public Map<String, Object> updateOffer(CouponService.Counter counter, long offerId, String title, String detail) {
+        coupons.updateOffer(ownOffer(counter, offerId).id, title, detail);
+        return offerRow(counter, offerId);
     }
 
     @Transactional
     public Map<String, Object> setOfferActive(BoothManager manager, long offerId, boolean active) {
-        coupons.setOfferActive(ownOffer(manager, offerId).id, active);
-        return offerRow(manager, offerId);
+        return setOfferActive(counter(manager), offerId, active);
+    }
+
+    @Transactional
+    public Map<String, Object> setOfferActive(CouponService.Counter counter, long offerId, boolean active) {
+        coupons.setOfferActive(ownOffer(counter, offerId).id, active);
+        return offerRow(counter, offerId);
     }
 
     @Transactional
     public Map<String, Object> deleteOffer(BoothManager manager, long offerId) {
-        coupons.deleteOffer(ownOffer(manager, offerId).id);
+        return deleteOffer(counter(manager), offerId);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteOffer(CouponService.Counter counter, long offerId) {
+        coupons.deleteOffer(ownOffer(counter, offerId).id);
         return Map.of("deleted", true, "offerId", offerId);
     }
 
-    /** The event's usable tickets, a page at a time, with addresses masked. */
     public Map<String, Object> tickets(BoothManager manager, String q, int page, int size, boolean insideOnly,
             Long offerId) {
-        if (offerId != null) ownOffer(manager, offerId);
+        return tickets(counter(manager), q, page, size, insideOnly, offerId);
+    }
+
+    /** The event's usable tickets, a page at a time, with addresses masked. */
+    public Map<String, Object> tickets(CouponService.Counter counter, String q, int page, int size,
+            boolean insideOnly, Long offerId) {
+        if (offerId != null) ownOffer(counter, offerId);
         int limit = Math.max(1, Math.min(size, 100));
         int current = Math.max(page, 0);
         String query = q == null || q.isBlank() ? null : q.strip();
         List<Map<String, Object>> items = new ArrayList<>();
-        for (BoothManagerRepository.TicketRow ticket : managers.searchTickets(manager.sessionId, query, insideOnly,
+        for (BoothManagerRepository.TicketRow ticket : managers.searchTickets(counter.sessionId(), query, insideOnly,
                 offerId, limit, current * limit)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("ticketId", ticket.ticketId());
@@ -326,10 +376,16 @@ public class BoothManagerService {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", items);
-        result.put("total", managers.countTickets(manager.sessionId, query, insideOnly));
+        result.put("total", managers.countTickets(counter.sessionId(), query, insideOnly));
         result.put("page", current);
         result.put("pageSize", limit);
         return result;
+    }
+
+    @Transactional
+    public Map<String, Object> issue(BoothManager manager, long offerId, String rawTarget, List<Long> ticketIds,
+            int quantity) {
+        return issue(counter(manager), offerId, rawTarget, ticketIds, quantity);
     }
 
     /**
@@ -338,15 +394,15 @@ public class BoothManagerService {
      * the same top-up, the same checks on each named ticket.
      */
     @Transactional
-    public Map<String, Object> issue(BoothManager manager, long offerId, String rawTarget, List<Long> ticketIds,
-            int quantity) {
-        CouponOffer offer = ownOffer(manager, offerId);
+    public Map<String, Object> issue(CouponService.Counter counter, long offerId, String rawTarget,
+            List<Long> ticketIds, int quantity) {
+        CouponOffer offer = ownOffer(counter, offerId);
         String target = rawTarget == null ? "" : rawTarget.trim().toUpperCase(Locale.ROOT);
         List<Long> targets;
         switch (target) {
             case "ALL" -> targets = List.of();
             case "INSIDE" -> {
-                targets = managers.insideIds(manager.sessionId);
+                targets = managers.insideIds(counter.sessionId());
                 if (targets.isEmpty()) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "지금 장내에 있는 입장권이 없어요.");
                 }
@@ -365,7 +421,7 @@ public class BoothManagerService {
             }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "발급 대상을 골라 주세요.");
         }
-        return coupons.issue(manager.sessionId, offer.id, targets, quantity);
+        return coupons.issue(counter.sessionId(), offer.id, targets, quantity);
     }
 
     /**
@@ -381,7 +437,7 @@ public class BoothManagerService {
         if ("REDEEM".equals(action)) {
             result = new LinkedHashMap<>(coupons.redeemByCode(counter, code));
         } else if ("GIVE".equals(action)) {
-            CouponOffer offer = offerId == null ? null : ownOffer(manager, offerId);
+            CouponOffer offer = offerId == null ? null : ownOffer(counter, offerId);
             if (offer != null && !offer.active) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "'" + offer.title + "' 쿠폰은 발급이 중지되어 있어요.");
@@ -410,6 +466,14 @@ public class BoothManagerService {
         return CouponService.Counter.manager(manager.sessionId, manager.boothId, manager.id);
     }
 
+    /** The booth a console counter runs; a counter without one has no console to run. */
+    private static long boothOf(CouponService.Counter counter) {
+        if (counter.boothId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이 단말에 연결된 부스가 없어요.");
+        }
+        return counter.boothId();
+    }
+
     /** What the big panel says, in words the person at the counter can read out. */
     private static String message(Map<String, Object> result) {
         Object title = result.get("title");
@@ -422,8 +486,12 @@ public class BoothManagerService {
         };
     }
 
-    /** This booth's coupons, a page at a time, with counts for every state. */
     public Map<String, Object> coupons(BoothManager manager, String status, String q, int page, int size) {
+        return coupons(counter(manager), status, q, page, size);
+    }
+
+    /** This booth's coupons, a page at a time, with counts for every state. */
+    public Map<String, Object> coupons(CouponService.Counter counter, String status, String q, int page, int size) {
         String state = status == null || status.isBlank() ? null : status.trim().toUpperCase(Locale.ROOT);
         if ("ALL".equals(state)) state = null;
         if (state != null && !List.of("ISSUED", "REDEEMED", "VOID").contains(state)) {
@@ -432,9 +500,9 @@ public class BoothManagerService {
         int limit = Math.max(1, Math.min(size, 100));
         int current = Math.max(page, 0);
         String query = q == null || q.isBlank() ? null : q.strip();
-        CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(manager.boothId, null, state, query);
+        CouponRepository.CouponFilter filter = new CouponRepository.CouponFilter(boothOf(counter), null, state, query);
         List<Map<String, Object>> items = new ArrayList<>();
-        for (CouponRepository.Listed coupon : couponRows.search(manager.sessionId, filter, limit, current * limit)) {
+        for (CouponRepository.Listed coupon : couponRows.search(counter.sessionId(), filter, limit, current * limit)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("couponId", coupon.id());
             row.put("offerId", coupon.offerId());
@@ -449,7 +517,7 @@ public class BoothManagerService {
                 : coupon.redeemedAtGate() == null ? "운영자 처리" : coupon.redeemedAtGate());
             items.add(row);
         }
-        Map<String, Long> byStatus = couponRows.countByStatus(manager.sessionId, filter);
+        Map<String, Long> byStatus = couponRows.countByStatus(counter.sessionId(), filter);
         Map<String, Object> counts = new LinkedHashMap<>();
         long issued = byStatus.getOrDefault("ISSUED", 0L);
         long redeemed = byStatus.getOrDefault("REDEEMED", 0L);
@@ -460,18 +528,22 @@ public class BoothManagerService {
         counts.put("void", voided);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", items);
-        result.put("total", couponRows.count(manager.sessionId, filter));
+        result.put("total", couponRows.count(counter.sessionId(), filter));
         result.put("page", current);
         result.put("pageSize", limit);
         result.put("counts", counts);
         return result;
     }
 
+    public Map<String, Object> setStatuses(BoothManager manager, List<Long> ids, String rawStatus) {
+        return setStatuses(counter(manager), ids, rawStatus);
+    }
+
     /**
      * Voids or restores this booth's coupons. Marking one used by hand stays with the
      * organiser: at the counter, a coupon is used by reading its code.
      */
-    public Map<String, Object> setStatuses(BoothManager manager, List<Long> ids, String rawStatus) {
+    public Map<String, Object> setStatuses(CouponService.Counter counter, List<Long> ids, String rawStatus) {
         String status = rawStatus == null ? "" : rawStatus.trim().toUpperCase(Locale.ROOT);
         if (!List.of("VOID", "ISSUED").contains(status)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 상태가 올바르지 않아요.");
@@ -479,13 +551,18 @@ public class BoothManagerService {
         if (ids == null || ids.isEmpty() || ids.size() > 1000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰을 1장부터 1,000장까지 골라 주세요.");
         }
-        return coupons.setStatuses(manager.sessionId, manager.boothId, ids, status);
+        return coupons.setStatuses(counter.sessionId(), boothOf(counter), ids, status);
     }
 
     // ---- Helpers ----------------------------------------------------------------------------
 
     private Booth requireBooth(BoothManager manager) {
-        return booths.findById(manager.boothId).filter(b -> b.sessionId == manager.sessionId)
+        return requireBooth(counter(manager));
+    }
+
+    private Booth requireBooth(CouponService.Counter counter) {
+        long boothId = boothOf(counter);
+        return booths.findById(boothId).filter(b -> b.sessionId == counter.sessionId())
             .orElseThrow(this::notFound);
     }
 

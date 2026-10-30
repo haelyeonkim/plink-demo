@@ -172,11 +172,11 @@ public class BoothManagerController {
         return managers.setStatuses(manager, ids(body.get("ids")), string(body.get("status")));
     }
 
-    private static String string(Object value) {
+    static String string(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 
-    private static List<Long> ids(Object value) {
+    static List<Long> ids(Object value) {
         List<Long> ids = new ArrayList<>();
         if (value instanceof List<?> list) {
             for (Object item : list) ids.add(item instanceof Number n ? n.longValue() : null);
