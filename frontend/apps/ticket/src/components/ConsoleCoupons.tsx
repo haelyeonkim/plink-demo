@@ -150,7 +150,9 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
           {booths.map(booth => (
             <button key={booth.boothId} type="button" className={boothId === booth.boothId ? 'on' : ''}
               aria-pressed={boothId === booth.boothId} onClick={() => onBooth(booth.boothId)}>
-              {booth.name} <small>{booth.offers.length}</small></button>
+              {booth.name} <small>{view === 'issued'
+                ? booth.offers.reduce((sum, offer) => sum + offer.issued, 0).toLocaleString()
+                : booth.offers.length}</small></button>
           ))}
         </div>
         <span className="coupon-toolbar-gap" />
@@ -297,7 +299,7 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
               <option key={offer.offerId} value={offer.offerId}>{boothId === null ? `${booth.name} · ` : ''}{offer.title}</option>
             ))}
           </select>
-          <a className="btn-secondary" href={`/api/admin/sessions/${sessionId}/coupons/export?${filterQuery}`} download>CSV</a>
+          <a className="btn-secondary coupon-csv" href={`/api/admin/sessions/${sessionId}/coupons/export?${filterQuery}`} download>CSV</a>
         </div>
 
         {pickedRows.length > 0 && (
@@ -333,7 +335,10 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
                 {page.items.map(row => {
                   const isOpen = open?.couponId === row.couponId;
                   return (
-                    <tr key={row.couponId} className={`${row.status === 'VOID' ? 'is-off' : ''}${isOpen ? ' is-open' : ''}${picked.has(row.couponId) ? ' is-checked' : ''}`}>
+                    <tr key={row.couponId} className={`${row.status === 'VOID' ? 'is-off' : ''}${isOpen ? ' is-open' : ''}${picked.has(row.couponId) ? ' is-checked' : ''}`}
+                      // The whole row opens the detail, as in the ticket list; the checkbox and
+                      // the title button keep their own clicks.
+                      onClick={e => { if (!(e.target as HTMLElement).closest('input, button, a')) setOpen(isOpen ? null : row); }}>
                       <td className="check">
                         <input type="checkbox" aria-label={`${row.ticketRef} ${row.title} 선택`} checked={picked.has(row.couponId)}
                           onChange={() => setPicked(current => {
@@ -342,16 +347,16 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
                             return next;
                           })} />
                       </td>
-                      <td>
+                      <td className="coupon-title-col">
                         <button type="button" className="ticket-ref" aria-expanded={isOpen}
                           onClick={() => setOpen(isOpen ? null : row)}>{row.title}</button>
                         {boothId === null && row.booth && <small className="cell-note">{row.booth}</small>}
                       </td>
-                      <td><b>{row.ticketRef}</b>{row.seat && <span className="muted"> · {row.seat}</span>}
+                      <td className="coupon-ticket-col"><b>{row.ticketRef}</b>{row.seat && <span className="muted"> · {row.seat}</span>}
                         <small className="cell-note">{row.issuedToEmail}</small></td>
-                      <td className="muted">{row.issuedAt ? shortTime(row.issuedAt) : '–'}</td>
-                      <td><span className={`pill pill-${STATE[row.status]?.[1] ?? 'wait'}`}>{STATE[row.status]?.[0] ?? row.status}</span></td>
-                      <td className="muted">{row.redeemedAt ? <>{shortTime(row.redeemedAt)}
+                      <td className="muted coupon-issued-col">{row.issuedAt ? shortTime(row.issuedAt) : '–'}</td>
+                      <td className="coupon-state-col"><span className={`pill pill-${STATE[row.status]?.[1] ?? 'wait'}`}>{STATE[row.status]?.[0] ?? row.status}</span></td>
+                      <td className="muted coupon-used-col">{row.redeemedAt ? <>{shortTime(row.redeemedAt)}
                         <small className="cell-note">{row.redeemedAtGate ?? '운영자 처리'}</small></> : '–'}</td>
                     </tr>
                   );

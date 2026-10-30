@@ -1561,3 +1561,35 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
   padding: 24px; margin: 0; text-align: center; color: #c9cfdf; font-size: 14px;
 }
 .bm-result { padding-left: 10px !important; border-left: 4px solid var(--tone, var(--line)); }
+
+/* The coupon list: the CSV link sits at the field height beside the other filters. */
+.coupon-toolbar .coupon-csv { height: 38px; box-sizing: border-box; display: inline-flex; align-items: center; padding: 0 14px; margin: 0; width: auto; font-size: 13px; }
+.coupon-table tbody tr { cursor: pointer; }
+/* A phone gets each coupon as a card: what it is and its state, then whose, then when. */
+@media (max-width: 620px) {
+  .coupon-toolbar .coupon-search { width: 100%; }
+  .coupon-toolbar .coupon-select { flex: 1; max-width: none; }
+  .coupon-toolbar .coupon-toolbar-gap { display: none; }
+  .coupons .tickets-layout .ticket-list.coupon-table, .coupon-table { min-width: 0; }
+  .coupon-table thead { display: none; }
+  .coupon-table, .coupon-table tbody { display: block; }
+  .coupon-table tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 12px 14px;
+    border-bottom: 1px solid #eef0f5;
+  }
+  .coupon-table tbody td { display: block; padding: 0; border: 0; }
+  .coupon-table td.check { order: 0; }
+  .coupon-table td.coupon-title-col { order: 1; flex: 1; min-width: 0; }
+  .coupon-table td.coupon-title-col .cell-note { display: inline; margin-left: 6px; }
+  .coupon-table td.coupon-state-col { order: 2; }
+  .coupon-table td.check { width: 32px; flex: none; }
+  .coupon-table td.coupon-ticket-col { order: 3; flex-basis: 100%; padding-left: 42px !important; font-size: 13px; }
+  .coupon-table td.coupon-issued-col { order: 4; flex-basis: 100%; padding-left: 42px !important; font-size: 12px; }
+  .coupon-table td.coupon-used-col { order: 4; font-size: 12px; }
+  .coupon-table td.coupon-issued-col::before { content: '지급 '; }
+  .coupon-table td.coupon-used-col:not(:has(.cell-note)) { display: none; }
+  .coupon-table td.coupon-used-col { flex-basis: 100%; padding-left: 42px !important; }
+  .coupon-table td.coupon-used-col::before { content: '사용 '; }
+  .coupon-table td.coupon-used-col .cell-note { display: inline; margin-left: 4px; }
+  .coupon-table td.console-none { flex-basis: 100%; }
+}
