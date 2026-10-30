@@ -2,6 +2,9 @@ package com.plink.ticket;
 
 import com.plink.ticket.live.LiveEvents;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -30,7 +33,7 @@ class LiveRoutingTest {
 
     @Test
     void aMovementReachesTheConsoleAndOnlyThatTicketsPhone() throws Exception {
-        LiveEvents events = new LiveEvents();
+        LiveEvents events = new LiveEvents(Runnable::run);
         WebSocketSession console = socket(null);
         WebSocketSession mine = socket(7L);
         WebSocketSession somebodyElse = socket(9L);
@@ -47,7 +50,7 @@ class LiveRoutingTest {
 
     @Test
     void crowdingStillGoesToEverybody() throws Exception {
-        LiveEvents events = new LiveEvents();
+        LiveEvents events = new LiveEvents(Runnable::run);
         WebSocketSession mine = socket(7L);
         WebSocketSession somebodyElse = socket(9L);
         events.join(1L, mine);
@@ -57,5 +60,77 @@ class LiveRoutingTest {
 
         verify(mine).sendMessage(any(TextMessage.class));
         verify(somebodyElse).sendMessage(any(TextMessage.class));
+    }
+
+    /** Opens a transaction's synchronization the way the transaction manager does. */
+    private static void begin() {
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+    }
+
+    private static void end() {
+        TransactionSynchronizationManager.clearSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(false);
+    }
+
+    @Test
+    void insideATransactionNothingGoesOutUntilItCommits() throws Exception {
+        LiveEvents events = new LiveEvents(Runnable::run);
+        WebSocketSession mine = socket(7L);
+        events.join(1L, mine);
+        begin();
+        try {
+            events.publish(1L, "CHAT", Map.of("lastId", 3));
+            events.publishForTicket(1L, 7L, "COUPON", Map.of("outcome", "REDEEMED"));
+            verify(mine, never()).sendMessage(any(TextMessage.class));
+            TransactionSynchronizationUtils.triggerAfterCommit();
+        } finally {
+            end();
+        }
+        verify(mine, times(2)).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void aRolledBackTransactionSaysNothing() throws Exception {
+        LiveEvents events = new LiveEvents(Runnable::run);
+        WebSocketSession mine = socket(7L);
+        events.join(1L, mine);
+        begin();
+        try {
+            events.publish(1L, "CHAT", Map.of("lastId", 3));
+            TransactionSynchronizationUtils.triggerAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        } finally {
+            end();
+        }
+        verify(mine, never()).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void aPhoneWhoseProofRanOutHearsNothingEvenFromABroadcast() throws Exception {
+        LiveEvents events = new LiveEvents(Runnable::run);
+        WebSocketSession stale = socket(7L);
+        stale.getAttributes().put("plink.live.viewUntil", System.currentTimeMillis() - 1000);
+        WebSocketSession console = socket(null);
+        events.join(1L, stale);
+        events.join(1L, console);
+
+        events.publish(1L, "CHAT", Map.of("lastId", 3));
+
+        verify(stale, never()).sendMessage(any(TextMessage.class));
+        verify(stale).close();
+        verify(console).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void theSpringBuiltOneSendsOffTheCallersThread() throws Exception {
+        LiveEvents events = new LiveEvents();
+        try {
+            WebSocketSession mine = socket(7L);
+            events.join(1L, mine);
+            events.publish(1L, "CHAT", Map.of("lastId", 3));
+            verify(mine, timeout(2000)).sendMessage(any(TextMessage.class));
+        } finally {
+            events.destroy();
+        }
     }
 }
