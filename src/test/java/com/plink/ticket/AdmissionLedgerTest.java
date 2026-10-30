@@ -289,6 +289,145 @@ class AdmissionLedgerTest {
             .anyMatch(row -> "날짜 변경 자동 퇴장".equals(String.valueOf(row.get("reason")))));
     }
 
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** Moves the last exit back, as if the holder had left the day before yesterday's end. */
+    private void exitedHoursAgo(long ticketId, int hours) {
+        Timestamp at = Timestamp.from(Instant.now().minus(hours, ChronoUnit.HOURS));
+        jdbc.update("UPDATE ticket_presence SET last_exit_at = ?, last_event_at = ? WHERE ticket_id = ?",
+            at, at, ticketId);
+    }
+
+    /**
+     * Someone who left last night is arriving, not returning: the grace window, the
+     * re-entry limit and DISABLED all describe stepping out and back in on one day.
+     */
+    @Test void leavingYesterdayIsNotAReentryToday() {
+        Fixture f = new Fixture("DISABLED", 0, 45, 0, "LENIENT");
+        f.scan(f.entry, "IN");
+        f.scan(f.exit, "OUT");
+        assertTrue(f.refuse(f.entry, "IN").getReason().contains("재입장이 허용되지 않는"),
+            "같은 날의 재입장은 여전히 막힙니다");
+
+        exitedHoursAgo(f.ticket.id, 30);
+        Map<String, Object> nextDay = f.scan(f.entry, "IN");
+        assertEquals("ADMITTED", nextDay.get("outcome"), "다음 날 첫 입장은 재입장이 아닙니다");
+        assertEquals(0, ledger.find(f.ticket.id).orElseThrow().reentryCount);
+    }
+
+    @Test void aNewDayStartsItsOwnReentryAllowanceAndGrace() {
+        Fixture f = new Fixture("LIMITED", 1, 45, 0, "LENIENT");
+        f.scan(f.entry, "IN");
+        f.scan(f.exit, "OUT");
+        f.scan(f.entry, "IN");
+        f.scan(f.exit, "OUT");
+        assertTrue(f.refuse(f.entry, "IN").getReason().contains("재입장 횟수"));
+
+        // Gone well past the 45-minute grace and past the turn of the day.
+        exitedHoursAgo(f.ticket.id, 30);
+        Map<String, Object> nextDay = f.scan(f.entry, "IN");
+        assertEquals("ADMITTED", nextDay.get("outcome"));
+        assertEquals(1, nextDay.get("reentryRemaining"), "새 날에는 재입장 한도가 다시 시작됩니다");
+
+        // ...and the same day's rules apply again from here.
+        f.scan(f.exit, "OUT");
+        assertEquals("ADMITTED", f.scan(f.entry, "IN").get("outcome"));
+        f.scan(f.exit, "OUT");
+        assertTrue(f.refuse(f.entry, "IN").getReason().contains("재입장 횟수"));
+    }
+
+    @Test void anEntryClosedOvernightIsFollowedByAFreshDay(
+            @Autowired com.plink.ticket.service.TicketMaintenance maintenance) {
+        Fixture f = new Fixture("DISABLED", 0, 45, 0, "STRICT");
+        sessions.updateDayClose(f.sessionId, true, 0);
+        f.scan(f.entry, "IN");
+        ledger.backdateInside(f.ticket.id, Timestamp.from(Instant.now().minus(30, ChronoUnit.HOURS)));
+        maintenance.closeYesterday();
+        assertFalse(ledger.find(f.ticket.id).orElseThrow().inside());
+
+        assertEquals("ADMITTED", f.scan(f.entry, "IN").get("outcome"),
+            "밤사이 자동 퇴장된 사람의 다음 날 입장은 재입장으로 막히지 않습니다");
+    }
+
+    @Test void aMissedExitYesterdayIsAFreshDayEvenWithoutReentry() {
+        Fixture f = new Fixture("DISABLED", 0, 45, 0, "STRICT");
+        f.scan(f.entry, "IN");
+        ledger.backdateInside(f.ticket.id, Timestamp.from(Instant.now().minus(30, ChronoUnit.HOURS)));
+        assertEquals("ADMITTED", f.scan(f.entry, "IN").get("outcome"));
+        assertEquals(0, ledger.find(f.ticket.id).orElseThrow().reentryCount);
+    }
+
+    // --- staff corrections ----------------------------------------------------
+
+    @Test void aStaffEntryForSomeoneAlreadyInsideIsRefused() {
+        Fixture f = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
+        assertEquals(Boolean.TRUE, admissions.staffMove(f.ticket.id, "IN", "현장 확인", "staff@example.com")
+            .get("inside"));
+        ResponseStatusException twice = assertThrows(ResponseStatusException.class,
+            () -> admissions.staffMove(f.ticket.id, "IN", "다시", "staff@example.com"));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, twice.getStatusCode());
+        assertTrue(twice.getReason().contains("이미 장내"));
+        assertEquals(1, ledger.find(f.ticket.id).orElseThrow().entryCount, "입장 횟수는 한 번만 늘어납니다");
+
+        admissions.staffMove(f.ticket.id, "OUT", "퇴장 확인", "staff@example.com");
+        assertTrue(assertThrows(ResponseStatusException.class,
+            () -> admissions.staffMove(f.ticket.id, "OUT", "다시", "staff@example.com"))
+            .getReason().contains("장내에 있지 않은"));
+        assertEquals(2, ledger.recentEvents(f.sessionId, 10).stream()
+            .filter(row -> "STAFF".equals(row.get("method"))).count(), "거부된 정정은 원장에 남지 않습니다");
+    }
+
+    @Test void staffCannotWalkARevokedTicketIn() {
+        Fixture f = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
+        f.scan(f.entry, "IN");
+        tickets.setRevoked(f.ticket.id, true);
+        // Taking them out is still allowed: revoking never ejects anyone.
+        admissions.staffMove(f.ticket.id, "OUT", "퇴장 안내", "staff@example.com");
+        assertTrue(assertThrows(ResponseStatusException.class,
+            () -> admissions.staffMove(f.ticket.id, "IN", "입장", "staff@example.com"))
+            .getReason().contains("비활성화"));
+    }
+
+    /** A gate scan waiting on the same ticket sees the correction, not the state before it. */
+    @Test void aStaffCorrectionHoldsTheTicketLikeAScan() throws Exception {
+        Fixture f = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
+        org.springframework.transaction.support.TransactionTemplate tx =
+            new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        Thread holder = new Thread(() -> tx.executeWithoutResult(status -> {
+            ticketRepository.lockById(f.ticket.id);
+            locked.countDown();
+            try { release.await(5, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }));
+        holder.start();
+        assertTrue(locked.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        java.util.concurrent.CompletableFuture<Map<String, Object>> staff = java.util.concurrent.CompletableFuture
+            .supplyAsync(() -> admissions.staffMove(f.ticket.id, "IN", "현장 확인", "staff@example.com"));
+        Thread.sleep(300);
+        assertFalse(staff.isDone(), "다른 거래가 입장권을 잡고 있는 동안 정정은 기다립니다");
+        release.countDown();
+        holder.join();
+        assertEquals(Boolean.TRUE, staff.get(5, java.util.concurrent.TimeUnit.SECONDS).get("inside"));
+    }
+
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Test void aRefusedCodeFromAnotherEventIsNotPinnedOnItsTicket() {
+        Fixture f = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
+        Fixture other = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
+        Map<String, Object> grant = presentations.issue(other.ticket, "IN", true);
+        admissions.recordDenied(f.entry, TicketCodes.code(grant, 1), "QR", "다른 이벤트");
+
+        assertTrue(ledger.recentEvents(other.sessionId, 10).stream()
+            .noneMatch(row -> "DENIED".equals(row.get("result"))), "다른 이벤트의 원장에 쓰지 않습니다");
+        Map<String, Object> written = ledger.recentEvents(f.sessionId, 1).get(0);
+        assertEquals("DENIED", written.get("result"));
+        assertNull(written.get("ticket_id"));
+    }
+
     /** The venue's day, not the server's: Seoul turns over at its own midnight. */
     @Test void theDayTurnsAtTheVenuesHour() {
         java.time.ZoneId seoul = java.time.ZoneId.of("Asia/Seoul");

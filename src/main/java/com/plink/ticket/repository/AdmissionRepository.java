@@ -67,23 +67,20 @@ public class AdmissionRepository {
      * nobody walks that fast, so the pair is worth a human look.
      */
     public List<Map<String, Object>> impossibleMovements(long sessionId, int withinSeconds) {
+        // The window is part of the join, so the database pairs only movements that are
+        // close in time instead of every movement of a ticket with every later one. The
+        // interval is written in the standard form both H2 and PostgreSQL read; it is an
+        // int, so it cannot carry anything else into the statement.
+        String window = "INTERVAL '" + Math.max(0, withinSeconds) + "' SECOND";
         return jdbc.queryForList(
             "SELECT a.ticket_id, a.gate_id AS first_gate, b.gate_id AS second_gate, "
             + "a.occurred_at AS first_at, b.occurred_at AS second_at "
             + "FROM admission_event a JOIN admission_event b ON b.ticket_id = a.ticket_id AND b.id > a.id "
+            + "AND b.occurred_at >= a.occurred_at AND b.occurred_at <= a.occurred_at + " + window + " "
             + "WHERE a.session_id = ? AND b.session_id = ? "
             + "AND a.result IN ('ADMITTED','EXITED') AND b.result IN ('ADMITTED','EXITED') "
             + "AND a.gate_id IS NOT NULL AND b.gate_id IS NOT NULL AND a.gate_id <> b.gate_id "
-            + "AND b.occurred_at <= ? ORDER BY a.ticket_id",
-            sessionId, sessionId, java.sql.Timestamp.from(java.time.Instant.now()))
-            .stream()
-            .filter(row -> {
-                java.sql.Timestamp first = (java.sql.Timestamp) row.get("first_at");
-                java.sql.Timestamp second = (java.sql.Timestamp) row.get("second_at");
-                long gap = (second.getTime() - first.getTime()) / 1000;
-                return gap >= 0 && gap <= withinSeconds;
-            })
-            .toList();
+            + "ORDER BY a.ticket_id", sessionId, sessionId);
     }
 
     public Optional<Presence> lock(long ticketId) {
@@ -123,10 +120,21 @@ public class AdmissionRepository {
      * @return whether the row was closed
      */
     public boolean markOutsideIfSince(long ticketId, Timestamp insideSince) {
+        return markOutsideIfSince(ticketId, insideSince, null);
+    }
+
+    /**
+     * @param exitAt when the exit is taken to have happened, or null for now. The day
+     *     close records it at the end of the day it closes: nobody saw them leave, and
+     *     "last night" is what the next morning's entry needs to read.
+     */
+    public boolean markOutsideIfSince(long ticketId, Timestamp insideSince, Timestamp exitAt) {
         return jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE', inside_since = NULL, "
-            + "last_exit_at = CURRENT_TIMESTAMP, last_event_at = CURRENT_TIMESTAMP, last_gate_id = NULL, "
-            + "updated_at = CURRENT_TIMESTAMP WHERE ticket_id = ? AND state = 'INSIDE' AND inside_since = ?",
-            ticketId, insideSince) == 1;
+            + "last_exit_at = " + (exitAt == null ? "CURRENT_TIMESTAMP" : "?") + ", "
+            + "last_event_at = CURRENT_TIMESTAMP, last_gate_id = NULL, updated_at = CURRENT_TIMESTAMP "
+            + "WHERE ticket_id = ? AND state = 'INSIDE' AND inside_since = ?",
+            exitAt == null ? new Object[] { ticketId, insideSince }
+                : new Object[] { exitAt, ticketId, insideSince }) == 1;
     }
 
     /** Open entries in events that close the day, with each event's closing hour. */
