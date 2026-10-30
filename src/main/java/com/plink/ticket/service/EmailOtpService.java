@@ -72,14 +72,18 @@ public class EmailOtpService {
         if (otp.expiresAt.toInstant().isBefore(Instant.now())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "인증번호 유효 시간이 지났어요. 다시 요청해 주세요.");
         }
-        if (otp.attempts >= MAX_ATTEMPTS) {
+        // The attempt is spent before the code is compared, by a statement that only
+        // succeeds while attempts remain: reading the count and comparing afterwards let
+        // a burst of parallel guesses all slip under the limit.
+        if (!repository.takeAttempt(otp.id, MAX_ATTEMPTS)) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "시도 횟수를 초과했어요. 다시 요청해 주세요.");
         }
         if (!Secrets.constantEquals(otp.codeHash, hash(email, purpose, code.trim()))) {
-            repository.incrementAttempts(otp.id);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않아요.");
         }
-        repository.consume(otp.id);
+        if (!repository.consume(otp.id)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미 사용한 인증번호예요. 다시 요청해 주세요.");
+        }
     }
 
     private String hash(String email, String purpose, String code) {

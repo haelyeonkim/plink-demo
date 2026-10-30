@@ -96,21 +96,25 @@ public class GateSetupService {
      * The setup link stays usable until it expires, so a replacement tablet can be set up
      * without going back to the console - but only after the current one is released.
      */
-    @Transactional
+    // A refusal must not roll back the attempt it spent: a wrong code taking its own count
+    // with it is what left the 6-digit code open to unlimited guessing.
+    @Transactional(noRollbackFor = ResponseStatusException.class)
     public Map<String, Object> complete(String token, String code, String deviceId) {
         Gate gate = require(token);
         if (deviceId == null || deviceId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "단말 정보를 확인할 수 없어요.");
         }
-        if (gate.setupAttempts >= MAX_ATTEMPTS) {
+        // Every try spends an attempt before the code is compared, so parallel guesses
+        // queue on the counter rather than each reading the same count.
+        if (!gates.takeSetupAttempt(gate.id, MAX_ATTEMPTS)) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "인증 시도가 많아 잠겼어요. 관리 화면에서 설정 링크를 새로 발급해 주세요.");
         }
         if (code == null || !code.trim().matches("\\d{6}")
                 || !Secrets.constantEquals(gate.setupCodeHash, hashCode(gate.id, code.trim()))) {
-            gates.countSetupAttempt(gate.id);
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "인증번호가 일치하지 않아요.");
         }
+        gates.refundSetupAttempt(gate.id);
         if (gate.boundDevice != null && !gate.boundDevice.equals(deviceId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "이 게이트는 다른 단말에서 사용 중이에요. 관리 화면에서 연결을 해제한 뒤 다시 시도해 주세요.");
