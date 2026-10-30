@@ -1,10 +1,10 @@
 import { mutate } from '@shared/auth';
-import { ApiError } from '../ticket/api';
+import { ApiError, gateHeaders } from '../ticket/api';
 import { passkeyCeremony, type CeremonyStage } from '../ticket/passkey';
 import type { Paged } from '../components/ListTools';
 
 /*
- * Everything a booth manager's link talks to, and the shapes it answers with, in one
+ * Everything a booth console talks to, and the shapes it answers with, in one
  * place: the server side was written alongside this, so a field that turns out named
  * differently is changed here and nowhere else.
  */
@@ -87,71 +87,102 @@ export function boothBase(token: string) {
   return `/api/booth/${encodeURIComponent(token)}`;
 }
 
-const send = <T>(token: string, path: string, method: string, body?: unknown) =>
-  mutate(`${boothBase(token)}${path}`, {
-    method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  }).then(response => read<T>(response));
+/**
+ * How a booth console reaches its booth. The manager's phone and the booth's own terminal
+ * ask the same questions and get the same answers; only who is asking differs - a signed-in
+ * manager behind a session (and so CSRF), or a terminal carrying its own token.
+ */
+export interface BoothClient {
+  get<T>(path: string): Promise<T>;
+  send<T>(path: string, method: string, body?: unknown): Promise<T>;
+}
 
-const get = <T>(token: string, path: string) =>
-  fetch(`${boothBase(token)}${path}`, { cache: 'no-store' }).then(response => read<T>(response));
+const jsonBody = (body: unknown) => (body === undefined ? undefined : JSON.stringify(body));
+
+/** A manager's link: the session cookie, and the CSRF token that goes with it. */
+export function managerClient(token: string): BoothClient {
+  const base = boothBase(token);
+  return {
+    get: <T>(path: string) => fetch(`${base}${path}`, { cache: 'no-store' }).then(response => read<T>(response)),
+    send: <T>(path: string, method: string, body?: unknown) => mutate(`${base}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: jsonBody(body),
+    }).then(response => read<T>(response)),
+  };
+}
+
+/** A booth terminal: the same headers as every other terminal request, and no session. */
+export function terminalClient(gateId: string, gateToken: string): BoothClient {
+  const base = `/api/gates/${encodeURIComponent(gateId)}/booth`;
+  return {
+    get: <T>(path: string) => fetch(`${base}${path}`, { cache: 'no-store', headers: gateHeaders(gateToken) })
+      .then(response => read<T>(response)),
+    send: <T>(path: string, method: string, body?: unknown) => fetch(`${base}${path}`, {
+      method, headers: gateHeaders(gateToken, body !== undefined), body: jsonBody(body),
+    }).then(response => read<T>(response)),
+  };
+}
 
 /** The list endpoints say pageSize; the console's pager says size. */
 function paged<T>(data: { items: T[]; total: number; page: number; pageSize: number }): Paged<T> {
   return { items: data.items ?? [], total: data.total ?? 0, page: data.page ?? 0, size: data.pageSize || 50 };
 }
 
-export const fetchInvite = (token: string) => get<BoothInvite>(token, '');
+// Signing in belongs to the manager's link alone: a terminal already is who it says.
+export const fetchInvite = (token: string) => managerClient(token).get<BoothInvite>('');
 
 export const requestBoothOtp = (token: string, email: string) =>
-  send<{ sent: boolean }>(token, '/otp', 'POST', { email });
+  managerClient(token).send<{ sent: boolean }>('/otp', 'POST', { email });
 
 export const verifyBoothOtp = (token: string, email: string, code: string) =>
-  send<{ verified: boolean }>(token, '/otp/verify', 'POST', { email, code });
+  managerClient(token).send<{ verified: boolean }>('/otp/verify', 'POST', { email, code });
 
 /** Registers a passkey on first use, or signs in with the one already bound. */
 export async function boothPasskey(token: string, onStage?: (stage: CeremonyStage) => void) {
   return passkeyCeremony(boothBase(token), {}, async stage => { onStage?.(stage); });
 }
 
-export const fetchDashboard = (token: string) => get<BoothDashboard>(token, '/dashboard');
+export const fetchDashboard = (client: BoothClient) => client.get<BoothDashboard>('/dashboard');
 
-export const createOffer = (token: string, title: string, detail: string) =>
-  send<BoothOffer>(token, '/offers', 'POST', { title, detail });
-export const updateOffer = (token: string, offerId: number, title: string, detail: string) =>
-  send<BoothOffer>(token, `/offers/${offerId}`, 'PUT', { title, detail });
-export const setOfferActive = (token: string, offerId: number, active: boolean) =>
-  send<unknown>(token, `/offers/${offerId}/active`, 'POST', { active });
-export const deleteOffer = (token: string, offerId: number) =>
-  send<unknown>(token, `/offers/${offerId}`, 'DELETE');
+export const createOffer = (client: BoothClient, title: string, detail: string) =>
+  client.send<BoothOffer>('/offers', 'POST', { title, detail });
+export const updateOffer = (client: BoothClient, offerId: number, title: string, detail: string) =>
+  client.send<BoothOffer>(`/offers/${offerId}`, 'PUT', { title, detail });
+export const setOfferActive = (client: BoothClient, offerId: number, active: boolean) =>
+  client.send<unknown>(`/offers/${offerId}/active`, 'POST', { active });
+export const deleteOffer = (client: BoothClient, offerId: number) =>
+  client.send<unknown>(`/offers/${offerId}`, 'DELETE');
 
-export async function fetchTickets(token: string, query: { q: string; page: number; inside: boolean; offerId: number | null }) {
+export async function fetchTickets(client: BoothClient, query: { q: string; page: number; inside: boolean; offerId: number | null }) {
   const params = new URLSearchParams({ page: String(query.page) });
   if (query.q) params.set('q', query.q);
   if (query.inside) params.set('inside', 'true');
   if (query.offerId !== null) params.set('offerId', String(query.offerId));
-  return paged(await get<{ items: BoothTicket[]; total: number; page: number; pageSize: number }>(token, `/tickets?${params}`));
+  return paged(await client.get<{ items: BoothTicket[]; total: number; page: number; pageSize: number }>(`/tickets?${params}`));
 }
 
-export const issueCoupons = (token: string, body: { offerId: number; target: IssueTarget; ticketIds?: number[]; quantity: number }) =>
-  send<IssueResult>(token, '/issue', 'POST', body);
+export const issueCoupons = (client: BoothClient, body: { offerId: number; target: IssueTarget; ticketIds?: number[]; quantity: number }) =>
+  client.send<IssueResult>('/issue', 'POST', body);
 
-/** Shaped like the booth terminal's answers, plus a sentence to show as it is. */
-export const scanCode = (token: string, code: string, action: ScanAction, offerId?: number) =>
-  send<Record<string, unknown>>(token, '/scan', 'POST', { code, action, ...(offerId ? { offerId } : {}) });
+/**
+ * Shaped like the booth terminal's answers, plus a sentence to show as it is. Only a
+ * manager's link has this route: a terminal reads codes through its own gate routes.
+ */
+export const scanCode = (client: BoothClient, code: string, action: ScanAction, offerId?: number) =>
+  client.send<Record<string, unknown>>('/scan', 'POST', { code, action, ...(offerId ? { offerId } : {}) });
 
-export async function fetchCoupons(token: string, query: { status: CouponStatus | 'ALL'; q: string; page: number }) {
+export async function fetchCoupons(client: BoothClient, query: { status: CouponStatus | 'ALL'; q: string; page: number }) {
   const params = new URLSearchParams({ page: String(query.page) });
   if (query.q) params.set('q', query.q);
   if (query.status !== 'ALL') params.set('status', query.status);
-  const data = await get<{ items: BoothCoupon[]; total: number; page: number; pageSize: number; counts: CouponCounts }>(
-    token, `/coupons?${params}`);
+  const data = await client.get<{ items: BoothCoupon[]; total: number; page: number; pageSize: number; counts: CouponCounts }>(
+    `/coupons?${params}`);
   return { ...paged(data), counts: data.counts };
 }
 
-export const setCouponStatus = (token: string, ids: number[], status: 'VOID' | 'ISSUED') =>
-  send<unknown>(token, '/coupons/status', 'POST', { ids, status });
+export const setCouponStatus = (client: BoothClient, ids: number[], status: 'VOID' | 'ISSUED') =>
+  client.send<unknown>('/coupons/status', 'POST', { ids, status });
 
 /** One manager as the organiser's console lists them. */
 export interface BoothManagerRow {

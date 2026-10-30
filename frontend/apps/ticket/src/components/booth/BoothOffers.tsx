@@ -7,7 +7,7 @@ import type { BoothTabProps } from './shared';
  * The kinds of coupon this booth gives. A manager's new kind is usable at once - the
  * organiser sees it in the event's console like any other and can still switch it off.
  */
-export default function BoothOffers({ token, dashboard, refresh, fail, notify }: BoothTabProps) {
+export default function BoothOffers({ client, dashboard, refresh, fail, notify }: BoothTabProps) {
   // null: the form adds a new kind; an offer: the form edits that one.
   const [editing, setEditing] = useState<BoothOffer | null>(null);
   const [title, setTitle] = useState('');
@@ -31,9 +31,9 @@ export default function BoothOffers({ token, dashboard, refresh, fail, notify }:
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const ok = editing
-      ? await run(() => updateOffer(token, editing.offerId, title.trim(), detail.trim()),
+      ? await run(() => updateOffer(client, editing.offerId, title.trim(), detail.trim()),
         '쿠폰 종류를 고쳤어요. 이미 준 쿠폰은 받을 때의 문구 그대로예요.')
-      : await run(() => createOffer(token, title.trim(), detail.trim()),
+      : await run(() => createOffer(client, title.trim(), detail.trim()),
         `${title.trim()} 쿠폰을 만들었어요. 바로 발급할 수 있어요.`);
     if (ok) edit(null);
   }
@@ -76,7 +76,7 @@ export default function BoothOffers({ token, dashboard, refresh, fail, notify }:
                 <span className="bm-row-actions">
                   <button type="button" className="btn-tiny" disabled={busy} onClick={() => edit(offer)}>고치기</button>
                   <button type="button" className="btn-tiny" disabled={busy}
-                    onClick={() => void run(() => setOfferActive(token, offer.offerId, !offer.active),
+                    onClick={() => void run(() => setOfferActive(client, offer.offerId, !offer.active),
                       offer.active ? `${offer.title} 발급을 중지했어요. 이미 준 쿠폰은 그대로 쓸 수 있어요.`
                         : `${offer.title}을 다시 발급할 수 있어요.`)}>
                     {offer.active ? '중지' : '다시 발급'}</button>
@@ -100,7 +100,7 @@ export default function BoothOffers({ token, dashboard, refresh, fail, notify }:
         onCancel={() => setRemoving(null)}
         onConfirm={() => {
           const offer = removing!;
-          void run(() => deleteOffer(token, offer.offerId), `${offer.title} 쿠폰 종류를 지웠어요.`)
+          void run(() => deleteOffer(client, offer.offerId), `${offer.title} 쿠폰 종류를 지웠어요.`)
             .then(() => { setRemoving(null); if (editing?.offerId === offer.offerId) edit(null); });
         }}
       />
