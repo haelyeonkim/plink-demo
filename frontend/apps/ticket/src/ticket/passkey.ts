@@ -89,9 +89,43 @@ export async function runCeremony(
   await stage('preparing');
   // Only opening a code asks where the phone is; proving the ticket is yours does not.
   const position = options_.intent === 'TRANSFER' || options_.intent === 'VIEW' ? {} : await coarsePosition();
+  const { mode, intent, result } = await passkeyCeremony(base, { ...options_, ...position }, stage);
+  if (mode === 'register') {
+    return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
+  }
+  if (intent === 'TRANSFER') {
+    return { mode: 'authenticate', intent: 'TRANSFER', transfer: result as unknown as TransferStarted };
+  }
+  if (intent === 'VIEW') return { mode: 'authenticate', intent: 'VIEW' };
+  if (intent === 'CLAIM') {
+    // A person who already has a passkey attaches a new ticket by proving it, so a
+    // claim can finish through an assertion rather than a registration.
+    return { mode: 'authenticate', intent: 'CLAIM', claimed: true,
+             viaTransfer: Boolean(result.viaTransfer) };
+  }
+  return { mode: 'authenticate', intent: 'PRESENT', grant: result as unknown as Grant };
+}
+
+/** What a passkey ceremony came to: which of the two it was, and the server's answer. */
+export interface CeremonyResult {
+  mode: 'register' | 'authenticate';
+  intent?: string;
+  result: Record<string, unknown>;
+}
+
+/**
+ * One passkey ceremony against {@code base}: a challenge from {@code base}/passkey/options,
+ * the device registering or signing, and the credential handed to {@code base}/passkey/finish.
+ * The server decides which of the two it is, so a ticket and a booth manager's link share
+ * this and differ only in what they ask for and what they do with the answer.
+ */
+export async function passkeyCeremony(
+  base: string, body: Record<string, unknown>,
+  stage: (step: CeremonyStage) => Promise<void> = async () => {},
+): Promise<CeremonyResult> {
   const { mode, intent, options } = await read(await mutate(`${base}/passkey/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...options_, ...position }),
+    body: JSON.stringify(body),
   }));
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);
@@ -137,20 +171,7 @@ export async function runCeremony(
       response: payload, clientExtensionResults: credential.getClientExtensionResults(),
     }),
   }));
-  if (mode === 'register') {
-    return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
-  }
-  if (intent === 'TRANSFER') {
-    return { mode: 'authenticate', intent: 'TRANSFER', transfer: result as TransferStarted };
-  }
-  if (intent === 'VIEW') return { mode: 'authenticate', intent: 'VIEW' };
-  if (intent === 'CLAIM') {
-    // A person who already has a passkey attaches a new ticket by proving it, so a
-    // claim can finish through an assertion rather than a registration.
-    return { mode: 'authenticate', intent: 'CLAIM', claimed: true,
-             viaTransfer: Boolean(result.viaTransfer) };
-  }
-  return { mode: 'authenticate', intent: 'PRESENT', grant: result as Grant };
+  return { mode, intent, result };
 }
 
 export function passkeyError(error: unknown): string {
