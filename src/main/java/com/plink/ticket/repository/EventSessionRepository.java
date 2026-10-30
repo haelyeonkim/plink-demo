@@ -60,6 +60,16 @@ public class EventSessionRepository {
         return jdbc.query("SELECT * FROM event_session WHERE id = ?", MAPPER, id).stream().findFirst();
     }
 
+    /**
+     * The event row under lock: what keeps "one live ticket per address" true when two
+     * issues, or an issue and an accepted transfer, name the same address at once. A
+     * unique index cannot say it - revoked tickets are exempt, and transfers made before
+     * the rule may already have left an address holding two.
+     */
+    public Optional<EventSession> lockById(long id) {
+        return jdbc.query("SELECT * FROM event_session WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
+    }
+
     public List<EventSession> findAll() {
         return jdbc.query("SELECT * FROM event_session ORDER BY starts_at DESC", MAPPER);
     }

@@ -358,6 +358,11 @@ public class TicketPasskeyService {
         if (ticket.claimed() && !resolved.viaTransfer()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록이 끝난 입장권이에요.");
         }
+        // Switched off between opening the page and finishing: binding would switch it
+        // back on.
+        if (ticket.revoked()) {
+            throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
+        }
         if (!admissions.find(ticket.id).isPresent()) {
             admissions.create(ticket.id, ticket.sessionId);
         }
