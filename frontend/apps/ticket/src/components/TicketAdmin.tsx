@@ -16,6 +16,7 @@ import GateSetupQr, { type SetupTarget } from './GateSetupQr';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
 import ConsoleCoupons from './ConsoleCoupons';
+import BoothManagers from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
   BoothRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
@@ -1312,6 +1313,7 @@ export default function TicketAdmin() {
                       <h3 id={`booth-${booth.boothId}`}>{booth.name}</h3>
                       <p className="muted">
                         {booth.note || '위치 안내 없음'} · 쿠폰 {booth.offers.length}종 · 지급 {given.toLocaleString()}
+                        {booth.managers ? ` · 관리자 ${booth.managers}명` : ''}
                       </p>
                     </div>
                     <div className="booth-card-actions">
@@ -1326,6 +1328,8 @@ export default function TicketAdmin() {
                     ? <div className="gate-grid">{mine.map(card)}</div>
                     : <p className="console-none">아직 단말이 없어요. <b>단말 추가</b>를 누르고 태블릿에서 설정 링크를 열어 주세요.</p>}
                   {setupPanel && mine.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
+                  <BoothManagers boothId={booth.boothId} boothName={booth.name} busy={busy} act={act}
+                    onNotice={setNotice} onError={setError} onChanged={() => loadSession(selected!)} />
                 </section>
               );
             })}

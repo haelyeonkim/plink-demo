@@ -7,6 +7,7 @@ import Footer from '@shared/components/Footer';
 import TicketPage from './components/TicketPage';
 import GateScanner from './components/GateScanner';
 import GateSetup from './components/GateSetup';
+import BoothManager from './components/BoothManager';
 import TicketAdmin from './components/TicketAdmin';
 import SessionCreate from './components/SessionCreate';
 import Login from '@shared/components/Login';
@@ -31,6 +32,8 @@ export default function App() {
           <Route path="/tickets/login" element={<Login />} />
           <Route path="/tickets/gate" element={<GateScanner />} />
           <Route path="/tickets/gate/:setupToken" element={<GateSetup />} />
+          {/* A booth manager's link: one booth's console, behind the manager's passkey. */}
+          <Route path="/tickets/booth/:token" element={<BoothManager />} />
           <Route path="/tickets/admin" element={<ToConsole />} />
           <Route path="/tickets/admin/:sessionId"
             element={<RequireAdmin scope="canTickets"><TicketAdmin /></RequireAdmin>} />

@@ -97,6 +97,8 @@ export interface OfferRow {
 export interface BoothRow {
   boothId: number; name: string; note: string | null;
   offers: OfferRow[];
+  /** Managers invited or signed in, not counting revoked ones. */
+  managers?: number;
 }
 
 /** What the console needs from the tickets without loading the tickets. */

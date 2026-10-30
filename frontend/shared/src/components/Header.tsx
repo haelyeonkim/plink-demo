@@ -35,7 +35,8 @@ export function isStandalone(pathname: string): boolean {
   if (/^\/s\/[^/]+/.test(pathname)) return true;
   // Operator screens live under /tickets too, and they keep the site's navigation.
   if (pathname.startsWith('/tickets/admin') || pathname.startsWith('/tickets/sessions')) return false;
-  // /tickets/{sessionId}/{token} - the holder's own page.
+  // /tickets/{sessionId}/{token} - the holder's own page - and /tickets/booth/{token},
+  // a booth manager's, who has a passkey for that booth but no account on the site.
   return /^\/tickets\/[^/]+\/[^/]+/.test(pathname);
 }
 
