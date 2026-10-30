@@ -2,13 +2,13 @@ package com.plink.ticket;
 
 import com.plink.ticket.community.CommunityRepository;
 import com.plink.ticket.community.CommunityService;
-import com.plink.ticket.model.Gate;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.BoothRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
+import com.plink.ticket.service.CouponService;
 import com.plink.ticket.service.GateAuthService;
 import com.plink.ticket.service.Secrets;
 import com.plink.ticket.service.TicketPasskeyService;
@@ -272,8 +272,8 @@ class CommunityTest {
 
     @Test void aBoothAttachesOnlyItsOwnLoosePhotos() throws Exception {
         long sessionId = newSession();
-        Gate mine = boothGate(sessionId, booths.insert(sessionId, "우리 부스", null));
-        Gate theirs = boothGate(sessionId, booths.insert(sessionId, "옆 부스", null));
+        CouponService.Counter mine = boothGate(sessionId, booths.insert(sessionId, "우리 부스", null));
+        CouponService.Counter theirs = boothGate(sessionId, booths.insert(sessionId, "옆 부스", null));
         String theirPhoto = community.boothUpload(theirs, png(10, 10)).get("imageId").toString();
         community.boothCreate(theirs, Map.of("category", "SALE", "title", "옆 글", "body", "x", "imageId", theirPhoto));
         assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.boothCreate(mine, Map.of("category", "SALE",
@@ -319,17 +319,18 @@ class CommunityTest {
         long sessionId = newSession();
         long booth = booths.insert(sessionId, "굿즈 부스", "로비 왼쪽");
         long other = booths.insert(sessionId, "다른 부스", null);
-        Gate terminal = boothGate(sessionId, booth);
+        CouponService.Counter terminal = boothGate(sessionId, booth);
         Holder in = inside(sessionId, "ads@example.com");
 
         Map<String, Object> ad = community.boothCreate(terminal, Map.of("category", "SALE",
             "title", "엽서 2+1", "body", "오후 3시까지", "place", "로비 왼쪽"));
         assertEquals("LIVE", ad.get("state"));
+        approve(sessionId, ad);
         assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.boothCreate(terminal,
             Map.of("category", "NOTICE", "title", "공지", "body", "x"))), "the organiser's category is not a booth's");
         // Scheduled for later: not on the holder's board yet.
-        community.boothCreate(terminal, Map.of("category", "PROGRAM", "title", "나중", "body", "x",
-            "startsAt", Instant.now().plus(1, ChronoUnit.HOURS).toString()));
+        approve(sessionId, community.boothCreate(terminal, Map.of("category", "PROGRAM", "title", "나중", "body", "x",
+            "startsAt", Instant.now().plus(1, ChronoUnit.HOURS).toString())));
         List<Map<String, Object>> board = community.ads(in.resolved(), in.session());
         assertEquals(1, board.size());
         assertEquals("굿즈 부스", board.get(0).get("booth"));
@@ -369,13 +370,13 @@ class CommunityTest {
     @Test void aPhotoIsRedrawnAndShownOnlyToTheRoom() throws Exception {
         long sessionId = newSession();
         long booth = booths.insert(sessionId, "사진 부스", null);
-        Gate terminal = boothGate(sessionId, booth);
+        CouponService.Counter terminal = boothGate(sessionId, booth);
         Holder in = inside(sessionId, "photo-in@example.com");
         Holder outside = holder(sessionId, "photo-out@example.com");
 
         String imageId = community.boothUpload(terminal, png(2400, 1200)).get("imageId").toString();
-        long adId = ((Number) community.boothCreate(terminal, Map.of("category", "SALE", "title", "사진 글",
-            "body", "x", "imageId", imageId)).get("id")).longValue();
+        long adId = approve(sessionId, community.boothCreate(terminal, Map.of("category", "SALE", "title", "사진 글",
+            "body", "x", "imageId", imageId)));
         assertEquals(imageId, community.ads(in.resolved(), in.session()).get(0).get("imageId"));
 
         var photo = community.holderImage(in.resolved(), in.session(), adId);
@@ -398,6 +399,13 @@ class CommunityTest {
         assertTrue(repo.findImage(imageId).isEmpty());
     }
 
+    /** The organiser lets a booth's notice onto the board. */
+    private long approve(long sessionId, Map<String, Object> ad) {
+        long id = ((Number) ad.get("id")).longValue();
+        community.review(sessionId, id, "APPROVE", null);
+        return id;
+    }
+
     private static MockMultipartFile png(int width, int height) throws Exception {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         var out = new ByteArrayOutputStream();
@@ -405,10 +413,10 @@ class CommunityTest {
         return new MockMultipartFile("file", "photo.png", "image/png", out.toByteArray());
     }
 
-    private Gate boothGate(long sessionId, long boothId) {
+    private CouponService.Counter boothGate(long sessionId, long boothId) {
         String id = "b" + Secrets.randomAlnum(10);
         gates.insert(id, sessionId, "부스 단말", "메인홀", "BIDIRECTIONAL",
             gateAuth.hash("t-" + id), null, null, "BOOTH", boothId);
-        return gates.findById(id).orElseThrow();
+        return CouponService.Counter.at(gates.findById(id).orElseThrow());
     }
 }

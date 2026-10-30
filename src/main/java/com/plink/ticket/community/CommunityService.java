@@ -2,12 +2,12 @@ package com.plink.ticket.community;
 
 import com.plink.ticket.live.LiveEvents;
 import com.plink.ticket.model.EventSession;
-import com.plink.ticket.model.Gate;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.BoothRepository;
 import com.plink.ticket.repository.TicketRepository;
+import com.plink.ticket.service.CouponService;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
 import jakarta.servlet.http.HttpSession;
@@ -548,13 +548,43 @@ public class CommunityService {
         return view;
     }
 
-    // ---- The board, from the console and from a booth's terminal ----
+    // ---- The board, from the console and from a booth ----
+    //
+    // A booth's notice goes out under the event's name to every phone in the room, so the
+    // organiser reads it first: whatever a booth writes or changes waits as PENDING, and
+    // only PUBLISHED notices reach holders. What the organiser writes is published as is.
 
-    public List<Map<String, Object>> consoleAds(long sessionId) {
+    /** The console's list: every notice, or those under one review status. */
+    public List<Map<String, Object>> consoleAds(long sessionId, String status) {
         tickets.requireSession(sessionId);
+        String which = status == null || status.isBlank() ? "ALL" : status.strip().toUpperCase(java.util.Locale.ROOT);
+        List<CommunityRepository.Ad> ads;
+        if ("ALL".equals(which)) {
+            ads = repo.allAds(sessionId);
+        } else if (List.of(CommunityRepository.PUBLISHED, CommunityRepository.PENDING, CommunityRepository.REJECTED)
+                .contains(which)) {
+            ads = repo.adsUnderReview(sessionId, which);
+        } else {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "글 상태가 올바르지 않아요.");
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (CommunityRepository.Ad ad : repo.allAds(sessionId)) rows.add(withState(ad));
+        for (CommunityRepository.Ad ad : ads) {
+            Map<String, Object> row = withState(ad);
+            row.put("requestedBy", ad.requestedBy());
+            rows.add(row);
+        }
         return rows;
+    }
+
+    /** How many notices stand where: what the console's menu counts as waiting for it. */
+    public Map<String, Object> adSummary(long sessionId) {
+        tickets.requireSession(sessionId);
+        Map<String, Integer> counts = repo.reviewCounts(sessionId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("pending", counts.getOrDefault(CommunityRepository.PENDING, 0));
+        result.put("published", counts.getOrDefault(CommunityRepository.PUBLISHED, 0));
+        result.put("rejected", counts.getOrDefault(CommunityRepository.REJECTED, 0));
+        return result;
     }
 
     /** An ad as the console and the booth see it: the holder's view plus where it stands. */
@@ -565,6 +595,10 @@ public class CommunityService {
         row.put("state", ad.hidden() ? "HIDDEN"
             : ad.startsAt().toInstant().isAfter(now) ? "SCHEDULED"
             : ad.endsAt() != null && !ad.endsAt().toInstant().isAfter(now) ? "ENDED" : "LIVE");
+        row.put("review", ad.review());
+        row.put("rejectReason", ad.rejectReason());
+        row.put("reviewedAt", ad.reviewedAt() == null ? null : ad.reviewedAt().toInstant().toString());
+        row.put("updatedAt", ad.updatedAt().toInstant().toString());
         return row;
     }
 
@@ -624,14 +658,43 @@ public class CommunityService {
         return withState(repo.findAd(id).orElseThrow());
     }
 
+    /** The organiser's edit is their own word: a booth's notice they correct goes out as corrected. */
+    @Transactional
     public Map<String, Object> updateAd(long sessionId, long adId, Map<String, Object> body) {
         CommunityRepository.Ad ad = consoleAd(sessionId, adId);
         AdInput in = input(sessionId, body, true, null, ad.imageId());
         repo.updateAd(ad.id(), in.category(), in.title(), in.body(), in.place(), in.startsAt(), in.endsAt(), in.pinned(),
             in.imageId());
+        if (!CommunityRepository.PUBLISHED.equals(ad.review())) {
+            repo.setReview(ad.id(), CommunityRepository.PUBLISHED, null, null);
+        }
         images.release(ad.imageId());
         live.publish(sessionId, "ADS", Map.of());
         return withState(repo.findAd(ad.id()).orElseThrow());
+    }
+
+    /**
+     * The organiser's answer to a booth's notice. APPROVE puts it on holders' boards (from
+     * its start time); REJECT keeps it off, with a reason the booth reads in its list.
+     */
+    public Map<String, Object> review(long sessionId, long adId, String decision, String rawReason) {
+        CommunityRepository.Ad ad = consoleAd(sessionId, adId);
+        String reason = text(rawReason);
+        switch (decision == null ? "" : decision.strip().toUpperCase(java.util.Locale.ROOT)) {
+            case "APPROVE" -> repo.setReview(ad.id(), CommunityRepository.PUBLISHED, null, null);
+            case "REJECT" -> {
+                if (reason != null && reason.length() > 200) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "반려 사유는 200자까지예요.");
+                }
+                repo.setReview(ad.id(), CommunityRepository.REJECTED, reason, null);
+            }
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "승인인지 반려인지 골라 주세요.");
+        }
+        // Holders' phones refresh their board; the console's own list and badge too.
+        live.publish(sessionId, "ADS", Map.of());
+        Map<String, Object> row = withState(repo.findAd(ad.id()).orElseThrow());
+        row.put("requestedBy", ad.requestedBy());
+        return row;
     }
 
     public void setAdHidden(long sessionId, long adId, boolean hidden) {
@@ -658,48 +721,69 @@ public class CommunityService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "글을 찾을 수 없어요."));
     }
 
-    /** A booth terminal works on its own booth's notices and no one else's. */
-    private long boothOf(Gate gate) {
-        if (!"BOOTH".equals(gate.role) || gate.boothId == null) {
+    /**
+     * The booth a counter works for: a terminal standing at one, or one of its managers.
+     * Either works on its own booth's notices and no one else's.
+     */
+    private long boothOf(CouponService.Counter counter) {
+        if (counter.boothId() == null || (counter.gate() != null && !counter.gate().booth())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "부스 단말에서만 알림판 글을 올릴 수 있어요.");
         }
-        return gate.boothId;
+        return counter.boothId();
     }
 
-    public List<Map<String, Object>> boothAds(Gate gate) {
-        long boothId = boothOf(gate);
+    public List<Map<String, Object>> boothAds(CouponService.Counter counter) {
+        long boothId = boothOf(counter);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (CommunityRepository.Ad ad : repo.boothAds(gate.sessionId, boothId)) rows.add(withState(ad));
+        for (CommunityRepository.Ad ad : repo.boothAds(counter.sessionId(), boothId)) rows.add(withState(ad));
         return rows;
     }
 
-    public Map<String, Object> boothCreate(Gate gate, Map<String, Object> body) {
-        long boothId = boothOf(gate);
-        AdInput in = input(gate.sessionId, body, false, boothId, null);
-        long id = repo.insertAd(gate.sessionId, boothId, in.category(), in.title(), in.body(), in.place(),
-            in.startsAt(), in.endsAt(), false, in.imageId());
-        live.publish(gate.sessionId, "ADS", Map.of());
+    /** A booth's new notice, waiting for the organiser. */
+    public Map<String, Object> boothCreate(CouponService.Counter counter, Map<String, Object> body) {
+        long boothId = boothOf(counter);
+        AdInput in = input(counter.sessionId(), body, false, boothId, null);
+        long id = repo.insertAd(counter.sessionId(), boothId, in.category(), in.title(), in.body(), in.place(),
+            in.startsAt(), in.endsAt(), false, in.imageId(), CommunityRepository.PENDING, counter.key());
+        // Nothing changes on holders' boards; the console hears of a notice to read.
+        live.publish(counter.sessionId(), "ADS", Map.of());
         return withState(repo.findAd(id).orElseThrow());
     }
 
-    public Map<String, Object> boothUpdate(Gate gate, long adId, Map<String, Object> body) {
-        CommunityRepository.Ad ad = boothAd(gate, adId);
-        AdInput in = input(gate.sessionId, body, false, ad.boothId(), ad.imageId());
+    /**
+     * A booth's edit goes back to the organiser, published or turned back alike: what was
+     * approved was the old text, so the new one leaves holders' boards until it is read.
+     * One transaction, so no phone ever reads the new text as approved.
+     */
+    @Transactional
+    public Map<String, Object> boothUpdate(CouponService.Counter counter, long adId, Map<String, Object> body) {
+        CommunityRepository.Ad ad = boothAd(counter, adId);
+        AdInput in = input(counter.sessionId(), body, false, ad.boothId(), ad.imageId());
         repo.updateAd(ad.id(), in.category(), in.title(), in.body(), in.place(), in.startsAt(), in.endsAt(), ad.pinned(),
             in.imageId());
+        repo.setReview(ad.id(), CommunityRepository.PENDING, null, counter.key());
         images.release(ad.imageId());
-        live.publish(gate.sessionId, "ADS", Map.of());
+        live.publish(counter.sessionId(), "ADS", Map.of());
         return withState(repo.findAd(ad.id()).orElseThrow());
     }
 
-    public void boothEnd(Gate gate, long adId) {
-        repo.endAd(boothAd(gate, adId).id());
-        live.publish(gate.sessionId, "ADS", Map.of());
+    /** Takes a notice down now; it stays in the booth's list as ended. */
+    public void boothEnd(CouponService.Counter counter, long adId) {
+        repo.endAd(boothAd(counter, adId).id());
+        live.publish(counter.sessionId(), "ADS", Map.of());
     }
 
-    private CommunityRepository.Ad boothAd(Gate gate, long adId) {
-        long boothId = boothOf(gate);
-        return repo.findAd(adId).filter(a -> a.sessionId() == gate.sessionId && a.boothId() != null && a.boothId() == boothId)
+    public void boothDelete(CouponService.Counter counter, long adId) {
+        CommunityRepository.Ad ad = boothAd(counter, adId);
+        repo.deleteAd(ad.id());
+        images.release(ad.imageId());
+        live.publish(counter.sessionId(), "ADS", Map.of());
+    }
+
+    private CommunityRepository.Ad boothAd(CouponService.Counter counter, long adId) {
+        long boothId = boothOf(counter);
+        return repo.findAd(adId)
+            .filter(a -> a.sessionId() == counter.sessionId() && a.boothId() != null && a.boothId() == boothId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "우리 부스 글이 아니에요."));
     }
 
@@ -710,8 +794,8 @@ public class CommunityService {
         return Map.of("imageId", images.upload(sessionId, null, file));
     }
 
-    public Map<String, Object> boothUpload(Gate gate, org.springframework.web.multipart.MultipartFile file) {
-        return Map.of("imageId", images.upload(gate.sessionId, boothOf(gate), file));
+    public Map<String, Object> boothUpload(CouponService.Counter counter, org.springframework.web.multipart.MultipartFile file) {
+        return Map.of("imageId", images.upload(counter.sessionId(), boothOf(counter), file));
     }
 
     /** A notice's photo, to a holder who may see the notice now. */
@@ -726,8 +810,8 @@ public class CommunityService {
         return photoOf(consoleAd(sessionId, adId));
     }
 
-    public AdImageService.Download boothImage(Gate gate, long adId) {
-        return photoOf(boothAd(gate, adId));
+    public AdImageService.Download boothImage(CouponService.Counter counter, long adId) {
+        return photoOf(boothAd(counter, adId));
     }
 
     private AdImageService.Download photoOf(CommunityRepository.Ad ad) {

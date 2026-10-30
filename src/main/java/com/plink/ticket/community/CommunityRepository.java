@@ -292,7 +292,11 @@ public class CommunityRepository {
 
     public record Ad(long id, long sessionId, Long boothId, String booth, String category, String title,
             String body, String place, Timestamp startsAt, Timestamp endsAt, boolean pinned, boolean hidden,
-            int views, Timestamp createdAt, Timestamp updatedAt, String imageId) {}
+            int views, Timestamp createdAt, Timestamp updatedAt, String imageId,
+            String review, String rejectReason, Timestamp reviewedAt, String requestedBy) {}
+
+    /** Where a notice stands with the organiser. Only a PUBLISHED one reaches holders. */
+    public static final String PUBLISHED = "PUBLISHED", PENDING = "PENDING", REJECTED = "REJECTED";
 
     private static final String AD_SELECT = "SELECT a.*, b.name AS booth_name FROM ad_post a "
         + "LEFT JOIN booth b ON b.id = a.booth_id ";
@@ -301,23 +305,42 @@ public class CommunityRepository {
         (Long) rs.getObject("booth_id", Long.class), rs.getString("booth_name"), rs.getString("category"),
         rs.getString("title"), rs.getString("body"), rs.getString("place"), rs.getTimestamp("starts_at"),
         rs.getTimestamp("ends_at"), rs.getBoolean("pinned"), rs.getBoolean("hidden"), rs.getInt("view_count"),
-        rs.getTimestamp("created_at"), rs.getTimestamp("updated_at"), rs.getString("image_id"));
+        rs.getTimestamp("created_at"), rs.getTimestamp("updated_at"), rs.getString("image_id"),
+        rs.getString("review_status"), rs.getString("reject_reason"), rs.getTimestamp("reviewed_at"),
+        rs.getString("requested_by"));
 
-    /** What a holder sees now: shown, started and not yet over; pinned first, newest next. */
+    /** What a holder sees now: approved, shown, started and not yet over; pinned first, newest next. */
     public List<Ad> visibleAds(long sessionId, Timestamp now) {
-        return jdbc.query(AD_SELECT + "WHERE a.session_id = ? AND a.hidden = FALSE AND a.starts_at <= ? "
+        return jdbc.query(AD_SELECT + "WHERE a.session_id = ? AND a.review_status = 'PUBLISHED' "
+            + "AND a.hidden = FALSE AND a.starts_at <= ? "
             + "AND (a.ends_at IS NULL OR a.ends_at > ?) ORDER BY a.pinned DESC, a.starts_at DESC",
             AD, sessionId, now, now);
     }
 
     /** One notice, if a holder may see it now. */
     public Optional<Ad> visibleAd(long sessionId, long id, Timestamp now) {
-        return jdbc.query(AD_SELECT + "WHERE a.id = ? AND a.session_id = ? AND a.hidden = FALSE AND a.starts_at <= ? "
+        return jdbc.query(AD_SELECT + "WHERE a.id = ? AND a.session_id = ? AND a.review_status = 'PUBLISHED' "
+            + "AND a.hidden = FALSE AND a.starts_at <= ? "
             + "AND (a.ends_at IS NULL OR a.ends_at > ?)", AD, id, sessionId, now, now).stream().findFirst();
     }
 
     public List<Ad> allAds(long sessionId) {
         return jdbc.query(AD_SELECT + "WHERE a.session_id = ? ORDER BY a.pinned DESC, a.starts_at DESC", AD, sessionId);
+    }
+
+    /** The console's list under one review status; the oldest request first, as a queue reads. */
+    public List<Ad> adsUnderReview(long sessionId, String review) {
+        return jdbc.query(AD_SELECT + "WHERE a.session_id = ? AND a.review_status = ? ORDER BY a.updated_at, a.id",
+            AD, sessionId, review);
+    }
+
+    /** How many of the event's notices stand under each review status. */
+    public java.util.Map<String, Integer> reviewCounts(long sessionId) {
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        jdbc.query("SELECT review_status, COUNT(*) AS n FROM ad_post WHERE session_id = ? GROUP BY review_status",
+            (org.springframework.jdbc.core.RowCallbackHandler) rs -> counts.put(rs.getString("review_status"),
+                rs.getInt("n")), sessionId);
+        return counts;
     }
 
     public List<Ad> boothAds(long sessionId, long boothId) {
@@ -331,12 +354,20 @@ public class CommunityRepository {
 
     public long insertAd(long sessionId, Long boothId, String category, String title, String body, String place,
             Timestamp startsAt, Timestamp endsAt, boolean pinned, String imageId) {
+        return insertAd(sessionId, boothId, category, title, body, place, startsAt, endsAt, pinned, imageId,
+            PUBLISHED, null);
+    }
+
+    /** @param requestedBy the booth's counter that wrote it, or null for the organiser */
+    public long insertAd(long sessionId, Long boothId, String category, String title, String body, String place,
+            Timestamp startsAt, Timestamp endsAt, boolean pinned, String imageId, String review, String requestedBy) {
         Timestamp now = Timestamp.from(java.time.Instant.now());
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                 "INSERT INTO ad_post (session_id, booth_id, category, title, body, place, starts_at, ends_at, pinned, "
-                + "created_at, updated_at, image_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
+                + "created_at, updated_at, image_id, review_status, reviewed_at, requested_by) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setLong(1, sessionId);
             if (boothId == null) ps.setNull(2, Types.BIGINT); else ps.setLong(2, boothId);
             ps.setString(3, category);
@@ -349,6 +380,9 @@ public class CommunityRepository {
             ps.setTimestamp(10, now);
             ps.setTimestamp(11, now);
             ps.setString(12, imageId);
+            ps.setString(13, review);
+            ps.setTimestamp(14, PUBLISHED.equals(review) ? now : null);
+            ps.setString(15, requestedBy);
             return ps;
         }, keys);
         return keys.getKey().longValue();
@@ -359,6 +393,18 @@ public class CommunityRepository {
         jdbc.update("UPDATE ad_post SET category = ?, title = ?, body = ?, place = ?, starts_at = ?, ends_at = ?, "
             + "pinned = ?, image_id = ?, updated_at = ? WHERE id = ?",
             category, title, body, place, startsAt, endsAt, pinned, imageId, Timestamp.from(java.time.Instant.now()), id);
+    }
+
+    /**
+     * Where a notice stands with the organiser now. Going back to PENDING forgets when it
+     * was last decided; a REJECTED one keeps its reason for the booth to read.
+     *
+     * @param requestedBy who at the booth sent it in again, or null to leave that as it is
+     */
+    public void setReview(long id, String review, String reason, String requestedBy) {
+        Timestamp decided = PENDING.equals(review) ? null : Timestamp.from(java.time.Instant.now());
+        jdbc.update("UPDATE ad_post SET review_status = ?, reject_reason = ?, reviewed_at = ?, "
+            + "requested_by = COALESCE(?, requested_by) WHERE id = ?", review, reason, decided, requestedBy, id);
     }
 
     public void setAdHidden(long id, boolean hidden) {
