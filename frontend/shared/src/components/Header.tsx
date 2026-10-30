@@ -3,15 +3,25 @@ import { useAuth } from '../auth';
 import { useLocation } from 'react-router-dom';
 import { AppLink as Link, useBrand, type BrandName } from '../scope';
 
-/** The administration button's label, and so the one name a header need not repeat. */
+/** A name some accounts carry that says nothing about who they are. */
 const ADMIN = '관리자';
 
-/** Each tool's header is its own: neither lists the other's console. */
+/**
+ * Each tool's header is its own and names its own screens; the front page names the two
+ * tools the way its cards do. The other tool is reached from the account menu.
+ */
 const MENUS: Record<BrandName, Array<[string, string]>> = {
-  site: [['/links', '링크 관리'], ['/tickets', '입장권 관리'], ['/guide', '사용자 가이드']],
-  link: [['/links', '링크 관리'], ['/links/contents', '컨텐츠'], ['/guide', '사용자 가이드']],
-  ticket: [['/tickets', '입장권 관리'], ['/guide', '사용자 가이드']],
+  site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/guide', '가이드']],
+  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/guide', '가이드']],
+  ticket: [['/tickets', '이벤트'], ['/guide', '가이드']],
 };
+
+/** The menu entry the page belongs to: the longest one its path starts with. */
+function currentEntry(menu: Array<[string, string]>, pathname: string): string | undefined {
+  return menu.map(([to]) => to)
+    .filter(to => pathname === to || pathname.startsWith(to + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+}
 
 /**
  * Screens a visitor or a gate terminal sees, rather than an operator. A ticket holder or
@@ -77,14 +87,23 @@ export default function Header() {
   }
 
   const who = session?.user?.name || session?.user?.email || '';
+  const current = currentEntry(menu, pathname);
+  const user = session?.user;
+  // Where else this account can go: the other tool it may use, and administration for
+  // an owner. Neither belongs in a tool's own menu.
+  const elsewhere: Array<[string, string]> = user ? [
+    ...(brand.key === 'ticket' && user.canLinks ? [['/links', '보호 링크로 이동'] as [string, string]] : []),
+    ...(brand.key === 'link' && user.canTickets ? [['/tickets', '입장권으로 이동'] as [string, string]] : []),
+    ...(brand.key !== 'site' ? [['/', '패스링크 홈'] as [string, string]] : []),
+    ...(user.canAccounts ? [['/admin', '계정 관리'] as [string, string]] : []),
+  ] : [];
+  const nav = menu.map(([to, label]) => (
+    <Link key={to} to={to} aria-current={to === current ? 'page' : undefined}>{label}</Link>
+  ));
   const account = session?.user ? (
     <>
-      {/* Administration is not part of the product menu: only an owner is shown it. */}
-      {session.user.canAccounts && <Link className="admin-link" to="/admin">{ADMIN}</Link>}
-      {/* An account literally named "관리자" would otherwise print the button's own
-          label back at it. */}
-      {/* One round button with the account's initial; the address and the way out are
-          behind it, so a long address is never cut short in the header. */}
+      {/* One round button with the account's initial; the address, the other places the
+          account may go and the way out are behind it. */}
       <div className="account-box" ref={accountBox}>
         <button type="button" className="account-avatar" aria-haspopup="menu" aria-expanded={accountOpen}
           aria-label={`계정 메뉴 · ${session.user.email || who}`} onClick={() => setAccountOpen(value => !value)}>
@@ -96,6 +115,7 @@ export default function Header() {
               {who !== ADMIN && who !== session.user.email && <b>{who}</b>}
               <span>{session.user.email}</span>
             </p>
+            {elsewhere.map(([to, label]) => <Link key={to} role="menuitem" to={to}>{label}</Link>)}
             <button type="button" role="menuitem" disabled={busy} onClick={handleLogout}>
               {busy ? '로그아웃 중…' : '로그아웃'}
             </button>
@@ -113,9 +133,7 @@ export default function Header() {
         <Link className="logo" to={brand.home}>
           <img src={brand.logo} alt={brand.name} height="28" />
         </Link>
-        <nav>
-          {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
-        </nav>
+        <nav>{nav}</nav>
         <div className={`header-account${session?.user ? '' : ' header-account-guest'}`}>
           {account}
           {error && <span className="account-error" role="alert">{error}</span>}
@@ -132,10 +150,20 @@ export default function Header() {
 
       {open && (
         <div className="mobile-menu" id="mobile-menu">
-          <nav>
-            {menu.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
-          </nav>
-          {session?.user && <div className="mobile-account">{account}</div>}
+          <nav>{nav}</nav>
+          {user && (
+            <div className="mobile-account">
+              <p className="account-menu-who">
+                {who !== ADMIN && who !== user.email && <b>{who}</b>}
+                <span>{user.email}</span>
+              </p>
+              {elsewhere.map(([to, label]) => <Link key={to} to={to}>{label}</Link>)}
+              <button type="button" disabled={busy} onClick={handleLogout}>
+                {busy ? '로그아웃 중…' : '로그아웃'}
+              </button>
+              {error && <span className="account-error" role="alert">{error}</span>}
+            </div>
+          )}
         </div>
       )}
     </>
