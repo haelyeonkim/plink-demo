@@ -147,15 +147,17 @@ public class PasskeyService {
      * many places, and per client, so one client cannot work through many links.
      */
     private void checkAttempts(String code, String client) {
+        // 0 turns the per-client cap off: behind a proxy that does not pass the visitor's
+        // address on, every visitor is one client and the cap would shut them all out.
         if (limiter.blocked("link-code:" + code, maxFailuresPerCode)
-                || limiter.blocked("link-client:" + client, maxFailuresPerClient)) {
+                || (maxFailuresPerClient > 0 && limiter.blocked("link-client:" + client, maxFailuresPerClient))) {
             throw fail(HttpStatus.TOO_MANY_REQUESTS, "시도가 너무 많아요. 15분 뒤에 다시 시도해 주세요.");
         }
     }
 
     private void countFailure(String code, String client) {
         limiter.fail("link-code:" + code, ATTEMPT_WINDOW);
-        limiter.fail("link-client:" + client, ATTEMPT_WINDOW);
+        if (maxFailuresPerClient > 0) limiter.fail("link-client:" + client, ATTEMPT_WINDOW);
     }
 
     private static boolean emailVerified(HttpSession session, LinkRecipient recipient, String email) {

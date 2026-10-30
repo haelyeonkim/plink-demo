@@ -44,14 +44,22 @@ public class AdminAccountService {
     private final AdminAccountRepository accounts;
     private final PasswordEncoder encoder;
     private final AttemptLimiter limiter;
+    /**
+     * The cap per client across accounts; 0 turns it off. Behind a proxy that does not pass
+     * the visitor's address on, every visitor is one client, and the cap would let anyone
+     * lock everyone out.
+     */
+    private final int maxClientFailures;
     private final HttpSessionSecurityContextRepository contexts = new HttpSessionSecurityContextRepository();
     private final HttpSessionCsrfTokenRepository csrfTokens = new HttpSessionCsrfTokenRepository();
 
     public AdminAccountService(AdminAccountRepository accounts, PasswordEncoder encoder,
-            AttemptLimiter limiter) {
+            AttemptLimiter limiter,
+            @org.springframework.beans.factory.annotation.Value("${plink.admin.max-failures-per-client:" + MAX_CLIENT_FAILURES + "}") int maxClientFailures) {
         this.accounts = accounts;
         this.encoder = encoder;
         this.limiter = limiter;
+        this.maxClientFailures = maxClientFailures;
     }
 
     public static String normalize(String email) {
@@ -71,7 +79,8 @@ public class AdminAccountService {
         String client = request.getRemoteAddr();
         String pair = "admin:" + email + "|" + client;
         String anyAccount = "admin-client:" + client;
-        if (limiter.blocked(pair, MAX_FAILURES) || limiter.blocked(anyAccount, MAX_CLIENT_FAILURES)) {
+        if (limiter.blocked(pair, MAX_FAILURES)
+                || (maxClientFailures > 0 && limiter.blocked(anyAccount, maxClientFailures))) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "로그인 시도가 많아 잠시 잠겼어요. 15분 후에 다시 시도해 주세요.");
         }
@@ -79,7 +88,7 @@ public class AdminAccountService {
         if (account == null || password == null || password.isEmpty()
                 || !encoder.matches(password, account.passwordHash)) {
             limiter.fail(pair, LOCKOUT);
-            limiter.fail(anyAccount, LOCKOUT);
+            if (maxClientFailures > 0) limiter.fail(anyAccount, LOCKOUT);
             // Still counted on the row, for the record, but no longer a lock on it.
             if (account != null) accounts.recordFailure(account.id, null);
             throw refuse();
