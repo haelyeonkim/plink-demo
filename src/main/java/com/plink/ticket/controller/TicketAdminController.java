@@ -55,6 +55,7 @@ public class TicketAdminController {
     private final com.plink.ticket.repository.BoothRepository booths;
     private final com.plink.ticket.repository.CouponRepository couponRepository;
     private final com.plink.ticket.service.CouponService coupons;
+    private final com.plink.ticket.community.AdImageService adImages;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -63,7 +64,9 @@ public class TicketAdminController {
             LiveEvents live, LiveSnapshots snapshots,
             com.plink.ticket.repository.BoothRepository booths,
             com.plink.ticket.repository.CouponRepository couponRepository,
-            com.plink.ticket.service.CouponService coupons) {
+            com.plink.ticket.service.CouponService coupons,
+            com.plink.ticket.community.AdImageService adImages) {
+        this.adImages = adImages;
         this.booths = booths;
         this.couponRepository = couponRepository;
         this.coupons = coupons;
@@ -611,7 +614,10 @@ public class TicketAdminController {
                 "발급된 입장권 " + issued + "장(입장 이력 " + admitted + "건)이 있어요. "
                 + "정말 지우려면 force=true로 다시 요청해 주세요.");
         }
+        // The rows of the board's photos go with the event; the files they name would not.
+        List<com.plink.ticket.community.CommunityRepository.Image> photos = adImages.ofSession(id);
         sessions.delete(id);
+        adImages.removeFiles(photos);
         return Map.of("deleted", true, "tickets", issued, "admitted", admitted);
     }
 

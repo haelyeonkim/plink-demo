@@ -176,6 +176,131 @@ class CommunityTest {
         assertEquals(HttpStatus.OK, status(() -> community.post(a.resolved(), a.session(), "다시", null)));
     }
 
+    @Test void aMutedTicketOrAClosedChatNeitherReactsNorReports() {
+        long sessionId = newSession();
+        Holder a = inside(sessionId, "said@example.com");
+        Holder b = inside(sessionId, "muted@example.com");
+        long id = ((Number) community.post(a.resolved(), a.session(), "아무 말", null).get("id")).longValue();
+        community.setMuted(sessionId, b.ticketId(), true);
+        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.like(b.resolved(), b.session(), id)));
+        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.dislike(b.resolved(), b.session(), id)));
+        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.report(b.resolved(), b.session(), id)));
+        community.setMuted(sessionId, b.ticketId(), false);
+        community.saveSettings(sessionId, Map.of("enabled", false));
+        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.like(b.resolved(), b.session(), id)));
+        community.saveSettings(sessionId, Map.of("enabled", true));
+        assertEquals(HttpStatus.OK, status(() -> community.like(b.resolved(), b.session(), id)));
+        CommunityRepository.Message m = repo.findMessage(id).orElseThrow();
+        assertEquals(1, m.likes());
+        assertEquals(0, m.reports());
+    }
+
+    @Test void anUnhiddenLineNeedsFreshReportsToHideAgain() {
+        long sessionId = newSession();
+        repo.saveSettings(sessionId, new CommunityRepository.Settings(true, 0, 200, 20, 10, 2));
+        Holder a = inside(sessionId, "reported@example.com");
+        Holder b = inside(sessionId, "r1@example.com");
+        Holder c = inside(sessionId, "r2@example.com");
+        Holder d = inside(sessionId, "r3@example.com");
+        long id = ((Number) community.post(a.resolved(), a.session(), "애매한 말", null).get("id")).longValue();
+        community.report(b.resolved(), b.session(), id);
+        community.report(b.resolved(), b.session(), id);
+        assertFalse(repo.findMessage(id).orElseThrow().hidden(), "one ticket reporting twice is one report");
+        community.report(c.resolved(), c.session(), id);
+        assertTrue(repo.findMessage(id).orElseThrow().hidden());
+
+        community.setHidden(sessionId, id, false);
+        assertEquals(0, repo.findMessage(id).orElseThrow().reports());
+        community.report(d.resolved(), d.session(), id);
+        assertFalse(repo.findMessage(id).orElseThrow().hidden(), "one new report does not hide it straight back");
+        // Those who reported before may report again; it is a new look at the line.
+        community.report(b.resolved(), b.session(), id);
+        assertTrue(repo.findMessage(id).orElseThrow().hidden());
+    }
+
+    @Test void likesAndDislikesFromOneTicketNeverPileUpOrCoexist() throws Exception {
+        long sessionId = newSession();
+        Holder a = inside(sessionId, "line@example.com");
+        Holder b = inside(sessionId, "tapper@example.com");
+        long id = ((Number) community.post(a.resolved(), a.session(), "눌러 보세요", null).get("id")).longValue();
+        int rounds = 15;
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        List<java.util.concurrent.Future<?>> taps = new java.util.ArrayList<>();
+        for (int t = 0; t < 3; t++) {
+            int which = t;
+            taps.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < rounds; i++) {
+                    if (which == 2) community.dislike(b.resolved(), b.session(), id);
+                    else community.like(b.resolved(), b.session(), id);
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (var tap : taps) tap.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdown();
+
+        int likeRows = jdbc.queryForObject("SELECT COUNT(*) FROM chat_like WHERE message_id = ?", Integer.class, id);
+        int dislikeRows = jdbc.queryForObject("SELECT COUNT(*) FROM chat_dislike WHERE message_id = ?", Integer.class, id);
+        CommunityRepository.Message m = repo.findMessage(id).orElseThrow();
+        assertTrue(likeRows + dislikeRows <= 1, "a ticket likes or dislikes a line, never both");
+        assertEquals(likeRows, m.likes(), "the counter is the rows");
+        assertEquals(dislikeRows, m.dislikes());
+    }
+
+    @Test void savingTheChatRulesKeepsOneRow() {
+        long sessionId = newSession();
+        community.saveSettings(sessionId, Map.of("cooldownSeconds", 5));
+        community.saveSettings(sessionId, Map.of("maxLength", 50));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM chat_setting WHERE session_id = ?", Integer.class, sessionId));
+        CommunityRepository.Settings saved = repo.settings(sessionId);
+        assertEquals(5, saved.cooldownSeconds());
+        assertEquals(50, saved.maxLength());
+    }
+
+    @Test void theConsoleFilesANoticeOnlyUnderItsOwnEventsBooth() {
+        long sessionId = newSession();
+        long elsewhere = newSession();
+        long foreign = booths.insert(elsewhere, "남의 부스", null);
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.createAd(sessionId, Map.of("category", "SALE",
+            "title", "글", "body", "x", "boothId", foreign))));
+        assertEquals(HttpStatus.NOT_FOUND, status(() -> community.createAd(sessionId, Map.of("category", "SALE",
+            "title", "글", "body", "x", "boothId", 999_999_999L))));
+    }
+
+    @Test void aBoothAttachesOnlyItsOwnLoosePhotos() throws Exception {
+        long sessionId = newSession();
+        Gate mine = boothGate(sessionId, booths.insert(sessionId, "우리 부스", null));
+        Gate theirs = boothGate(sessionId, booths.insert(sessionId, "옆 부스", null));
+        String theirPhoto = community.boothUpload(theirs, png(10, 10)).get("imageId").toString();
+        community.boothCreate(theirs, Map.of("category", "SALE", "title", "옆 글", "body", "x", "imageId", theirPhoto));
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.boothCreate(mine, Map.of("category", "SALE",
+            "title", "가져온 사진", "body", "x", "imageId", theirPhoto))));
+
+        String myPhoto = community.boothUpload(mine, png(10, 10)).get("imageId").toString();
+        long first = ((Number) community.boothCreate(mine, Map.of("category", "SALE", "title", "첫 글", "body", "x",
+            "imageId", myPhoto)).get("id")).longValue();
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> community.boothCreate(mine, Map.of("category", "SALE",
+            "title", "둘째 글", "body", "x", "imageId", myPhoto))), "a photo already on a notice is that notice's");
+        assertEquals(HttpStatus.OK, status(() -> community.boothUpdate(mine, first, Map.of("category", "SALE",
+            "title", "첫 글 고침", "body", "x", "imageId", myPhoto))), "a notice keeps its own photo");
+    }
+
+    @Autowired com.plink.ticket.controller.TicketAdminController admin;
+
+    @Test void deletingAnEventTakesItsPhotoFilesWithIt() throws Exception {
+        long sessionId = newSession();
+        String imageId = community.consoleUpload(sessionId, png(10, 10)).get("imageId").toString();
+        community.createAd(sessionId, Map.of("category", "NOTICE", "title", "사진", "body", "x", "imageId", imageId));
+        java.nio.file.Path file = java.nio.file.Path.of("target/test-ad-images", repo.findImage(imageId).orElseThrow().key());
+        assertTrue(java.nio.file.Files.exists(file));
+        admin.deleteSession(sessionId, true);
+        assertTrue(repo.findImage(imageId).isEmpty());
+        assertFalse(java.nio.file.Files.exists(file));
+    }
+
     @Test void anOrganiserNoticeStaysOnTop() {
         long sessionId = newSession();
         Holder in = inside(sessionId, "notice@example.com");
