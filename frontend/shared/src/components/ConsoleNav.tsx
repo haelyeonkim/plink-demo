@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useMenuFocus } from '../menuFocus';
 
 export interface ConsoleNavEntry<K extends string> {
   key: K; label: string; icon: string;
@@ -20,16 +21,17 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const here = groups.flatMap(([, entries]) => entries).find(entry => entry.key === current);
   useEffect(() => { setOpen(false); }, [current]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
     window.addEventListener('pointerdown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey); };
+    return () => window.removeEventListener('pointerdown', onDown);
   }, [open]);
+  useMenuFocus(open, toggle, menu, () => setOpen(false));
   return (
     <nav className="event-nav" aria-label={label} ref={box}>
       <Link className="event-nav-back" to={back.to}>
@@ -38,14 +40,14 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
         {back.label}
       </Link>
       <div className="event-nav-card">{card}</div>
-      <button type="button" className="event-nav-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      <button ref={toggle} type="button" className="event-nav-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
         {here && <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={here.icon} /></svg>}
         <span>{here?.label ?? '메뉴'}</span>
         <svg className="event-nav-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
-      <div className={`event-nav-menu${open ? ' open' : ''}`}>
+      <div ref={menu} className={`event-nav-menu${open ? ' open' : ''}`}>
       {groups.map(([title, entries]) => (
         <div className="event-nav-group" key={title || 'top'}>
           {title && <span className="event-nav-label">{title}</span>}

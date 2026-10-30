@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth';
 import { useLocation } from 'react-router-dom';
 import { AppLink as Link, useBrand, type BrandName } from '../scope';
+import { useMenuFocus } from '../menuFocus';
 
 /** A name some accounts carry that says nothing about who they are. */
 const ADMIN = '관리자';
@@ -49,6 +50,10 @@ export default function Header() {
   const [open, setOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountBox = useRef<HTMLDivElement>(null);
+  const accountButton = useRef<HTMLButtonElement>(null);
+  const accountMenu = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const mobileMenu = useRef<HTMLDivElement>(null);
 
   // A tap that navigates should also put the menu away.
   useEffect(() => { setOpen(false); setAccountOpen(false); }, [pathname]);
@@ -58,17 +63,11 @@ export default function Header() {
     const onDown = (event: PointerEvent) => {
       if (!accountBox.current?.contains(event.target as Node)) setAccountOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setAccountOpen(false); };
     window.addEventListener('pointerdown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey); };
+    return () => window.removeEventListener('pointerdown', onDown);
   }, [accountOpen]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  useMenuFocus(accountOpen, accountButton, accountMenu, () => setAccountOpen(false));
+  useMenuFocus(open, menuButton, mobileMenu, () => setOpen(false));
 
   async function handleLogout() {
     setBusy(true);
@@ -105,12 +104,12 @@ export default function Header() {
       {/* One round button with the account's initial; the address, the other places the
           account may go and the way out are behind it. */}
       <div className="account-box" ref={accountBox}>
-        <button type="button" className="account-avatar" aria-haspopup="menu" aria-expanded={accountOpen}
+        <button ref={accountButton} type="button" className="account-avatar" aria-haspopup="menu" aria-expanded={accountOpen}
           aria-label={`계정 메뉴 · ${session.user.email || who}`} onClick={() => setAccountOpen(value => !value)}>
           {[...(who || '?')][0].toUpperCase()}
         </button>
         {accountOpen && (
-          <div className="account-menu" role="menu">
+          <div ref={accountMenu} className="account-menu" role="menu">
             <p className="account-menu-who">
               {who !== ADMIN && who !== session.user.email && <b>{who}</b>}
               <span>{session.user.email}</span>
@@ -138,7 +137,7 @@ export default function Header() {
           {account}
           {error && <span className="account-error" role="alert">{error}</span>}
         </div>
-        <button className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
+        <button ref={menuButton} className="menu-toggle" aria-expanded={open} aria-controls="mobile-menu"
           aria-label={open ? '메뉴 닫기' : '메뉴 열기'} onClick={() => setOpen(value => !value)}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
@@ -149,7 +148,7 @@ export default function Header() {
       </header>
 
       {open && (
-        <div className="mobile-menu" id="mobile-menu">
+        <div ref={mobileMenu} className="mobile-menu" id="mobile-menu">
           <nav>{nav}</nav>
           {user && (
             <div className="mobile-account">
