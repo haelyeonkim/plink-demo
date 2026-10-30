@@ -31,6 +31,9 @@ const TAB_TITLES: Record<Tab, string> = {
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
+/** The settings forms that wait for the save bar, in the order they are saved. */
+type SettingsKey = 'details' | 'policy' | 'crowd';
+const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'crowd'];
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
   ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['fields', '발급 항목'],
 ];
@@ -48,7 +51,9 @@ export default function TicketAdmin() {
   const [ticketPage, setTicketPage] = useState<Paged<TicketRow>>(EMPTY_PAGE);
   const [ticketQuery, setTicketQuery] = useState('');
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('ALL');
-  const [ticketPageNo, setTicketPageNo] = useState(0);
+  // The page number belongs to one search: it is kept with the search it was chosen in,
+  // so a new search reads its first page at once instead of the old page number first.
+  const [ticketPaging, setTicketPaging] = useState({ key: '', page: 0 });
   const [summary, setSummary] = useState<TicketSummary | null>(null);
   // Tickets ticked for a bulk action, and the one whose detail is open beside the list.
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -67,12 +72,14 @@ export default function TicketAdmin() {
   const settingsForms = {
     details: useRef<HTMLFormElement>(null), policy: useRef<HTMLFormElement>(null), crowd: useRef<HTMLFormElement>(null),
   };
-  const [settingsDirty, setSettingsDirty] = useState<Set<keyof typeof settingsForms>>(new Set());
-  const markSettingsDirty = (key: keyof typeof settingsForms) =>
+  const [settingsDirty, setSettingsDirty] = useState<Set<SettingsKey>>(new Set());
+  const [savingSettings, setSavingSettings] = useState(false);
+  // Counts edits per form, so a change typed while its save is on the way is not
+  // marked saved along with it.
+  const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0 });
+  const markSettingsDirty = (key: SettingsKey) => {
+    settingsEdits.current[key] += 1;
     setSettingsDirty(current => (current.has(key) ? current : new Set(current).add(key)));
-  const saveSettings = () => {
-    settingsDirty.forEach(key => settingsForms[key].current?.requestSubmit());
-    setSettingsDirty(new Set());
   };
   const revertSettings = () => {
     settingsDirty.forEach(key => settingsForms[key].current?.reset());
@@ -119,6 +126,9 @@ export default function TicketAdmin() {
   function setTab(next: Tab) {
     setParams({ tab: next });
   }
+  // Leaving settings unmounts its forms, which takes the unsaved values with them; the
+  // bar must not come back claiming changes that are no longer on screen.
+  useEffect(() => { if (tab !== 'settings') setSettingsDirty(new Set()); }, [tab]);
   useEffect(() => {
     if (tab !== 'settings' || !requestedSection) return;
     document.getElementById(`settings-${requestedSection}`)?.scrollIntoView({ block: 'start' });
@@ -137,6 +147,8 @@ export default function TicketAdmin() {
   const [confirmTicket, setConfirmTicket] = useState<TicketRow | null>(null);
   const [confirmBulkOff, setConfirmBulkOff] = useState<number[] | null>(null);
   const [confirmBooth, setConfirmBooth] = useState<BoothRow | null>(null);
+  // Both of these cut a working tablet off at the door, so the gate menu asks first.
+  const [confirmGate, setConfirmGate] = useState<{ gate: GateRow; action: 'rotate' | 'release' } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -146,23 +158,49 @@ export default function TicketAdmin() {
     finally { setSessionsLoaded(true); }
   }, []);
 
+  // Only the newest read may land: an older one still on its way - for the event that
+  // was open before, or overtaken by a newer read - is cancelled and its answer dropped.
+  const sessionLoad = useRef<AbortController | null>(null);
   const loadSession = useCallback(async (id: number) => {
+    sessionLoad.current?.abort();
+    const controller = new AbortController();
+    sessionLoad.current = controller;
+    const get = (path: string) =>
+      fetch(`/api/admin/sessions/${id}/${path}`, { signal: controller.signal }).then(read);
     try {
-      setSummary(await read(await fetch(`/api/admin/sessions/${id}/tickets/summary`)));
-      setOccupancy(await read(await fetch(`/api/admin/sessions/${id}/occupancy`)));
-      setGates(await read(await fetch(`/api/admin/sessions/${id}/gates`)));
-      setBooths(await read(await fetch(`/api/admin/sessions/${id}/booths`)));
+      const [nextSummary, nextOccupancy, nextGates, nextBooths] =
+        await Promise.all([get('tickets/summary'), get('occupancy'), get('gates'), get('booths')]);
+      if (controller.signal.aborted) return;
+      setSummary(nextSummary);
+      setOccupancy(nextOccupancy);
+      setGates(nextGates);
+      setBooths(nextBooths);
       setRevision(value => value + 1);
       setUpdatedAt(new Date());
-    } catch (err) { setError(err instanceof Error ? err.message : '이벤트 정보를 불러오지 못했어요.'); }
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : '이벤트 정보를 불러오지 못했어요.');
+    }
   }, []);
 
   // A new search or filter starts from the first page; a new event starts clean.
   const ticketSearch = useDebounced(ticketQuery.trim());
-  useEffect(() => { setTicketPageNo(0); }, [ticketSearch, ticketFilter, selected]);
+  const pagingKey = `${selected}|${ticketFilter}|${ticketSearch}`;
+  const ticketPageNo = ticketPaging.key === pagingKey ? ticketPaging.page : 0;
+  const setTicketPageNo = (page: number) => setTicketPaging({ key: pagingKey, page });
   // A choice is about the rows on screen: a new search, filter or page starts it over.
   useEffect(() => { setChecked(new Set()); }, [ticketSearch, ticketFilter, ticketPageNo, selected]);
-  useEffect(() => { setOpenTicket(null); setSettingsDirty(new Set()); }, [selected]);
+  // Nothing of the event that was open before may stay on screen under the new one's name.
+  useEffect(() => {
+    setOpenTicket(null);
+    setSettingsDirty(new Set());
+    setSummary(null);
+    setOccupancy(null);
+    setGates([]);
+    setBooths([]);
+    setTicketPage(EMPTY_PAGE);
+    return () => { sessionLoad.current?.abort(); };
+  }, [selected]);
   // The open ticket follows the list: after an action its row is read again.
   useEffect(() => {
     setOpenTicket(current => current
@@ -196,19 +234,43 @@ export default function TicketAdmin() {
     if (selected === null) return;
     // Scans arrive as they happen; what follows is the fallback for a network that will
     // not carry the socket, which is why it can afford to be slow.
+    // A busy door sends a movement for every scan; each one used to read the whole event
+    // again. They are gathered into at most one read a second.
+    let queuedReload: number | null = null;
+    let lastReload = 0;
+    const reloadSoon = () => {
+      if (queuedReload !== null) return;
+      queuedReload = window.setTimeout(() => {
+        queuedReload = null;
+        lastReload = Date.now();
+        void loadSession(selected);
+      }, Math.max(0, lastReload + 1000 - Date.now()));
+    };
     const live = openLive(`/ws/admin/sessions/${selected}`, message => {
       if (message.type === 'OCCUPANCY') { setOccupancy(message as unknown as Occupancy); setUpdatedAt(new Date()); }
-      if (message.type === 'MOVEMENT') void loadSession(selected);
+      if (message.type === 'MOVEMENT') reloadSoon();
       if (['CHAT', 'CHAT_REPORT', 'CHAT_HIDE', 'CHAT_LIKE', 'ADS'].includes(message.type)) setRoomTick(value => value + 1);
     }, setLiveState);
     const timer = window.setInterval(() => { void loadSession(selected); }, 30000);
-    return () => { live.close(); window.clearInterval(timer); };
+    return () => {
+      live.close();
+      window.clearInterval(timer);
+      if (queuedReload !== null) window.clearTimeout(queuedReload);
+    };
   }, [selected, loadSession]);
 
-  async function act(action: () => Promise<void>) {
+  // How many actions are on their way. The buttons that change something wait for them,
+  // so a second click does not send the same thing twice.
+  const [pending, setPending] = useState(0);
+  const busy = pending > 0;
+
+  /** Runs one console action; says whether it went through, having shown why if not. */
+  async function act(action: () => Promise<void>): Promise<boolean> {
     setError(''); setNotice('');
-    try { await action(); }
-    catch (err) { setError(err instanceof Error ? err.message : '요청을 처리하지 못했어요.'); }
+    setPending(value => value + 1);
+    try { await action(); return true; }
+    catch (err) { setError(err instanceof Error ? err.message : '요청을 처리하지 못했어요.'); return false; }
+    finally { setPending(value => value - 1); }
   }
 
   const issueTicket = (form: HTMLFormElement) => act(async () => {
@@ -539,6 +601,17 @@ export default function TicketAdmin() {
     await loadSession(selected!);
   });
 
+  /** Copies a setup link, and says whether it worked: an insecure page has no clipboard. */
+  const copyLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setError('');
+      setNotice('설정 링크를 복사했어요.');
+    } catch {
+      setError('링크를 복사하지 못했어요. 링크를 직접 선택해 복사해 주세요.');
+    }
+  };
+
   const saveCatalog = (patch: { seats?: string[]; tiers?: string[] }) => act(async () => {
     await read(await mutate(`/api/admin/sessions/${selected}/policy`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
@@ -552,8 +625,7 @@ export default function TicketAdmin() {
    * Sent as one action because that is how the operator thinks of it, though the lines
    * belong to the event and the capacities to its places.
    */
-  const saveCrowding = (form: HTMLFormElement) => act(async () => {
-    const data = new FormData(form);
+  const saveCrowding = (data: FormData) => act(async () => {
     const zones: Record<string, number> = {};
     for (const [key, value] of data.entries()) {
       if (!key.startsWith('zone:')) continue;
@@ -566,24 +638,32 @@ export default function TicketAdmin() {
         crowdSteadyPercent: Number(data.get('crowdSteadyPercent')),
       }),
     }));
-    await read(await mutate(`/api/admin/sessions/${selected}/zones`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zones }),
-    }));
+    // Two requests, one after the other: when only the first lands, the operator is told
+    // which half stuck, and the form stays changed so saving again sends both.
+    try {
+      await read(await mutate(`/api/admin/sessions/${selected}/zones`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zones }),
+      }));
+    } catch (err) {
+      void loadSessions();
+      throw new Error('혼잡 기준(%)은 저장했지만 장소별 정원은 저장하지 못했어요. '
+        + (err instanceof Error ? err.message : ''));
+    }
     setNotice('혼잡도 기준을 저장했어요.');
     await loadSessions();
   });
 
-  // Turning an event into a test shows every recipient's address in full, so it asks.
-  const [confirmTest, setConfirmTest] = useState<HTMLFormElement | null>(null);
-  const submitDetails = (form: HTMLFormElement) => {
-    const turningOn = new FormData(form).get('testEvent') === 'on' && !session?.testEvent;
-    if (turningOn) setConfirmTest(form);
-    else void saveDetails(form);
+  // Turning an event into a test shows every recipient's address in full, so it asks;
+  // the save waits on the answer, and a cancel leaves the form unsaved.
+  const [confirmTest, setConfirmTest] = useState<{ data: FormData; answer: (saved: boolean) => void } | null>(null);
+  const submitDetails = (data: FormData): Promise<boolean> => {
+    const turningOn = data.get('testEvent') === 'on' && !session?.testEvent;
+    if (!turningOn) return saveDetails(data);
+    return new Promise(answer => setConfirmTest({ data, answer }));
   };
 
-  const saveDetails = (form: HTMLFormElement) => act(async () => {
-    const data = new FormData(form);
+  const saveDetails = (data: FormData) => act(async () => {
     const startsAt = String(data.get('startsAt') || '');
     const gateOpensAt = String(data.get('gateOpensAt') || '');
     await read(await mutate(`/api/admin/sessions/${selected}`, {
@@ -601,8 +681,7 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
-  const savePolicy = (form: HTMLFormElement) => act(async () => {
-    const data = new FormData(form);
+  const savePolicy = (data: FormData) => act(async () => {
     await read(await mutate(`/api/admin/sessions/${selected}/policy`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -620,6 +699,37 @@ export default function TicketAdmin() {
     setNotice('정책을 저장했어요. 다음 스캔부터 적용됩니다.');
     await loadSessions();
   });
+
+  /**
+   * The save bar: every changed form, checked first and then saved one at a time. A form
+   * is marked saved only once the server has taken it, so a refusal leaves both the bar
+   * and the operator's values where they were, and the first refusal stops the rest.
+   */
+  const settingsSavers: Record<SettingsKey, (data: FormData) => Promise<boolean>> = {
+    details: submitDetails, policy: savePolicy, crowd: saveCrowding,
+  };
+  const saveSettings = async () => {
+    if (savingSettings) return;
+    const keys = SETTINGS_ORDER.filter(key => settingsDirty.has(key));
+    for (const key of keys) {
+      if (settingsForms[key].current?.reportValidity() === false) return;
+    }
+    setSavingSettings(true);
+    try {
+      for (const key of keys) {
+        const form = settingsForms[key].current;
+        if (!form) continue;
+        const edits = settingsEdits.current[key];
+        if (!await settingsSavers[key](new FormData(form))) break;
+        if (settingsEdits.current[key] !== edits) continue;
+        setSettingsDirty(current => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
+      }
+    } finally { setSavingSettings(false); }
+  };
 
   const session = sessions.find(s => s.id === selected) ?? null;
   // A seat is spoken for as soon as a ticket carries it; the database enforces the same.
@@ -770,7 +880,7 @@ export default function TicketAdmin() {
                 <label htmlFor="ticket-phone">휴대폰 (선택 · 문자 발송)</label>
                 <input id="ticket-phone" name="phone" inputMode="tel" placeholder="01012345678" />
               </div>
-              <button className="btn-secondary" type="submit">한 장 발급하기</button>
+              <button className="btn-secondary" type="submit" disabled={busy}>한 장 발급하기</button>
               {issued?.from === 'issue' && (
                 <IssuedLink url={issued.url}
                   note={`${issued.ticketRef} · 이 링크는 지금만 보여집니다. 다시 보려면 새로 발급해야 해요.`} />
@@ -1031,9 +1141,9 @@ export default function TicketAdmin() {
                         { label: '유효기간 연장', onSelect: () => renewGate(gate.gateId) },
                         ...(gate.tokenExpiresAt !== null
                           ? [{ label: '유효기간 없애기', onSelect: () => renewGate(gate.gateId, 0) }] : []),
-                        { label: '단말 연결 해제', onSelect: () => releaseGate(gate.gateId), disabled: !gate.boundDevice },
+                        { label: '단말 연결 해제', onSelect: () => setConfirmGate({ gate, action: 'release' }), disabled: !gate.boundDevice },
                         'separator',
-                        { label: '토큰 폐기', onSelect: () => rotateGateToken(gate.gateId), danger: true },
+                        { label: '토큰 폐기', onSelect: () => setConfirmGate({ gate, action: 'rotate' }), danger: true },
                       ]} />
                     </div>
                     <div className={`gate-status${gate.boundDevice ? ' on' : ''}`}>
@@ -1071,7 +1181,7 @@ export default function TicketAdmin() {
                           onClick={() => setSetupQr({ name: gate.label || gate.gateId, url: gate.setupUrl!,
                             code: gate.setupCode, expiresAt: gate.setupExpiresAt })}>QR로 연결</button>
                         <button className="btn-secondary" type="button" disabled={!gate.setupUrl}
-                          onClick={() => navigator.clipboard?.writeText(gate.setupUrl ?? '')}>링크 복사</button>
+                          onClick={() => void copyLink(gate.setupUrl ?? '')}>링크 복사</button>
                       </>) : problem === 1 ? (
                         <button className="btn-secondary" type="button" onClick={() => renewGate(gate.gateId)}>유효기간 연장</button>
                       ) : (
@@ -1155,7 +1265,7 @@ export default function TicketAdmin() {
                     <div className="share-row">
                       <button type="button" onClick={() => setSetupQr({ name: gateSetup.gateId, url: gateSetup.setupUrl,
                         code: gateSetup.setupCode, expiresAt: gateSetup.expiresAt ?? null })}>QR로 연결</button>
-                      <button type="button" onClick={() => navigator.clipboard?.writeText(gateSetup.setupUrl)}>
+                      <button type="button" onClick={() => void copyLink(gateSetup.setupUrl)}>
                         링크 복사
                       </button>
                     </div>
@@ -1192,7 +1302,7 @@ export default function TicketAdmin() {
               <div className="settings-body">
             <form key={`details-${session.id}`} className="settings-form" ref={settingsForms.details}
               onChange={() => markSettingsDirty('details')}
-              onSubmit={e => { e.preventDefault(); submitDetails(e.currentTarget); }}>
+              onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="field">
                 <label htmlFor="event-name">이름</label>
                 <input id="event-name" name="name" required defaultValue={session.name} />
@@ -1238,7 +1348,7 @@ export default function TicketAdmin() {
               <div className="settings-body">
             <form key={`policy-${session.id}`} className="settings-form" ref={settingsForms.policy}
               onChange={() => markSettingsDirty('policy')}
-              onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
+              onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="form-row">
                 <div className="field">
                   <label htmlFor="policy-mode">재입장</label>
@@ -1321,7 +1431,7 @@ export default function TicketAdmin() {
               <div className="settings-body">
             <form key={`crowd-${session.id}`} className="settings-form" ref={settingsForms.crowd}
               onChange={() => markSettingsDirty('crowd')}
-              onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
+              onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="form-row">
                 <div className="field">
                   <label htmlFor="crowd-busy">'혼잡' 기준 (%)</label>
@@ -1424,8 +1534,10 @@ export default function TicketAdmin() {
             {settingsDirty.size > 0 && (
               <div className="save-bar" role="region" aria-label="저장하지 않은 변경">
                 <span>저장하지 않은 변경 · {[...settingsDirty].map(key => SETTINGS_NAMES[key]).join(', ')}</span>
-                <button type="button" className="btn-secondary" onClick={revertSettings}>되돌리기</button>
-                <button type="button" className="btn-primary" onClick={saveSettings}>변경 사항 저장</button>
+                <button type="button" className="btn-secondary" disabled={savingSettings}
+                  onClick={revertSettings}>되돌리기</button>
+                <button type="button" className="btn-primary" disabled={savingSettings}
+                  onClick={() => void saveSettings()}>{savingSettings ? '저장 중…' : '변경 사항 저장'}</button>
               </div>
             )}
           </div>
@@ -1513,8 +1625,13 @@ export default function TicketAdmin() {
           + `실제 관람객 명단이 들어 있는 이벤트라면 취소하세요.`
           + (session?.ticketCount ? ` 지금 입장권 ${session.ticketCount.toLocaleString()}장이 발급되어 있어요.` : '')}
         confirmLabel="테스트 이벤트로 저장"
-        onConfirm={() => { const form = confirmTest; setConfirmTest(null); if (form) void saveDetails(form); }}
-        onCancel={() => setConfirmTest(null)}
+        onConfirm={() => {
+          if (!confirmTest) return;
+          const { data, answer } = confirmTest;
+          setConfirmTest(null);
+          void saveDetails(data).then(answer);
+        }}
+        onCancel={() => { confirmTest?.answer(false); setConfirmTest(null); }}
       />
 
       <ConfirmDialog
@@ -1523,6 +1640,7 @@ export default function TicketAdmin() {
         message={'발급 화면과 목록에서 이 항목이 사라집니다. 이미 발급된 입장권은 받은 값을 그대로 '
           + '유지하고, 항목을 다시 만들면 값 목록부터 새로 정하게 됩니다.'}
         confirmLabel="항목 삭제"
+        busy={busy}
         onConfirm={() => confirmField && removeField(confirmField)}
         onCancel={() => setConfirmField(null)}
       />
@@ -1757,11 +1875,36 @@ export default function TicketAdmin() {
       {setupQr && <GateSetupQr target={setupQr} onClose={() => setSetupQr(null)} />}
 
       <ConfirmDialog
+        open={confirmGate != null}
+        title={confirmGate?.action === 'rotate'
+          ? `'${confirmGate.gate.label || confirmGate.gate.gateId}' 토큰을 폐기할까요?`
+          : `'${confirmGate?.gate.label || confirmGate?.gate.gateId}' 단말 연결을 해제할까요?`}
+        message={confirmGate?.action === 'rotate'
+          ? '지금 연결된 단말은 이 순간부터 스캔하지 못합니다. 다시 쓰려면 새 설정 링크로 연결해야 해요.'
+          : '연결된 태블릿이 이 게이트에서 풀려 더 이상 스캔하지 못합니다. 같은 태블릿이나 다른 단말을 설정 링크로 다시 연결할 수 있어요.'}
+        details={confirmGate ? [
+          ['게이트', confirmGate.gate.label || confirmGate.gate.gateId],
+          ['게이트 ID', confirmGate.gate.gateId],
+          ['단말', confirmGate.gate.boundDevice ? `${confirmGate.gate.boundDevice}…` : '연결 안 됨'],
+        ] : undefined}
+        confirmLabel={confirmGate?.action === 'rotate' ? '토큰 폐기' : '연결 해제'}
+        busy={busy}
+        onConfirm={() => {
+          if (!confirmGate) return;
+          const { gate, action } = confirmGate;
+          void (action === 'rotate' ? rotateGateToken(gate.gateId) : releaseGate(gate.gateId))
+            .then(done => { if (done) setConfirmGate(null); });
+        }}
+        onCancel={() => setConfirmGate(null)}
+      />
+
+      <ConfirmDialog
         open={confirmBulkOff != null}
         title={`입장권 ${confirmBulkOff?.length ?? 0}장을 비활성화할까요?`}
         message={'링크가 열리지 않고 게이트도 입장을 거부합니다. 이미 장내에 있는 사람을 내보내지는 않아요. '
           + '선택한 입장권에서 다시 사용하기로 되돌릴 수 있어요.'}
         confirmLabel="비활성화"
+        busy={busy}
         onConfirm={() => { if (confirmBulkOff) setManyRevoked(confirmBulkOff, true); }}
         onCancel={() => setConfirmBulkOff(null)}
       />
@@ -1783,11 +1926,11 @@ export default function TicketAdmin() {
            asks for the reference to be typed. */
         requireText={confirmTicket && confirmTicket.entryCount > 0 ? confirmTicket.ticketRef : undefined}
         confirmLabel="입장권 삭제"
+        busy={busy}
         onConfirm={() => {
           if (!confirmTicket) return;
           const row = confirmTicket;
-          setConfirmTicket(null);
-          deleteTicket(row);
+          void deleteTicket(row).then(done => { if (done) setConfirmTicket(null); });
         }}
         onCancel={() => setConfirmTicket(null)}
       />
@@ -1805,6 +1948,7 @@ export default function TicketAdmin() {
         ]}
         requireText={session?.name}
         confirmLabel="영구 삭제"
+        busy={busy}
         onConfirm={() => session && deleteSession(session.id)}
         onCancel={() => setConfirmDelete(false)}
       />

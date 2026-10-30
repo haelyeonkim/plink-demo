@@ -24,18 +24,23 @@ export default function ConfirmDialog({
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) { setTyped(''); return; }
-    input.current?.focus();
+    if (!open) setTyped('');
+    else input.current?.focus();
+  }, [open]);
+  useEffect(() => {
+    // While the action is on its way the dialog stays: closing it would hide whether
+    // the thing it asked about actually happened.
+    if (!open || busy) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
+  }, [open, busy, onCancel]);
 
   if (!open) return null;
   const ready = !requireText || typed.trim() === requireText;
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+    <div className="modal-backdrop" role="presentation" onClick={busy ? undefined : onCancel}>
       <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
         onClick={event => event.stopPropagation()}>
         <h3 id="confirm-title">{title}</h3>

@@ -1342,6 +1342,10 @@ select, .field select, select.artwork-status {
 .toast button { flex: none; border: 0; background: none; color: inherit; font-size: 14px; cursor: pointer; padding: 2px 4px; opacity: .85; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+/* A page with a save bar pinned to the bottom keeps the toast above it, so the answer to
+   pressing save never sits on top of the button that was pressed. */
+body:has(.save-bar) .toast-stack { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (max-width: 640px) { body:has(.save-bar) .toast-stack { bottom: calc(136px + env(safe-area-inset-bottom)); } }
 
 /* A phone's console head: the title with its one action beside it, the live state as a dot. */
 @media (max-width: 560px) {
