@@ -50,6 +50,45 @@ public class FaceService {
 
     public static final String PURPOSES = "게이트 본인 확인, 중복 등록 방지";
 
+    /** One template, opened. */
+    private record Opened(long ticketId, float[] vector) {}
+
+    /** A session's opened templates and the fingerprint they were opened at. */
+    private record Opening(long count, long newestId, List<Opened> templates) {}
+
+    /** How many events' templates are kept open at once; a venue runs a handful. */
+    private static final int OPEN_SESSIONS = 8;
+
+    /**
+     * Opened templates per event, so a gate scanning every two seconds does not decrypt
+     * the whole event on every frame. Each read checks the database's fingerprint first,
+     * so an enrolment, a withdrawal, a transfer or a purge - on any path, on any
+     * instance - is seen on the very next match rather than when something remembers to
+     * invalidate. The vectors were decrypted per read before; this only keeps them for
+     * the events actually running, and drops the rest.
+     */
+    private final Map<Long, Opening> opened = java.util.Collections.synchronizedMap(
+        new LinkedHashMap<>(16, 0.75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<Long, Opening> eldest) {
+                return size() > OPEN_SESSIONS;
+            }
+        });
+
+    private List<Opened> templates(long sessionId) {
+        long[] print = faces.fingerprint(sessionId);
+        Opening cached = opened.get(sessionId);
+        if (cached != null && cached.count == print[0] && cached.newestId == print[1]) {
+            return cached.templates;
+        }
+        List<Opened> fresh = faces.findBySession(sessionId).stream()
+            .map(template -> new Opened(template.ticketId, cipher.open(template.vector)))
+            .toList();
+        // Stamped with the fingerprint read before the rows: a change in between makes
+        // the next read open them again rather than trust a stale set.
+        opened.put(sessionId, new Opening(print[0], print[1], fresh));
+        return fresh;
+    }
+
     /** Consent is its own record, taken separately from the ticket's terms. */
     @Transactional
     public Map<String, Object> consent(Ticket ticket, String email, boolean agreed) {
@@ -110,9 +149,9 @@ public class FaceService {
 
         // De-duplication runs at a stricter threshold than admission: a false match here
         // locks a real person out, and with no stored image nobody can review the pair.
-        for (FaceRepository.Template other : faces.findBySession(ticket.sessionId)) {
+        for (Opened other : templates(ticket.sessionId)) {
             if (other.ticketId == ticket.id) continue;
-            double score = FaceVector.similarity(vector.values, cipher.open(other.vector));
+            double score = FaceVector.similarity(vector.values, other.vector);
             if (score >= config.getDedupThreshold()) {
                 faces.recordAttempt(ticket.sessionId, ticket.id, null, "ENROL", "DUPLICATE",
                     score, null, liveness, "이벤트 내 중복 얼굴");
@@ -199,8 +238,8 @@ public class FaceService {
 
         long bestTicket = 0;
         double best = -1, second = -1;
-        for (FaceRepository.Template candidate : faces.findBySession(session.id)) {
-            double score = FaceVector.similarity(probe.values, cipher.open(candidate.vector));
+        for (Opened candidate : templates(session.id)) {
+            double score = FaceVector.similarity(probe.values, candidate.vector);
             if (score > best) {
                 second = best;
                 best = score;
