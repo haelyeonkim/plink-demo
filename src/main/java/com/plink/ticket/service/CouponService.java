@@ -403,6 +403,8 @@ public class CouponService {
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.sessionId != gate.sessionId) throw deny("다른 이벤트의 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        // As with spending: a ticket on its way to someone else collects nothing on the way.
+        if (!ticket.bound()) throw deny("양도 중인 입장권에는 쿠폰을 줄 수 없어요.");
         presentations.consume(verified.grant, verified.counter);
 
         List<Map<String, Object>> choices = new ArrayList<>();
@@ -443,6 +445,8 @@ public class CouponService {
         checkCounts(wanted.values());
         Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
+        // A transfer may have started while the counter was choosing.
+        if (!ticket.bound()) throw deny("양도 중인 입장권에는 쿠폰을 줄 수 없어요.");
         Map<Long, Integer> chosen = new LinkedHashMap<>();
         wanted.forEach((offerId, count) -> { if (count != null && count > 0) chosen.put(offerId, count); });
         if (chosen.isEmpty()) {

@@ -875,20 +875,6 @@ public class TicketAdminController {
         return result;
     }
 
-    /** Takes a coupon back, or puts it back in the holder's hands. */
-    @PostMapping("/coupons/{couponId}/status")
-    public Map<String, Object> setCouponStatus(@PathVariable long couponId,
-            @RequestBody Map<String, String> body) {
-        com.plink.ticket.model.Coupon coupon = couponRepository.findById(couponId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰을 찾을 수 없어요."));
-        String status = String.valueOf(body.get("status")).toUpperCase(java.util.Locale.ROOT);
-        if (!List.of("ISSUED", "REDEEMED", "VOID").contains(status)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠폰 상태가 올바르지 않아요.");
-        }
-        couponRepository.setStatus(coupon.id, status);
-        return Map.of("couponId", coupon.id, "status", status);
-    }
-
     private static long number(Object value) {
         return value instanceof Number n ? n.longValue() : 0;
     }
