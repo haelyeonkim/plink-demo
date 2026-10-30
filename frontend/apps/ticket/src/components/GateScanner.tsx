@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import jsQR from 'jsqr';
+import Toast from '@shared/components/Toast';
 import {
   ApiError, gateFaceChallenge, gateFaceScan, gateGrantConfirm, gateGrantScan, gateInfo,
   gateRenew, gateScan, gateSync,
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
+import { terminalClient } from '../booth/api';
 import BoothBoard from './BoothBoard';
+import BoothConsole, { BoothTabBar, TERMINAL_TABS, type BoothTab } from './booth/BoothConsole';
 import GateVerdict, { type Verdict } from './GateVerdict';
 import type { SealTone } from './SealMark';
 import { clockText } from '../motion';
@@ -153,6 +156,14 @@ export default function GateScanner() {
   const [givenOut, setGivenOut] = useState(0);
   const modeGeneration = useRef(0);
   const [sending, setSending] = useState(false);
+  // A booth terminal is also its booth's console. 스캔 is the camera above; the other
+  // tabs are the manager's screens, asked for with this terminal's own token.
+  const [tab, setTab] = useState<BoothTab>('scan');
+  // Coming back to 스캔 puts the camera back the way staff left it, as the board does.
+  const scanningBeforeConsole = useRef(true);
+  const [notice, setNotice] = useState('');
+  const [consoleError, setConsoleError] = useState('');
+  const client = useMemo(() => terminalClient(gateId.trim(), gateToken.trim()), [gateId, gateToken]);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE);
@@ -555,6 +566,33 @@ export default function GateScanner() {
     };
   }, [gate, flush]);
 
+  /** Moves between 스캔 and the console. Only 스캔 holds the camera. */
+  const goTab = useCallback((next: BoothTab) => {
+    if (next === tab) return;
+    if (tab === 'scan') {
+      scanningBeforeConsole.current = scanning;
+      setScanning(false);
+      setFlash(null);
+    } else if (next === 'scan') {
+      setNotice(''); setConsoleError('');
+      setScanning(scanningBeforeConsole.current);
+      // What the console changed is what the shelf above the camera counts.
+      refreshOffers();
+    }
+    setTab(next);
+  }, [tab, scanning, refreshOffers]);
+
+  // The console refused this terminal: the same as any terminal request that does. The
+  // gate is asked again from the top, which either reconnects or lands on the setup
+  // screen with the server's reason - never the manager's sign-in, which a tablet has not.
+  const lostConsole = useCallback((err: ApiError) => {
+    setNotice(''); setConsoleError('');
+    setTab('scan');
+    setScanning(scanningBeforeConsole.current);
+    setError(err.message || '단말 인증이 끝났어요. 관리 화면에서 다시 연결해 주세요.');
+    setGate(null);
+  }, []);
+
   if (!gate) {
     return (
       <section className="gate-screen gate-setup">
@@ -572,8 +610,17 @@ export default function GateScanner() {
     );
   }
 
+  const booth = gate.role === 'BOOTH';
+  if (booth && tab !== 'scan') {
+    return <>
+      <BoothConsole className="gate-console" client={client} tabs={TERMINAL_TABS} tab={tab} onTab={goTab}
+        onLost={lostConsole} onNotice={setNotice} onError={setConsoleError} />
+      <Toast notice={notice} error={consoleError} onNotice={setNotice} onError={setConsoleError} />
+    </>;
+  }
+
   return (
-    <section className={`gate-screen ${flash ? `gate-${flash.tone}` : ''}`}>
+    <section className={`gate-screen${booth ? ' gate-tabbed' : ''} ${flash ? `gate-${flash.tone}` : ''}`}>
       <div className={`gate-result${outcome ? ` verdict-${outcome.tone}` : ''}`}
         role="status" aria-live="polite">
         {outcome ? (
@@ -755,6 +802,8 @@ export default function GateScanner() {
         <BoothBoard gateId={gateId} gateToken={gateToken} booth={gate.booth ?? gate.label ?? '부스'}
           place={gate.zone} onClose={() => { setBoard(false); setScanning(scanningBeforeBoard.current); }} />
       )}
+      {/* The chooser is a dialog waiting on the counter: it is answered, not walked away from. */}
+      {booth && <BoothTabBar dark tabs={TERMINAL_TABS} tab="scan" onTab={goTab} disabled={picking !== null || sending} />}
     </section>
   );
 }
