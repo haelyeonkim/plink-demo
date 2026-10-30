@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth';
 import { useLocation } from 'react-router-dom';
 import { AppLink as Link, useBrand, type BrandName } from '../scope';
@@ -37,9 +37,22 @@ export default function Header() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountBox = useRef<HTMLDivElement>(null);
 
   // A tap that navigates should also put the menu away.
-  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => { setOpen(false); setAccountOpen(false); }, [pathname]);
+  // The account menu closes on a tap anywhere else, or on Escape.
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onDown = (event: PointerEvent) => {
+      if (!accountBox.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setAccountOpen(false); };
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [accountOpen]);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
@@ -70,12 +83,25 @@ export default function Header() {
       {session.user.canAccounts && <Link className="admin-link" to="/admin">{ADMIN}</Link>}
       {/* An account literally named "관리자" would otherwise print the button's own
           label back at it. */}
-      {who !== ADMIN && (
-        <span className="account-name" title={session.user.email || ''}>{who}</span>
-      )}
-      <button className="login" disabled={busy} onClick={handleLogout}>
-        {busy ? '로그아웃 중…' : '로그아웃'}
-      </button>
+      {/* One round button with the account's initial; the address and the way out are
+          behind it, so a long address is never cut short in the header. */}
+      <div className="account-box" ref={accountBox}>
+        <button type="button" className="account-avatar" aria-haspopup="menu" aria-expanded={accountOpen}
+          aria-label={`계정 메뉴 · ${session.user.email || who}`} onClick={() => setAccountOpen(value => !value)}>
+          {[...(who || '?')][0].toUpperCase()}
+        </button>
+        {accountOpen && (
+          <div className="account-menu" role="menu">
+            <p className="account-menu-who">
+              {who !== ADMIN && who !== session.user.email && <b>{who}</b>}
+              <span>{session.user.email}</span>
+            </p>
+            <button type="button" role="menuitem" disabled={busy} onClick={handleLogout}>
+              {busy ? '로그아웃 중…' : '로그아웃'}
+            </button>
+          </div>
+        )}
+      </div>
     </>
   ) : (
     <Link className="login" to={brand.login}>{loading ? '확인 중…' : '로그인'}</Link>

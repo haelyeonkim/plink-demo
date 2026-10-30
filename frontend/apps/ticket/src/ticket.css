@@ -1416,3 +1416,37 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .ad-detail .ad-tag.pin { background: #fff4dc; color: #8a5300; }
 /* The last coupon clears the tab bar with room to spare, home indicator included. */
 .ticket-tab-coupons { padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
+.setup-code { display: flex; align-items: center; gap: 8px; } .setup-code .btn-tiny { font-family: inherit; }
+
+/* The issued list: one line per ticket; the link button shows on the row in hand. */
+.ticket-list td.presence-col .pill { white-space: nowrap; }
+@media (hover: hover) and (min-width: 621px) {
+  .ticket-list tbody tr:not(:hover):not(:focus-within):not(.is-open) .link-col .btn-tiny { opacity: 0; }
+}
+/* On a phone each ticket is a card: number and link on top, its state and holder below. */
+@media (max-width: 620px) {
+  .ticket-list, .tickets-layout.with-detail .ticket-list { min-width: 0; }
+  .ticket-list thead { display: none; }
+  .ticket-list tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 12px; border-bottom: 1px solid #eef0f5; }
+  .ticket-list tbody tr::before { content: ''; order: 3; flex-basis: 100%; height: 0; }
+  .ticket-list tbody td { display: block; padding: 0 !important; border: 0 !important; }
+  .ticket-list td.check { order: 0; }
+  .ticket-list td.ref-col { order: 1; flex: 1 1 0; min-width: 0; }
+  .ticket-list td.link-col { order: 2; display: block; }
+  .ticket-list td.state-col { order: 3; margin-left: 28px; }
+  .ticket-list td.presence-col { order: 3; }
+  .ticket-list td.field-col { order: 4; font-size: 13px; }
+  .ticket-list td.email-col { order: 5; flex-basis: 100%; padding-left: 28px !important; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .ticket-list td.delivery-col { display: none; }
+  .ticket-list td.console-none { flex-basis: 100%; }
+}
+
+/* Settings save once, from a bar that stays in view while anything is changed. */
+.save-bar {
+  position: sticky; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 30; display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; background: var(--ink); color: white; border-radius: 14px; padding: 12px 14px 12px 18px;
+  box-shadow: 0 14px 34px rgba(18, 33, 69, .28);
+}
+.save-bar span { flex: 1; min-width: 180px; font-size: 14px; font-weight: 600; }
+.save-bar .btn-secondary { background: transparent; color: white; border-color: rgba(255, 255, 255, .35); }
+.settings-page:has(.save-bar) { padding-bottom: 8px; }

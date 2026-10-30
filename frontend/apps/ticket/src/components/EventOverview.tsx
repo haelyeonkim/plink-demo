@@ -74,6 +74,8 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
     return { zone, now, cap: session.zoneCapacity?.[zone], level: crowdLevel(session, now, session.zoneCapacity?.[zone]) };
   });
   const busiest = Math.max(1, ...zones.map(z => z.now));
+  // Who is inside but came in without a gate - let in by hand - has no place to count in.
+  const unplaced = Math.max(0, (occupancy?.inside ?? 0) - zones.reduce((sum, z) => sum + z.now, 0));
 
   return (
     <div className="console-stack">
@@ -130,7 +132,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
             <h3 id="overview-zones">장소별 혼잡도</h3>
             <Link to="?tab=movements">자세히</Link>
           </div>
-          {zones.length === 0 ? (
+          {zones.length === 0 && unplaced === 0 ? (
             <p className="console-none">게이트에 장소를 정하면 여기에 장소별 인원이 보여요.</p>
           ) : zones.map(z => (
             <div className="zone-meter" key={z.zone}>
@@ -144,6 +146,16 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
               </span>
             </div>
           ))}
+          {unplaced > 0 && (
+            <div className="zone-meter unplaced">
+              <div className="zone-meter-head">
+                <b>장소 미지정</b>
+                <span>{unplaced.toLocaleString()}명</span>
+              </div>
+              <span className="meter-track meter-lg level-none"><span style={{ width: `${percent(unplaced, Math.max(busiest, unplaced))}%` }} /></span>
+              <div className="zone-meter-foot">게이트를 거치지 않고 관리자가 처리한 입장이에요.</div>
+            </div>
+          )}
         </section>
       </div>
 

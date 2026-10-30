@@ -1041,6 +1041,8 @@ select, .field select, select.artwork-status {
 .event-nav-card strong { font-size: 15px; line-height: 1.35; }
 .event-nav-card > span:last-child { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .event-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.event-nav-menu { display: contents; }
+.event-nav-toggle { display: none; }
 .event-nav-label { font-size: 11px; font-weight: 700; letter-spacing: .6px; color: var(--muted); padding: 0 10px 6px; }
 .event-nav-group a {
   display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px;
@@ -1241,14 +1243,26 @@ select, .field select, select.artwork-status {
   }
   .console-two, .console-split, .console-split.reverse { grid-template-columns: minmax(0, 1fr); }
 }
-/* Tablet and phone: the menu turns into a row across the top that scrolls sideways. */
+/* Tablet and phone: the menu folds into one line - back, and the screen in view - that opens it. */
 @media (max-width: 820px) {
-  .console-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .event-nav { position: static; flex-direction: row; align-items: center; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
-  .event-nav-card, .event-nav-label { display: none; }
-  .event-nav-group { flex-direction: row; gap: 4px; }
-  .event-nav-group a { padding: 10px 12px; min-height: 44px; box-sizing: border-box; }
+  .console-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .event-nav { position: relative; top: 0; flex-direction: row; align-items: center; gap: 8px; }
+  .event-nav-card { display: none; }
   .event-nav-back { white-space: nowrap; min-height: 44px; }
+  .event-nav-toggle {
+    display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: white; font: inherit; font-size: 14px; font-weight: 700;
+    color: var(--ink); cursor: pointer;
+  }
+  .event-nav-toggle > span { flex: 1; text-align: left; }
+  .event-nav-toggle[aria-expanded="true"] .event-nav-chev { transform: rotate(180deg); }
+  .event-nav-menu { display: none; }
+  .event-nav-menu.open {
+    display: flex; flex-direction: column; gap: 10px; position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 45;
+    background: white; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 40px rgba(18, 33, 69, .16);
+    padding: 10px; max-height: 70vh; overflow-y: auto;
+  }
+  .event-nav-group a { min-height: 44px; box-sizing: border-box; }
   .settings-section { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px; }
   .console-check { margin-left: 0; }
 }
@@ -1297,4 +1311,43 @@ select, .field select, select.artwork-status {
   textarea, select {
     font-size: max(16px, 1em) !important;
   }
+}
+
+/* The signed-in account: an initial that opens the address and the way out. */
+.account-box { position: relative; }
+.account-avatar {
+  width: 36px; height: 36px; border-radius: 99px; border: 1px solid #d8dce7; background: white;
+  font: inherit; font-size: 14px; font-weight: 800; color: var(--blue); cursor: pointer; display: grid; place-items: center;
+}
+.account-avatar[aria-expanded="true"] { border-color: var(--blue); }
+.account-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 70; min-width: 220px; background: white;
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(18, 33, 69, .14); padding: 6px;
+}
+.account-menu-who { margin: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.account-menu-who span { color: var(--muted); }
+.account-menu button { width: 100%; text-align: left; border: 0; background: none; font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+.account-menu button:hover { background: #f4f5f9; }
+
+/* What an action came to, at the bottom of the screen. */
+.toast-stack { position: fixed; left: 0; right: 0; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 80; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; }
+.toast {
+  pointer-events: auto; margin: 0; max-width: 560px; display: flex; align-items: center; gap: 10px;
+  background: var(--ink); color: white; font-size: 14px; line-height: 1.5; padding: 12px 16px; border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(18, 33, 69, .25); animation: toast-in .2s ease-out;
+}
+.toast-error { background: #b3362b; }
+.toast button { flex: none; border: 0; background: none; color: inherit; font-size: 14px; cursor: pointer; padding: 2px 4px; opacity: .85; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+/* A phone's console head: the title with its one action beside it, the live state as a dot. */
+@media (max-width: 560px) {
+  .console-head { flex-direction: row; align-items: flex-start; gap: 10px; flex-wrap: nowrap; }
+  .console-head > div:first-child { flex: 1; min-width: 0; }
+  .console-head p { font-size: 12.5px; }
+  .console-actions { flex-direction: row; align-items: center; gap: 8px; flex-wrap: nowrap; }
+  .console-actions .btn-primary { padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+  .console-actions .live-state { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 99px; }
+  .live-open { background: #2f9e75; } .live-connecting { background: #c4c8d4; } .live-retrying { background: #e0a43a; }
 }

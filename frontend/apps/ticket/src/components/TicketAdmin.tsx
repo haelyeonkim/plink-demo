@@ -1,5 +1,5 @@
 import Icon from '@shared/components/Icon';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '@shared/auth';
 import IssuedLink from './IssuedLink';
@@ -16,12 +16,15 @@ import GateSetupQr, { type SetupTarget } from './GateSetupQr';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
 import ConsoleCoupons from './ConsoleCoupons';
+import Toast from '@shared/components/Toast';
 import {
   BoothRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
+const SETTINGS_NAMES: Record<string, string> = { details: '행사 정보', policy: '재입장·퇴장', crowd: '혼잡도' };
+
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
   gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '행사 설정',
@@ -59,6 +62,22 @@ export default function TicketAdmin() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   // Bumped whenever the room's chat or board changes, so their screens read again.
   const [roomTick, setRoomTick] = useState(0);
+  const [shownCodes, setShownCodes] = useState<Set<string>>(new Set());
+  // The settings page saves once, from a bar that shows while anything is changed.
+  const settingsForms = {
+    details: useRef<HTMLFormElement>(null), policy: useRef<HTMLFormElement>(null), crowd: useRef<HTMLFormElement>(null),
+  };
+  const [settingsDirty, setSettingsDirty] = useState<Set<keyof typeof settingsForms>>(new Set());
+  const markSettingsDirty = (key: keyof typeof settingsForms) =>
+    setSettingsDirty(current => (current.has(key) ? current : new Set(current).add(key)));
+  const saveSettings = () => {
+    settingsDirty.forEach(key => settingsForms[key].current?.requestSubmit());
+    setSettingsDirty(new Set());
+  };
+  const revertSettings = () => {
+    settingsDirty.forEach(key => settingsForms[key].current?.reset());
+    setSettingsDirty(new Set());
+  };
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
   // A setup link shown as a QR code for the tablet's camera.
   const [setupQr, setSetupQr] = useState<SetupTarget | null>(null);
@@ -143,7 +162,7 @@ export default function TicketAdmin() {
   useEffect(() => { setTicketPageNo(0); }, [ticketSearch, ticketFilter, selected]);
   // A choice is about the rows on screen: a new search, filter or page starts it over.
   useEffect(() => { setChecked(new Set()); }, [ticketSearch, ticketFilter, ticketPageNo, selected]);
-  useEffect(() => { setOpenTicket(null); }, [selected]);
+  useEffect(() => { setOpenTicket(null); setSettingsDirty(new Set()); }, [selected]);
   // The open ticket follows the list: after an action its row is read again.
   useEffect(() => {
     setOpenTicket(current => current
@@ -638,8 +657,6 @@ export default function TicketAdmin() {
             <Link className="btn-primary" to="/tickets/sessions/new">행사 추가</Link>
           </span>
         </div>
-        {notice && <p className="notice-text" role="status">{notice}</p>}
-        {error && <p className="error-text" role="alert">{error}</p>}
         <EventTable sessions={sessions} loading={!sessionsLoaded} />
       </>)}
 
@@ -680,8 +697,6 @@ export default function TicketAdmin() {
             </div>
           </div>
 
-          {notice && <p className="notice-text" role="status">{notice}</p>}
-          {error && <p className="error-text" role="alert">{error}</p>}
 
           {tab === 'overview' && (
             <EventOverview session={session} summary={summary} occupancy={occupancy} gates={gates} />
@@ -851,18 +866,19 @@ export default function TicketAdmin() {
                           <input type="checkbox" aria-label={`${row.ticketRef} 선택`} checked={checked.has(row.ticketId)}
                             onChange={() => toggle(row.ticketId)} />
                         </td>
-                        <td>
+                        <td className="ref-col">
                           <button type="button" className="ticket-ref" aria-expanded={isOpen}
                             onClick={() => setOpenTicket(isOpen ? null : row)}>{row.ticketRef}</button>
                         </td>
-                        {fieldList.map(field => <td key={field.id}>{valueOf(row, field) ?? '–'}</td>)}
-                        <td><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
-                        <td>
-                          <span className={`pill pill-${presence.tone}`}>{presence.label}</span>
-                          {presence.since && <small className="cell-note">{clock(presence.since)}</small>}
+                        {fieldList.map(field => <td key={field.id} className="field-col">{valueOf(row, field) ?? '–'}</td>)}
+                        <td className="state-col"><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
+                        {/* One line: where the holder is and since when, so a row stays one row high. */}
+                        <td className="presence-col">
+                          <span className={`pill pill-${presence.tone}`}>
+                            {presence.label}{presence.since ? ` · ${clock(presence.since)}` : ''}</span>
                         </td>
-                        <td className="muted">{row.holderEmail ?? row.issuedToEmail}</td>
-                        <td className="muted">{DELIVERY[row.deliveredVia ?? ''] ?? row.deliveredVia ?? '–'}</td>
+                        <td className="muted email-col">{row.holderEmail ?? row.issuedToEmail}</td>
+                        <td className="muted delivery-col">{DELIVERY[row.deliveredVia ?? ''] ?? row.deliveredVia ?? '–'}</td>
                         <td className="row-actions link-col">
                           <button type="button" className="btn-tiny" onClick={() => { setOpenTicket(row); void showLink(row.ticketId); }}>
                             링크 보기</button>
@@ -907,7 +923,6 @@ export default function TicketAdmin() {
                   <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
                 </dl>
 
-                {error && <p className="error-text" role="alert">{error}</p>}
                 {issued?.from === 'row' && issued.ticketId === open.ticketId && (
                   <IssuedLink url={issued.url} note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
                 )}
@@ -1037,7 +1052,17 @@ export default function TicketAdmin() {
                       <div><dt>쿠폰</dt><dd>{(gate.grants ?? []).length === 0 ? '없음'
                         : `${gate.grants.length}종${gate.grants.some(grant => grant.auto) ? ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}` : ''}`}</dd></div>
                       {!gate.boundDevice && gate.setupCode && (
-                        <div><dt>인증번호</dt><dd className="mono">{gate.setupCode}</dd></div>
+                        <div><dt>인증번호</dt><dd className="mono setup-code">
+                          {/* Hidden until asked for: with the link, this number makes a tablet a gate,
+                              and a shared screen or a screenshot should not hand that out. */}
+                          {shownCodes.has(gate.gateId) ? gate.setupCode : '••• •••'}
+                          <button type="button" className="btn-tiny" aria-pressed={shownCodes.has(gate.gateId)}
+                            onClick={() => setShownCodes(current => {
+                              const next = new Set(current);
+                              if (next.has(gate.gateId)) next.delete(gate.gateId); else next.add(gate.gateId);
+                              return next;
+                            })}>{shownCodes.has(gate.gateId) ? '가리기' : '보기'}</button>
+                        </dd></div>
                       )}
                     </dl>
                     <div className="gate-card-actions">
@@ -1151,34 +1176,6 @@ export default function TicketAdmin() {
       })()}
 
       {session && tab === 'settings' && (() => {
-        // What is in force for each section, beside the form that changes it.
-        const NOW: Record<SettingsTab, Array<[string, string]>> = {
-              event: [
-                ['행사 시각', shortTime(session.startsAt) || '-'],
-                ['입장 시각', shortTime(session.gateOpensAt) || '제한 없음'],
-                ['이메일 표시', session.testEvent ? '테스트 행사 · 전체 표시' : '가림'],
-              ],
-              policy: [
-                ['재입장', session.reentryMode === 'DISABLED' ? '불가'
-                  : session.reentryMode === 'LIMITED' ? `최대 ${session.reentryMax}회` : '무제한'],
-                ['퇴장 후 유효', `${session.reentryGraceMinutes}분`],
-                ['중복 스캔 무시', `${session.reentryCooldownSeconds}초`],
-                ['퇴장', `${session.exitScanRequired ? '스캔 필수' : '스캔 선택'} · `
-                  + (UNMATCHED_LABEL[session.unmatchedExit] ?? session.unmatchedExit)],
-                ['자동 보정', `${session.autoExitAfterMinutes}분 경과 후`],
-                ['날짜 변경', session.dayCloseExit ? `${hourLabel(session.dayCloseHour)} 지나면 자동 퇴장` : '끔'],
-                ['등록 인증', session.claimRequiresOtp ? '이메일 인증' : '주소 입력만'],
-              ],
-              crowd: [
-                ['혼잡도 기준', `혼잡 ${session.crowdBusyPercent}% · 보통 ${session.crowdSteadyPercent}%`],
-                ['정원 지정', zoneNames.length === 0 ? '장소 없음'
-                  : `${zoneNames.length}곳 중 ${Object.keys(session.zoneCapacity ?? {}).length}곳`],
-              ],
-              fields: [
-                ['발급 항목', fieldList.length === 0 ? '없음'
-                  : fieldList.map(f => `${f.label}(${f.values.length || '자유'})`).join(' · ')],
-              ],
-            };
         return (
           <div className="settings-page">
             <nav className="settings-quick" aria-label="설정 항목">
@@ -1191,12 +1188,10 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-event-title">행사 정보</h3>
                 <p>관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</p>
-                <dl className="settings-now">
-                  {NOW.event.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                </dl>
               </div>
               <div className="settings-body">
-            <form key={`details-${session.id}`} className="settings-form"
+            <form key={`details-${session.id}`} className="settings-form" ref={settingsForms.details}
+              onChange={() => markSettingsDirty('details')}
               onSubmit={e => { e.preventDefault(); submitDetails(e.currentTarget); }}>
               <div className="field">
                 <label htmlFor="event-name">이름</label>
@@ -1230,7 +1225,7 @@ export default function TicketAdmin() {
                 입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
                 있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
               </p>
-              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
+
 
             </form>
               </div>
@@ -1239,12 +1234,10 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-policy-title">재입장 · 퇴장</h3>
                 <p>입장한 사람이 다시 들어올 수 있는지, 퇴장을 찍지 않은 사람을 언제 내보낼지 정합니다. 저장하면 다음 스캔부터 바로 적용돼요.</p>
-                <dl className="settings-now">
-                  {NOW.policy.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                </dl>
               </div>
               <div className="settings-body">
-            <form key={`policy-${session.id}`} className="settings-form"
+            <form key={`policy-${session.id}`} className="settings-form" ref={settingsForms.policy}
+              onChange={() => markSettingsDirty('policy')}
               onSubmit={e => { e.preventDefault(); savePolicy(e.currentTarget); }}>
               <div className="form-row">
                 <div className="field">
@@ -1316,7 +1309,7 @@ export default function TicketAdmin() {
                 장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
                 어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
               </p>
-              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
+
             </form>
               </div>
             </section>
@@ -1324,12 +1317,10 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-crowd-title">혼잡도</h3>
                 <p>장소별 수용 인원과 혼잡 기준입니다. 관람객 입장권 화면에도 같은 단계가 보여요.</p>
-                <dl className="settings-now">
-                  {NOW.crowd.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                </dl>
               </div>
               <div className="settings-body">
-            <form key={`crowd-${session.id}`} className="settings-form"
+            <form key={`crowd-${session.id}`} className="settings-form" ref={settingsForms.crowd}
+              onChange={() => markSettingsDirty('crowd')}
               onSubmit={e => { e.preventDefault(); saveCrowding(e.currentTarget); }}>
               <div className="form-row">
                 <div className="field">
@@ -1362,7 +1353,7 @@ export default function TicketAdmin() {
               <p className="hint-text">
                 정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.
               </p>
-              <button className="btn-primary" type="submit">저장하고 바로 적용</button>
+
             </form>
               </div>
             </section>
@@ -1370,9 +1361,6 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-fields-title">발급 항목</h3>
                 <p>입장권마다 붙는 항목입니다. 좌석은 같은 값을 두 장에 줄 수 없어요.</p>
-                <dl className="settings-now">
-                  {NOW.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                </dl>
               </div>
               <div className="settings-body">
             <div className="settings-form">
@@ -1433,6 +1421,13 @@ export default function TicketAdmin() {
                 <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 행사 삭제…</button>
               </div>
             </section>
+            {settingsDirty.size > 0 && (
+              <div className="save-bar" role="region" aria-label="저장하지 않은 변경">
+                <span>저장하지 않은 변경 · {[...settingsDirty].map(key => SETTINGS_NAMES[key]).join(', ')}</span>
+                <button type="button" className="btn-secondary" onClick={revertSettings}>되돌리기</button>
+                <button type="button" className="btn-primary" onClick={saveSettings}>변경 사항 저장</button>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1828,6 +1823,7 @@ export default function TicketAdmin() {
           return { row, zone, now, cap, level: crowdLevel(session, now, cap) };
         });
         const busiest = Math.max(1, ...zones.map(z => z.now));
+        const unplaced = Math.max(0, (occupancy?.inside ?? 0) - zones.reduce((sum, z) => sum + z.now, 0));
         const capacity = Object.values(session.zoneCapacity ?? {}).reduce((sum, n) => sum + n, 0);
         const denied = (occupancy?.byGate ?? []).reduce((sum, row) => sum + count(row.denied), 0);
         return (
@@ -1860,7 +1856,7 @@ export default function TicketAdmin() {
             <div className="console-two">
               <section className="console-card" aria-labelledby="live-zones">
                 <h3 id="live-zones">장소별 혼잡도</h3>
-                {zones.length === 0 ? (
+                {zones.length === 0 && unplaced === 0 ? (
                   <p className="console-none">등록된 게이트가 없어요.</p>
                 ) : zones.map(z => (
                   <div className="zone-meter" key={z.zone}>
@@ -1879,6 +1875,16 @@ export default function TicketAdmin() {
                     </div>
                   </div>
                 ))}
+                {unplaced > 0 && (
+                  <div className="zone-meter unplaced">
+                    <div className="zone-meter-head">
+                      <b>장소 미지정</b>
+                      <span>{unplaced.toLocaleString()}명</span>
+                    </div>
+                    <span className="meter-track meter-lg level-none"><span style={{ width: `${percent(unplaced, Math.max(busiest, unplaced))}%` }} /></span>
+                    <div className="zone-meter-foot">게이트를 거치지 않고 관리자가 처리한 입장이에요.</div>
+                  </div>
+                )}
                 <p className="console-foot">관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">행사 설정</Link>에서 바꿔요.</p>
               </section>
 
@@ -1938,6 +1944,7 @@ export default function TicketAdmin() {
         </div>
       </div>
       )}
+      <Toast notice={notice} error={error} onNotice={setNotice} onError={setError} />
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface ConsoleNavEntry<K extends string> {
   key: K; label: string; icon: string;
@@ -8,8 +8,8 @@ export interface ConsoleNavEntry<K extends string> {
 
 /**
  * One item's own menu, down the left of a console: the event in the ticket console, the
- * link in the link console. On a narrow screen it becomes a row across the top that
- * scrolls sideways, so the content is not pushed below it.
+ * link in the link console. On a narrow screen it folds into one line naming the screen
+ * in view, which opens the whole menu, so the screen's content starts near the top.
  */
 export default function ConsoleNav<K extends string>({ label, back, card, groups, current }: {
   label: string;
@@ -18,14 +18,34 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
   groups: Array<[string, ConsoleNavEntry<K>[]]>;
   current: K;
 }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLElement>(null);
+  const here = groups.flatMap(([, entries]) => entries).find(entry => entry.key === current);
+  useEffect(() => { setOpen(false); }, [current]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
   return (
-    <nav className="event-nav" aria-label={label}>
+    <nav className="event-nav" aria-label={label} ref={box}>
       <Link className="event-nav-back" to={back.to}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
         {back.label}
       </Link>
       <div className="event-nav-card">{card}</div>
+      <button type="button" className="event-nav-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+        {here && <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={here.icon} /></svg>}
+        <span>{here?.label ?? '메뉴'}</span>
+        <svg className="event-nav-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
+      <div className={`event-nav-menu${open ? ' open' : ''}`}>
       {groups.map(([title, entries]) => (
         <div className="event-nav-group" key={title || 'top'}>
           {title && <span className="event-nav-label">{title}</span>}
@@ -43,6 +63,7 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
           ))}
         </div>
       ))}
+      </div>
     </nav>
   );
 }
