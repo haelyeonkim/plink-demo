@@ -961,54 +961,28 @@ body:has(.ticket-tabs) .footer { padding-bottom: 90px; }
 .pinned-list li.hot { background: var(--accent-soft); }
 .pinned-list li.hot b { color: var(--blue); }
 .ad-form .button-row { display: flex; gap: 8px; }
+/* Booth notices waiting for the organiser, read in full before they go out. */
+.ad-review { border-color: #f3d9a8; background: #fffbf3; }
+.ad-review h3 { margin: 0 0 4px; }
+.ad-review > .console-summary { margin: 0 0 10px; }
+.ad-review-list { list-style: none; margin: 0; padding: 0; }
+.ad-review-list li { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid #f1e6cf; min-width: 0; }
+.ad-review-list img { flex: none; width: 88px; height: 88px; object-fit: cover; border-radius: 10px; background: #f1f2f7; }
+.ad-review-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.ad-review-main strong { font-size: 15px; overflow-wrap: anywhere; }
+.ad-review-main p { margin: 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ad-review-main small { font-size: 12px; }
+.ad-review-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.ad-review-reject { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.ad-review-reject input {
+  flex: 1 1 200px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px;
+}
+.btn-tiny.btn-tiny-primary { background: var(--blue); border-color: var(--blue); color: white; }
+@media (max-width: 520px) {
+  .ad-review-list li { flex-direction: column; }
+  .ad-review-list img { width: 100%; height: 160px; }
+}
 
-/* ---- A booth's board, over its terminal's dark screen ---- */
-.booth-board {
-  position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: #070b16; color: #f4f5fa;
-  padding: 20px clamp(16px, 4vw, 32px) 32px; display: flex; flex-direction: column; gap: 18px; text-align: left;
-}
-.booth-board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.booth-board-kicker { font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: #47d8aa; }
-.booth-board-head h2 { margin: 4px 0 0; font-size: 24px; }
-.booth-board-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
-.booth-board-form, .booth-board-side section {
-  background: #0d1426; border: 1px solid #1f2842; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px;
-}
-.booth-board-side { display: flex; flex-direction: column; gap: 16px; }
-.booth-board h3 { margin: 0; font-size: 17px; color: #e3e7f2; }
-.booth-board-form label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 700; color: #c9cfe0; }
-.booth-board-form input, .booth-board-form textarea, .booth-board-form select {
-  box-sizing: border-box; width: 100%; border: 1px solid #2c3550; border-radius: 12px; background: #121a2e; color: #f4f5fa;
-  padding: 12px 14px; font: inherit; font-size: 16px; font-weight: 400;
-}
-.booth-board-kinds { display: flex; gap: 8px; flex-wrap: wrap; }
-.booth-board-kinds button {
-  border: 1px solid #2c3550; background: none; color: #c9cfe0; font: inherit; font-size: 15px; padding: 12px 16px; border-radius: 10px; cursor: pointer;
-}
-.booth-board-kinds button.on { border-color: var(--blue); background: #231a4d; color: white; font-weight: 700; }
-.booth-board-actions { display: flex; gap: 10px; align-items: center; }
-.booth-board-submit {
-  flex: 1; height: 58px; border: 0; background: var(--blue); color: white; font: inherit; font-size: 18px; font-weight: 800; border-radius: 14px; cursor: pointer;
-}
-.booth-board-submit:disabled { opacity: .5; cursor: default; }
-.booth-board-hint { margin: 0; font-size: 13px; color: #a9b1c6; }
-.booth-board-ok { margin: 0; font-size: 14px; color: #47d8aa; }
-.booth-board-preview { background: #fffdf9; color: var(--ink); border-radius: 14px; padding: 12px; display: flex; gap: 10px; align-items: center; }
-.booth-board-preview > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
-.booth-board-preview b { font-size: 13.5px; }
-.booth-board-preview small { font-size: 11px; color: var(--muted); }
-.booth-board-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
-.booth-board-list li { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid #1f2842; }
-.booth-board-list li:last-child { border-bottom: 0; padding-bottom: 0; }
-.booth-board-list em { font-style: normal; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 7px; margin-right: 6px; background: #a9b1c6; color: #1f2842; }
-.booth-board-list em.state-live { background: #47d8aa; color: #0f3d2e; }
-.booth-board-list em.state-scheduled { background: #b8abff; color: #231a4d; }
-.booth-board-list small { font-size: 12px; color: #a9b1c6; }
-.booth-board-row { display: flex; gap: 12px; }
-.booth-board-row button { border: 0; background: none; color: #b8abff; font: inherit; font-size: 13px; padding: 4px 0; cursor: pointer; }
-@media (max-width: 760px) {
-  .booth-board-body { grid-template-columns: minmax(0, 1fr); }
-}
 /* The detail panel is a scrolling column: its parts keep their height instead of being squeezed. */
 .ticket-detail > * { flex-shrink: 0; }
 /* With a ticket open, its link is in the panel; the row button would only push the table wider. */
@@ -1019,20 +993,6 @@ body:has(.ticket-tabs) .footer { padding-bottom: 90px; }
 
 /* A notice's photo: in the list it takes the place of the booth's initial. */
 img.ad-thumb { object-fit: cover; padding: 0; background: #f1f2f7; }
-.booth-board-label { font-size: 14px; font-weight: 700; color: #c9cfe0; }
-.booth-board-label small, .booth-board-form label small { font-weight: 400; color: #a9b1c6; }
-.booth-board-photo { display: flex; flex-direction: column; gap: 8px; }
-.booth-board-photo-pick { display: flex; gap: 10px; }
-.booth-board-photo-pick button {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px;
-  border: 1px dashed #3a4566; background: none; color: #c9cfe0; font: inherit; font-size: 15px; border-radius: 12px; cursor: pointer;
-}
-.booth-board-photo-pick button:disabled { opacity: .6; cursor: default; }
-.booth-board-photo-on { display: flex; align-items: center; gap: 12px; }
-.booth-board-photo-on img { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; }
-.booth-board-photo-wait {
-  width: 120px; height: 90px; border-radius: 10px; background: #121a2e; color: #a9b1c6; display: grid; place-items: center; font-size: 13px;
-}
 .ad-form-photo { display: flex; flex-direction: column; gap: 8px; }
 .ad-form-label { font-size: 13px; font-weight: 700; color: var(--ink-soft, #3d4663); }
 .ad-form-photo-on { display: flex; align-items: center; gap: 12px; }
@@ -1493,8 +1453,14 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .bm-head { margin-bottom: 14px; }
 /* The console's tabs along the bottom, as on the holder's ticket. The bar is fixed, so the
    page keeps its height clear and the last button is never under it. */
-.booth-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.booth-tabs { grid-template-columns: repeat(var(--tabs, 5), minmax(0, 1fr)); }
 .booth-tabs button span { white-space: nowrap; }
+/* Six tabs on a phone: smaller marks and words, so 쿠폰 종류 and 쿠폰 목록 still fit whole. */
+@media (max-width: 440px) {
+  .booth-tabs { padding-left: max(2px, env(safe-area-inset-left)); padding-right: max(2px, env(safe-area-inset-right)); }
+  .booth-tabs button { font-size: 10.5px; letter-spacing: -0.4px; }
+  .booth-tabs button svg { width: 20px; height: 20px; }
+}
 .booth-manager.bm-console { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 body:has(.booth-tabs) .footer { padding-bottom: 90px; }
 /* An answer to a tap shows above the bar, not over the tabs. */
@@ -1528,6 +1494,18 @@ body:has(.gate-console) .header-plain, body:has(.gate-console) .footer { display
 .bm-checks label > input { grid-row: 1 / span 3; width: 18px; height: 18px; margin: 2px 0 0; }
 .bm-checks label > :not(input) { grid-column: 2; }
 ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
+/* The booth's board tab: its notices and the form that sends one for approval. */
+.bm-form .bm-mode { margin-bottom: 14px; }
+.bb-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.bb-photo-pick { display: flex; gap: 8px; }
+.bb-photo-pick button { flex: 1; margin: 0; }
+.bb-photo-on { display: flex; align-items: center; gap: 12px; }
+.bb-photo-on img, .bb-photo-wait { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; background: #f1f2f7; }
+.bb-photo-wait { display: grid; place-items: center; font-size: 13px; color: var(--muted); }
+.bb-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.bb-times input { min-width: 0; width: 100%; }
+@media (max-width: 440px) { .bb-times { grid-template-columns: minmax(0, 1fr); } }
+.bm-list small.bb-reason { color: #c0392b; }
 .bm-search {
   width: 100%; min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px;
   font: inherit; font-size: 14px; outline: none;

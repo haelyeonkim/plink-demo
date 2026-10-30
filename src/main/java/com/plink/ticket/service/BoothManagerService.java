@@ -462,7 +462,8 @@ public class BoothManagerService {
         return result;
     }
 
-    private static CouponService.Counter counter(BoothManager manager) {
+    /** The counter a manager stands at: their booth, and who they are, for what the booth records. */
+    public static CouponService.Counter counter(BoothManager manager) {
         return CouponService.Counter.manager(manager.sessionId, manager.boothId, manager.id);
     }
 

@@ -7,7 +7,6 @@ import {
 } from '../ticket/api';
 import { captureFrames } from '../ticket/camera';
 import { terminalClient } from '../booth/api';
-import BoothBoard from './BoothBoard';
 import BoothConsole, { BoothTabBar, TERMINAL_TABS, type BoothTab } from './booth/BoothConsole';
 import GateVerdict, { type Verdict } from './GateVerdict';
 import type { SealTone } from './SealMark';
@@ -149,17 +148,13 @@ export default function GateScanner() {
   // Giving mode: the next code read gets coupons rather than an entry or a handover.
   // Not remembered across reloads, so a tablet never wakes up quietly handing things out.
   const [giving, setGiving] = useState(false);
-  // A booth's own notices on the event's board, written here between scans.
-  const [board, setBoard] = useState(false);
-  // Closing the board puts the camera back the way staff left it, not always on.
-  const scanningBeforeBoard = useRef(true);
   const [givenOut, setGivenOut] = useState(0);
   const modeGeneration = useRef(0);
   const [sending, setSending] = useState(false);
   // A booth terminal is also its booth's console. 스캔 is the camera above; the other
   // tabs are the manager's screens, asked for with this terminal's own token.
   const [tab, setTab] = useState<BoothTab>('scan');
-  // Coming back to 스캔 puts the camera back the way staff left it, as the board does.
+  // Coming back to 스캔 puts the camera back the way staff left it, not always on.
   const scanningBeforeConsole = useRef(true);
   const [notice, setNotice] = useState('');
   const [consoleError, setConsoleError] = useState('');
@@ -780,11 +775,6 @@ export default function GateScanner() {
             {giving ? '쿠폰 부여 끝내기' : '쿠폰 부여'}
           </button>
         )}
-        {gate.role === 'BOOTH' && !giving && (
-          <button className="btn-ghost" onClick={() => {
-            scanningBeforeBoard.current = scanning; setScanning(false); setBoard(true);
-          }}>알림판</button>
-        )}
         {gate.role !== 'BOOTH' && !giving && (
           <button className="btn-ghost" onClick={() => {
             if (!faceMode) { faceFailures.current = 0; setError(''); }
@@ -798,10 +788,6 @@ export default function GateScanner() {
         )}
       </footer>
       {error && <p className="gate-error" role="alert">{error}</p>}
-      {board && (
-        <BoothBoard gateId={gateId} gateToken={gateToken} booth={gate.booth ?? gate.label ?? '부스'}
-          place={gate.zone} onClose={() => { setBoard(false); setScanning(scanningBeforeBoard.current); }} />
-      )}
       {/* The chooser is a dialog waiting on the counter: it is answered, not walked away from. */}
       {booth && <BoothTabBar dark tabs={TERMINAL_TABS} tab="scan" onTab={goTab} disabled={picking !== null || sending} />}
     </section>

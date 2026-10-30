@@ -95,6 +95,15 @@ export function boothBase(token: string) {
 export interface BoothClient {
   get<T>(path: string): Promise<T>;
   send<T>(path: string, method: string, body?: unknown): Promise<T>;
+  /** A file, posted as a form: the board's photos. */
+  upload<T>(path: string, form: FormData): Promise<T>;
+  /** Something to show rather than read, such as a photo: a terminal's token rides in a header, not an img src. */
+  blob(path: string): Promise<Blob>;
+}
+
+async function blobOf(response: Response): Promise<Blob> {
+  if (!response.ok) throw new ApiError('파일을 불러오지 못했어요.', response.status);
+  return response.blob();
 }
 
 const jsonBody = (body: unknown) => (body === undefined ? undefined : JSON.stringify(body));
@@ -109,6 +118,9 @@ export function managerClient(token: string): BoothClient {
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: jsonBody(body),
     }).then(response => read<T>(response)),
+    upload: <T>(path: string, form: FormData) => mutate(`${base}${path}`, { method: 'POST', body: form })
+      .then(response => read<T>(response)),
+    blob: (path: string) => fetch(`${base}${path}`).then(blobOf),
   };
 }
 
@@ -121,6 +133,10 @@ export function terminalClient(gateId: string, gateToken: string): BoothClient {
     send: <T>(path: string, method: string, body?: unknown) => fetch(`${base}${path}`, {
       method, headers: gateHeaders(gateToken, body !== undefined), body: jsonBody(body),
     }).then(response => read<T>(response)),
+    upload: <T>(path: string, form: FormData) => fetch(`${base}${path}`, {
+      method: 'POST', headers: gateHeaders(gateToken), body: form,
+    }).then(response => read<T>(response)),
+    blob: (path: string) => fetch(`${base}${path}`, { headers: gateHeaders(gateToken) }).then(blobOf),
   };
 }
 
@@ -183,6 +199,59 @@ export async function fetchCoupons(client: BoothClient, query: { status: CouponS
 
 export const setCouponStatus = (client: BoothClient, ids: number[], status: 'VOID' | 'ISSUED') =>
   client.send<unknown>('/coupons/status', 'POST', { ids, status });
+
+// ---- The booth's notices on the event's board ----
+
+/** Where a notice stands with the organiser: only PUBLISHED ones reach holders. */
+export type AdReview = 'PENDING' | 'PUBLISHED' | 'REJECTED';
+
+export interface BoardPost {
+  id: number;
+  category: 'SALE' | 'PROGRAM' | 'NOTICE';
+  title: string;
+  body: string;
+  booth: string;
+  place: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  views: number;
+  imageId: string | null;
+  /** Taken down by the organiser. */
+  hidden: boolean;
+  /** Where it stands in time, once published. */
+  state: 'LIVE' | 'SCHEDULED' | 'ENDED' | 'HIDDEN';
+  review: AdReview;
+  rejectReason: string | null;
+  reviewedAt: string | null;
+}
+
+export interface BoardPostInput {
+  category: 'SALE' | 'PROGRAM';
+  title: string;
+  body: string;
+  place: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  imageId: string | null;
+}
+
+export const fetchBoard = (client: BoothClient) => client.get<BoardPost[]>('/ads');
+export const saveBoardPost = (client: BoothClient, body: BoardPostInput, id?: number) =>
+  id ? client.send<BoardPost>(`/ads/${id}`, 'PUT', body) : client.send<BoardPost>('/ads', 'POST', body);
+export const deleteBoardPost = (client: BoothClient, id: number) => client.send<unknown>(`/ads/${id}`, 'DELETE');
+export const endBoardPost = (client: BoothClient, id: number) => client.send<unknown>(`/ads/${id}/end`, 'POST');
+
+/** Uploads a photo for a notice being written; it is attached when the notice is saved. */
+export async function uploadBoardPhoto(client: BoothClient, photo: Blob): Promise<string> {
+  const form = new FormData();
+  form.append('file', photo, 'photo.jpg');
+  return (await client.upload<{ imageId: string }>('/ads/images', form)).imageId;
+}
+
+/** A notice's photo as an address the page can show; the caller lets it go. */
+export async function boardPhotoUrl(client: BoothClient, id: number): Promise<string> {
+  return URL.createObjectURL(await client.blob(`/ads/${id}/image`));
+}
 
 /** One manager as the organiser's console lists them. */
 export interface BoothManagerRow {

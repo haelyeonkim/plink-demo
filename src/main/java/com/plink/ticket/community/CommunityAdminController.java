@@ -85,9 +85,23 @@ public class CommunityAdminController {
         return community.saveSettings(id, body);
     }
 
+    /** The board's notices: ALL, or those under one review status (PENDING, PUBLISHED, REJECTED). */
     @GetMapping("/ads")
-    public List<Map<String, Object>> ads(@PathVariable long id) {
-        return community.consoleAds(id);
+    public List<Map<String, Object>> ads(@PathVariable long id, @RequestParam(defaultValue = "ALL") String status) {
+        return community.consoleAds(id, status);
+    }
+
+    /** How many booth notices wait for the organiser, for the menu's badge. */
+    @GetMapping("/ads/summary")
+    public Map<String, Object> adSummary(@PathVariable long id) {
+        return community.adSummary(id);
+    }
+
+    /** Approves a booth's notice onto holders' boards, or turns it back with a reason. */
+    @PostMapping("/ads/{adId}/review")
+    public Map<String, Object> review(@PathVariable long id, @PathVariable long adId, @RequestBody Map<String, Object> body) {
+        return community.review(id, adId, body.get("decision") == null ? null : body.get("decision").toString(),
+            body.get("reason") == null ? null : body.get("reason").toString());
     }
 
     @PostMapping("/ads")

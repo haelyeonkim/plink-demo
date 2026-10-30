@@ -1,12 +1,17 @@
 package com.plink.ticket.controller;
 
+import com.plink.ticket.community.AdImages;
+import com.plink.ticket.community.CommunityService;
 import com.plink.ticket.model.BoothManager;
 import com.plink.ticket.service.BoothManagerPasskeyService;
 import com.plink.ticket.service.BoothManagerService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 
@@ -29,10 +34,13 @@ import java.util.Map;
 public class BoothManagerController {
     private final BoothManagerService managers;
     private final BoothManagerPasskeyService passkeys;
+    private final CommunityService community;
 
-    public BoothManagerController(BoothManagerService managers, BoothManagerPasskeyService passkeys) {
+    public BoothManagerController(BoothManagerService managers, BoothManagerPasskeyService passkeys,
+            CommunityService community) {
         this.managers = managers;
         this.passkeys = passkeys;
+        this.community = community;
     }
 
     @GetMapping
@@ -170,6 +178,50 @@ public class BoothManagerController {
             HttpSession session) {
         BoothManager manager = signedIn(token, session);
         return managers.setStatuses(manager, ids(body.get("ids")), string(body.get("status")));
+    }
+
+    // ---- The booth's notices on the event's board; each waits for the organiser. ----
+
+    @GetMapping("/ads")
+    public List<Map<String, Object>> ads(@PathVariable String token, HttpSession session) {
+        return community.boothAds(BoothManagerService.counter(signedIn(token, session)));
+    }
+
+    @PostMapping("/ads")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createAd(@PathVariable String token, @RequestBody Map<String, Object> body,
+            HttpSession session) {
+        return community.boothCreate(BoothManagerService.counter(signedIn(token, session)), body);
+    }
+
+    @PutMapping("/ads/{adId}")
+    public Map<String, Object> updateAd(@PathVariable String token, @PathVariable long adId,
+            @RequestBody Map<String, Object> body, HttpSession session) {
+        return community.boothUpdate(BoothManagerService.counter(signedIn(token, session)), adId, body);
+    }
+
+    @DeleteMapping("/ads/{adId}")
+    public Map<String, Object> deleteAd(@PathVariable String token, @PathVariable long adId, HttpSession session) {
+        community.boothDelete(BoothManagerService.counter(signedIn(token, session)), adId);
+        return Collections.singletonMap("deleted", true);
+    }
+
+    @PostMapping("/ads/{adId}/end")
+    public Map<String, Object> endAd(@PathVariable String token, @PathVariable long adId, HttpSession session) {
+        community.boothEnd(BoothManagerService.counter(signedIn(token, session)), adId);
+        return Collections.singletonMap("ended", true);
+    }
+
+    @PostMapping(value = "/ads/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> uploadAdImage(@PathVariable String token, @RequestPart("file") MultipartFile file,
+            HttpSession session) {
+        return community.boothUpload(BoothManagerService.counter(signedIn(token, session)), file);
+    }
+
+    @GetMapping("/ads/{adId}/image")
+    public ResponseEntity<byte[]> adImage(@PathVariable String token, @PathVariable long adId, HttpSession session) {
+        return AdImages.response(community.boothImage(BoothManagerService.counter(signedIn(token, session)), adId));
     }
 
     static String string(Object value) {

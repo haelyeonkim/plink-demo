@@ -9,7 +9,12 @@ interface AdRow {
   id: number; category: 'SALE' | 'PROGRAM' | 'NOTICE'; title: string; body: string; booth: string;
   boothId: number | null; place: string | null; startsAt: string; endsAt: string | null; pinned: boolean;
   hidden: boolean; views: number; state: 'LIVE' | 'SCHEDULED' | 'ENDED' | 'HIDDEN'; imageId: string | null;
+  /** A booth's notice waits for the organiser; only PUBLISHED ones reach holders. */
+  review: Review; rejectReason: string | null; reviewedAt: string | null; updatedAt: string;
 }
+
+type Review = 'PENDING' | 'PUBLISHED' | 'REJECTED';
+type Filter = Review | 'ALL';
 
 /** The photo the form will save with the notice, and how to show it. */
 interface Photo { id: string; url: string; local: boolean }
@@ -18,6 +23,14 @@ const CATEGORY: Record<string, string> = { SALE: '할인·혜택', PROGRAM: '체
 const STATE: Record<AdRow['state'], [string, string]> = {
   LIVE: ['게시 중', 'ok'], SCHEDULED: ['예약', 'in'], ENDED: ['끝남', 'wait'], HIDDEN: ['내림', 'off'],
 };
+const FILTERS: Array<[Filter, string]> = [['ALL', '전체'], ['PENDING', '승인 대기'], ['PUBLISHED', '게시됨'], ['REJECTED', '반려']];
+
+/** A row's pill: the organiser's answer while one is owed or was no, otherwise where it stands in time. */
+function pill(ad: AdRow): [string, string] {
+  if (ad.review === 'PENDING') return ['승인 대기', 'warn'];
+  if (ad.review === 'REJECTED') return ['반려', 'off'];
+  return STATE[ad.state];
+}
 
 /** The organiser's view of the event's board: every booth's notices, and their own. */
 export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
@@ -30,6 +43,10 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
   const [editing, setEditing] = useState<AdRow | 'new' | null>(null);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [filter, setFilter] = useState<Filter>('ALL');
+  // The pending notice whose 반려 is being written, and the reason so far.
+  const [rejecting, setRejecting] = useState<number | null>(null);
+  const [reason, setReason] = useState('');
   const base = `/api/admin/sessions/${sessionId}/ads`;
   const photoOf = (ad: AdRow) => `${base}/${ad.id}/image?v=${ad.imageId!.slice(0, 8)}`;
 
@@ -95,13 +112,23 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
       current === 'new' ? '알림판에 올렸어요.' : '글을 고쳤어요.').then(ok => { if (ok) setEditing(null); });
   };
 
+  const review = (ad: AdRow, decision: 'APPROVE' | 'REJECT', why?: string) => act(
+    () => send(`${base}/${ad.id}/review`, 'POST', { decision, reason: why?.trim() || null }),
+    decision === 'APPROVE' ? `'${ad.title}' 글을 승인했어요. 관람객 알림판에 게시돼요.` : `'${ad.title}' 글을 반려했어요.`,
+  ).then(ok => { if (ok) { setRejecting(null); setReason(''); } });
+
   if (!ads) return <p className="console-none">알림판을 불러오고 있어요.</p>;
   const draft = editing === 'new' ? null : editing;
+  // Oldest request first: the booth that has waited longest is read first.
+  const pending = ads.filter(ad => ad.review === 'PENDING')
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  const count = (key: Filter) => (key === 'ALL' ? ads.length : ads.filter(ad => ad.review === key).length);
+  const shown = filter === 'ALL' ? ads : ads.filter(ad => ad.review === filter);
 
   return (
     <div className="console-stack">
       <div className="console-card-head">
-        <p className="console-summary">게시 중 {ads.filter(ad => ad.state === 'LIVE').length} · 예약 {ads.filter(ad => ad.state === 'SCHEDULED').length} · 전체 {ads.length}</p>
+        <p className="console-summary">게시 중 {ads.filter(ad => ad.review === 'PUBLISHED' && ad.state === 'LIVE').length} · 승인 대기 {pending.length} · 전체 {ads.length}</p>
         {editing === null && <button className="btn-primary" type="button" onClick={() => setEditing('new')}>운영 글 쓰기</button>}
       </div>
 
@@ -147,17 +174,66 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
         </form>
       )}
 
+      {pending.length > 0 && (
+        <section className="console-card ad-review" aria-labelledby="ad-review-title">
+          <h3 id="ad-review-title">승인 대기 <span className="count">{pending.length}</span></h3>
+          <p className="console-summary">부스가 올리거나 고친 글이에요. 승인해야 관람객 알림판에 보여요.</p>
+          <ul className="ad-review-list">
+            {pending.map(ad => (
+              <li key={ad.id}>
+                {ad.imageId && <img src={photoOf(ad)} alt="" loading="lazy" />}
+                <div className="ad-review-main">
+                  <span className="ad-tags">
+                    <span className={`ad-tag ${ad.category.toLowerCase()}`}>{CATEGORY[ad.category]}</span>
+                    <b>{ad.booth}</b>
+                  </span>
+                  <strong>{ad.title}</strong>
+                  <p>{ad.body}</p>
+                  <small className="muted">
+                    {[ad.place, `${shortTime(ad.startsAt)} – ${ad.endsAt ? shortTime(ad.endsAt) : '계속'}`].filter(Boolean).join(' · ')}
+                    {' · '}요청 {shortTime(ad.updatedAt)}
+                  </small>
+                  {rejecting === ad.id ? (
+                    <form className="ad-review-reject" onSubmit={e => { e.preventDefault(); void review(ad, 'REJECT', reason); }}>
+                      <label className="visually-hidden" htmlFor={`reject-${ad.id}`}>반려 사유</label>
+                      <input id={`reject-${ad.id}`} maxLength={200} value={reason} autoFocus
+                        onChange={e => setReason(e.target.value)} placeholder="반려 사유 (선택) · 부스에 보여요" />
+                      <button className="btn-tiny btn-tiny-danger" type="submit">반려하기</button>
+                      <button className="btn-tiny" type="button" onClick={() => { setRejecting(null); setReason(''); }}>취소</button>
+                    </form>
+                  ) : (
+                    <span className="row-actions ad-review-actions">
+                      <button className="btn-tiny btn-tiny-primary" type="button" onClick={() => void review(ad, 'APPROVE')}>승인</button>
+                      <button className="btn-tiny" type="button" onClick={() => { setRejecting(ad.id); setReason(''); }}>반려</button>
+                      <button className="btn-tiny" type="button" onClick={() => setEditing(ad)}>고쳐서 게시</button>
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className="chip-row" role="group" aria-label="승인 상태">
+        {FILTERS.map(([key, label]) => (
+          <button key={key} type="button" className={filter === key ? 'on' : ''} aria-pressed={filter === key}
+            onClick={() => setFilter(key)}>{label} <small>{count(key).toLocaleString()}</small></button>
+        ))}
+      </div>
+
       <div className="console-table-box">
         <table className="console-table">
           <thead><tr><th>상태</th><th>제목</th><th>올린 곳</th><th>분류</th><th>게시 기간</th><th className="num">조회</th><th aria-label="작업" /></tr></thead>
           <tbody>
-            {ads.map(ad => (
-              <tr key={ad.id} className={ad.state === 'ENDED' || ad.state === 'HIDDEN' ? 'is-off' : ''}>
-                <td><span className={`pill pill-${STATE[ad.state][1]}`}>{STATE[ad.state][0]}</span></td>
+            {shown.map(ad => (
+              <tr key={ad.id} className={ad.review === 'REJECTED' || ad.state === 'ENDED' || ad.state === 'HIDDEN' ? 'is-off' : ''}>
+                <td><span className={`pill pill-${pill(ad)[1]}`}>{pill(ad)[0]}</span></td>
                 <td className="wrap">
                   <span className="ad-row-title">
                     {ad.imageId && <img src={photoOf(ad)} alt="" loading="lazy" />}
-                    <span><b>{ad.title}</b>{ad.pinned && <small className="cell-note">맨 위 고정</small>}</span>
+                    <span><b>{ad.title}</b>{ad.pinned && <small className="cell-note">맨 위 고정</small>}
+                      {ad.review === 'REJECTED' && ad.rejectReason && <small className="cell-note">반려 사유: {ad.rejectReason}</small>}</span>
                   </span>
                 </td>
                 <td>{ad.booth}</td>
@@ -165,6 +241,9 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
                 <td className="muted wrap">{shortTime(ad.startsAt)} – {ad.endsAt ? shortTime(ad.endsAt) : '종일'}</td>
                 <td className="num">{ad.views}</td>
                 <td className="row-actions">
+                  {ad.review !== 'PUBLISHED' && (
+                    <button className="btn-tiny" type="button" onClick={() => void review(ad, 'APPROVE')}>승인</button>
+                  )}
                   <button className="btn-tiny" type="button" onClick={() => setEditing(ad)}>수정</button>
                   <button className="btn-tiny" type="button" onClick={() => void act(
                     () => send(`${base}/${ad.id}/hidden`, 'POST', { hidden: !ad.hidden }),
@@ -177,11 +256,15 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
                 </td>
               </tr>
             ))}
-            {ads.length === 0 && <tr><td colSpan={7} className="console-none">아직 올라온 글이 없어요. 부스는 부스 단말의 알림판 모드에서 올릴 수 있어요.</td></tr>}
+            {shown.length === 0 && (
+              <tr><td colSpan={7} className="console-none">{ads.length === 0
+                ? '아직 올라온 글이 없어요. 부스는 부스 단말이나 부스 관리자 화면의 알림판 탭에서 올릴 수 있어요.'
+                : '이 상태의 글이 없어요.'}</td></tr>
+            )}
           </tbody>
         </table>
       </div>
-      <p className="console-foot">부스는 부스 단말에서 자기 부스 글만 올리고 고칠 수 있어요. 운영 글은 맨 위에 고정할 수 있어요.</p>
+      <p className="console-foot">부스는 자기 부스 글만 올리고 고칠 수 있고, 올리거나 고친 글은 여기서 승인해야 게시돼요. 운영 글과 운영팀이 고친 글은 바로 게시되고, 맨 위에 고정할 수 있어요.</p>
     </div>
   );
 }
