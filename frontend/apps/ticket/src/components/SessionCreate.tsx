@@ -28,10 +28,10 @@ export default function SessionCreate() {
         }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || '행사를 만들지 못했어요.');
+      if (!response.ok) throw new Error(body.error || '이벤트를 만들지 못했어요.');
       navigate('/tickets', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '행사를 만들지 못했어요.');
+      setError(err instanceof Error ? err.message : '이벤트를 만들지 못했어요.');
     } finally {
       setBusy(false);
     }
@@ -42,13 +42,13 @@ export default function SessionCreate() {
       <h2>
         <Link className="crumb-link" to="/tickets">입장권 관리</Link>
         <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-        <span className="crumb" aria-current="page">행사 추가</span>
+        <span className="crumb" aria-current="page">이벤트 추가</span>
       </h2>
 
       <form className="create-form" onSubmit={submit}>
         <div className="field">
-          <label htmlFor="name">행사 이름</label>
-          <input id="name" name="name" required placeholder="2026 봄 콘서트 1행사" />
+          <label htmlFor="name">이벤트 이름</label>
+          <input id="name" name="name" required placeholder="2026 봄 콘서트 1회차" />
         </div>
         <div className="field">
           <label htmlFor="venue">장소</label>
@@ -70,7 +70,7 @@ export default function SessionCreate() {
         </p>
         {error && <p className="error-text" role="alert">{error}</p>}
         <button className="btn-primary" type="submit" disabled={busy}>
-          {busy ? '만드는 중…' : '행사 만들기'}
+          {busy ? '만드는 중…' : '이벤트 만들기'}
         </button>
       </form>
     </section>

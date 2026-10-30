@@ -37,7 +37,7 @@ export default function Home() {
         <article className="tool-card tool-ticket">
           <img src="/logo-ticket.svg" alt="패스링크 티켓" height="30" />
           <h2>입장권</h2>
-          <p>행사 입장권을 한 사람씩 발급하고, 게이트에서 입장을 확인하세요.</p>
+          <p>이벤트 입장권을 한 사람씩 발급하고, 게이트에서 입장을 확인하세요.</p>
           <ul>
             <li>본인만 열리는 입장권</li>
             <li>게이트 QR·얼굴 확인</li>
@@ -45,7 +45,7 @@ export default function Home() {
           </ul>
           <div className="tool-actions">
             <Link className="tool-primary" to="/tickets">입장권 관리 열기</Link>
-            <Link className="tool-secondary" to="/tickets/sessions/new">행사 만들기</Link>
+            <Link className="tool-secondary" to="/tickets/sessions/new">이벤트 만들기</Link>
           </div>
         </article>
       </div>

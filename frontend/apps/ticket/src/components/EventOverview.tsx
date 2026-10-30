@@ -58,7 +58,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
     if (counts.all > 0) todos.push({ tone: 'done', title: `입장권 ${counts.all.toLocaleString()}장 발급`,
       detail: `등록 완료 ${counts.bound.toLocaleString()}장`, to: '?tab=tickets', action: '발급 현황' });
     if (doors.length > 0 && offline.length === 0) todos.push({ tone: 'done', title: `게이트 ${gates.length}곳 모두 연결`,
-      detail: '행사 당일 입장을 받을 준비가 됐어요.', to: '?tab=gates', action: '게이트' });
+      detail: '이벤트 당일 입장을 받을 준비가 됐어요.', to: '?tab=gates', action: '게이트' });
   }
 
   const policy = [
@@ -95,7 +95,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
           <span className="kpi-label">지금 장내</span>
           <strong className="kpi-num">{inside.toLocaleString()}
             {capacity > 0 && <small> / {capacity.toLocaleString()}</small>}</strong>
-          <span className="kpi-note">{when === 'today' ? '실시간' : when === 'upcoming' ? '행사 당일부터 집계' : '행사 종료'}</span>
+          <span className="kpi-note">{when === 'today' ? '실시간' : when === 'upcoming' ? '이벤트 당일부터 집계' : '이벤트 종료'}</span>
         </div>
         <div className={`kpi${offline.length > 0 ? ' kpi-warn' : ''}`}>
           <span className="kpi-label">게이트 연결</span>
@@ -107,7 +107,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
 
       <div className="console-two">
         <section className="console-card" aria-labelledby="overview-todo">
-          <h3 id="overview-todo">{when === 'upcoming' ? '행사 준비' : '확인할 일'}</h3>
+          <h3 id="overview-todo">{when === 'upcoming' ? '이벤트 준비' : '확인할 일'}</h3>
           {todos.length === 0 ? (
             <p className="console-none">지금 확인할 일이 없어요.</p>
           ) : (
@@ -124,7 +124,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
               ))}
             </ul>
           )}
-          <p className="console-foot">적용 중인 입장 정책: {policy} · <Link to="?tab=settings">행사 설정</Link></p>
+          <p className="console-foot">적용 중인 입장 정책: {policy} · <Link to="?tab=settings">이벤트 설정</Link></p>
         </section>
 
         <section className="console-card" aria-labelledby="overview-zones">

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AD_CATEGORY, adImageUrl, fetchAd, fetchAds, type AdPost } from '../ticket/api';
 
 type Filter = 'ALL' | 'SALE' | 'PROGRAM' | 'NOTICE';
-const FILTERS: Array<[Filter, string]> = [['ALL', '전체'], ['SALE', '할인·이벤트'], ['PROGRAM', '체험·프로그램'], ['NOTICE', '운영 공지']];
+const FILTERS: Array<[Filter, string]> = [['ALL', '전체'], ['SALE', '할인·혜택'], ['PROGRAM', '체험·프로그램'], ['NOTICE', '운영 공지']];
 
 function hm(value: string): string {
   const d = new Date(value);

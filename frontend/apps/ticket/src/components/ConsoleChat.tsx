@@ -80,7 +80,7 @@ export default function ConsoleChat({ sessionId, tick, onNotice, onError }: {
             <label><input type="checkbox" checked={alert} onChange={e => setAlert(e.target.checked)} /> 입장권 화면에 알림</label>
           </div>
           {alert && (
-            <p className="hint-text">입장 전인 사람까지 이 행사의 입장권을 연 모두에게 맨 위에 보여요. 내릴 때까지 남아 있어요.</p>
+            <p className="hint-text">입장 전인 사람까지 이 이벤트의 입장권을 연 모두에게 맨 위에 보여요. 내릴 때까지 남아 있어요.</p>
           )}
           <button className="btn-primary" type="submit" disabled={!notice.trim()}>공지 보내기</button>
         </form>

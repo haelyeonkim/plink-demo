@@ -62,7 +62,7 @@ class CouponTest {
     private long sessionId;
 
     private long newSession() {
-        sessionId = sessions.insert("쿠폰 행사 " + Secrets.randomAlnum(6), "메인홀",
+        sessionId = sessions.insert("쿠폰 이벤트 " + Secrets.randomAlnum(6), "메인홀",
             Timestamp.from(Instant.now().plus(2, ChronoUnit.HOURS)), null);
         return sessionId;
     }

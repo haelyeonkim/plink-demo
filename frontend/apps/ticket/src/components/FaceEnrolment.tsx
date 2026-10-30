@@ -108,7 +108,7 @@ export default function FaceEnrolment({ sessionId, token, inside, onChange }: {
           <ul className="consent-list">
             <li><b>수집 항목</b> 얼굴 특징값 (사진 원본은 저장하지 않습니다)</li>
             <li><b>이용 목적</b> {status.purposes}</li>
-            <li><b>보유 기간</b> 행사 종료 후 정해진 기간이 지나면 자동 파기</li>
+            <li><b>보유 기간</b> 이벤트 종료 후 정해진 기간이 지나면 자동 파기</li>
             <li><b>거부 권리</b> 동의하지 않아도 입장에 불이익이 없습니다</li>
           </ul>
           <button className="btn-secondary" onClick={agree} disabled={busy}>위 내용에 동의하고 진행</button>

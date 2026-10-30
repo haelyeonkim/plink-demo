@@ -103,7 +103,7 @@ public class TicketAdminController {
     @PostMapping("/sessions")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createSession(@RequestBody Map<String, String> body) {
-        String name = required(body.get("name"), "행사 이름을 입력해 주세요.");
+        String name = required(body.get("name"), "이벤트 이름을 입력해 주세요.");
         Timestamp startsAt = timestamp(body.get("startsAt"), "시작 시각을 ISO 형식으로 입력해 주세요.");
         Timestamp gateOpensAt = body.get("gateOpensAt") == null ? null
             : timestamp(body.get("gateOpensAt"), "개찰 시각을 ISO 형식으로 입력해 주세요.");
@@ -131,7 +131,7 @@ public class TicketAdminController {
 
     public Map<String, Object> updateSession(long id, Map<String, String> body) {
         EventSession current = ticketService.requireSession(id);
-        String name = required(body.get("name"), "행사 이름을 입력해 주세요.");
+        String name = required(body.get("name"), "이벤트 이름을 입력해 주세요.");
         Timestamp startsAt = body.get("startsAt") == null || body.get("startsAt").isBlank()
             ? current.startsAt
             : timestamp(body.get("startsAt"), "시작 시각을 ISO 형식으로 입력해 주세요.");

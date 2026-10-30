@@ -57,7 +57,7 @@ class AdmissionLedgerTest {
         final Gate entry, exit, both;
 
         Fixture(String reentryMode, int reentryMax, int graceMinutes, int cooldownSeconds, String unmatchedExit) {
-            sessionId = sessions.insert("테스트 행사 " + Secrets.randomAlnum(6), "테스트홀",
+            sessionId = sessions.insert("테스트 이벤트 " + Secrets.randomAlnum(6), "테스트홀",
                 Timestamp.from(Instant.now().plus(2, ChronoUnit.HOURS)),
                 Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)));
             sessions.updatePolicy(sessionId, reentryMode, reentryMax, graceMinutes, cooldownSeconds,
@@ -319,11 +319,11 @@ class AdmissionLedgerTest {
     @Test void onlyTheSessionsOwnGateAdmits() {
         Fixture f = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
         Fixture other = new Fixture("UNLIMITED", 0, 45, 0, "LENIENT");
-        assertTrue(f.refuse(other.entry, "IN").getReason().contains("다른 행사의 입장권"));
+        assertTrue(f.refuse(other.entry, "IN").getReason().contains("다른 이벤트의 입장권"));
     }
 
     @Test void unboundTicketsAreRefused() {
-        long sessionId = sessions.insert("미등록 행사", null,
+        long sessionId = sessions.insert("미등록 이벤트", null,
             Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)), null);
         Map<String, Object> issued = tickets.issue(sessionId, "nobody@example.com", "B-2", null);
         Ticket unbound = ticketRepository.findById(((Number) issued.get("ticketId")).longValue()).orElseThrow();
@@ -364,7 +364,7 @@ class AdmissionLedgerTest {
 
     @Test void issuingATicketMailsItsPersonalUrl() {
         mailbox.clear();
-        long sessionId = sessions.insert("메일 행사", null,
+        long sessionId = sessions.insert("메일 이벤트", null,
             Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)), null);
         tickets.issue(sessionId, "Holder@Example.com ", "C-3", null);
         assertTrue(mailbox.lastTicketUrl().isPresent(), "발급 메일에 개인 링크가 있어야 합니다");

@@ -243,7 +243,7 @@ public class TicketService {
             Ticket ticket = tickets.findById(ticketId).filter(t -> t.sessionId == sessionId).orElse(null);
             String reason = null;
             String token = null;
-            if (ticket == null) reason = "이 행사의 입장권이 아니에요.";
+            if (ticket == null) reason = "이 이벤트의 입장권이 아니에요.";
             else if (ticket.revoked()) reason = "비활성화된 입장권이에요.";
             else if ((token = cipher.open(ticket.tokenCipher)) == null) {
                 reason = "링크를 보관하기 전에 발급되어 다시 보낼 수 없어요. 새 링크로 재발급해 주세요.";
@@ -293,7 +293,7 @@ public class TicketService {
         if (trimmed == null || trimmed.isEmpty()) return null;
         if (!catalogue.isEmpty() && !catalogue.contains(trimmed)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "이 행사의 " + label + " 목록에 없는 값이에요: " + trimmed);
+                "이 이벤트의 " + label + " 목록에 없는 값이에요: " + trimmed);
         }
         return trimmed;
     }
@@ -411,7 +411,7 @@ public class TicketService {
 
     public EventSession requireSession(long id) {
         return sessions.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "행사를 찾을 수 없어요."));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
     }
 
     /**

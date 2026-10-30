@@ -115,9 +115,9 @@ public class FaceService {
             double score = FaceVector.similarity(vector.values, cipher.open(other.vector));
             if (score >= config.getDedupThreshold()) {
                 faces.recordAttempt(ticket.sessionId, ticket.id, null, "ENROL", "DUPLICATE",
-                    score, null, liveness, "행사 내 중복 얼굴");
+                    score, null, liveness, "이벤트 내 중복 얼굴");
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "이미 이 행사의 다른 입장권에 등록된 얼굴이에요. 안내 데스크에서 확인해 주세요.");
+                    "이미 이 이벤트의 다른 입장권에 등록된 얼굴이에요. 안내 데스크에서 확인해 주세요.");
             }
         }
 

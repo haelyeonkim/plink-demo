@@ -12,7 +12,7 @@ interface AdRow {
 /** The photo the form will save with the notice, and how to show it. */
 interface Photo { id: string; url: string; local: boolean }
 
-const CATEGORY: Record<string, string> = { SALE: '할인·이벤트', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
+const CATEGORY: Record<string, string> = { SALE: '할인·혜택', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
 const STATE: Record<AdRow['state'], [string, string]> = {
   LIVE: ['게시 중', 'ok'], SCHEDULED: ['예약', 'in'], ENDED: ['끝남', 'wait'], HIDDEN: ['내림', 'off'],
 };

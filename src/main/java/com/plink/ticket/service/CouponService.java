@@ -142,7 +142,7 @@ public class CouponService {
         }
         CouponOffer offer = requireOffer(offerId);
         if (offer.sessionId != sessionId) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 이벤트의 쿠폰이에요.");
         }
         if (!offer.active) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -164,7 +164,7 @@ public class CouponService {
             }
             for (Ticket ticket : locked) {
                 if (ticket.sessionId != sessionId) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 입장권이에요.");
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 이벤트의 입장권이에요.");
                 }
                 if (ticket.revoked()) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -309,7 +309,7 @@ public class CouponService {
         }
         Ticket ticket = tickets.lockById(verified.grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
-        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 쿠폰이에요.");
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 이벤트의 쿠폰이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
         if (!ticket.bound()) throw deny("양도 중인 입장권의 쿠폰은 쓸 수 없어요.");
         Coupon coupon = coupons.findById(verified.grant.couponId).filter(c -> c.ticketId == ticket.id)
@@ -378,7 +378,7 @@ public class CouponService {
         for (Map.Entry<Long, Boolean> entry : wanted.entrySet()) {
             CouponOffer offer = requireOffer(entry.getKey());
             if (offer.sessionId != gate.sessionId) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 쿠폰이에요.");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 이벤트의 쿠폰이에요.");
             }
             grants.add(new CouponOfferRepository.GateOffer(gate.id, offer.id,
                 admits && Boolean.TRUE.equals(entry.getValue())));
@@ -401,7 +401,7 @@ public class CouponService {
         if (verified.grant.forCoupon()) throw deny("쿠폰 QR이에요. 쿠폰을 받을 때는 입장권 화면의 QR을 보여 주세요.");
         Ticket ticket = tickets.lockById(verified.grant.ticketId)
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
-        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 이벤트의 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
         presentations.consume(verified.grant, verified.counter);
 
@@ -634,7 +634,7 @@ public class CouponService {
         Booth booth = booths.findById(boothId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));
         if (booth.sessionId != sessionId) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 행사의 부스예요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 이벤트의 부스예요.");
         }
         return booth;
     }

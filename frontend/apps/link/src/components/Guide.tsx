@@ -70,10 +70,10 @@ export default function Guide() {
       <h3 className="guide-role-title">입장권</h3>
       <div className="guide-grid">
         <article className="guide-card">
-          <b>01 · 행사와 발급</b>
+          <b>01 · 이벤트와 발급</b>
           <h3>좌석·등급은 직접 정합니다</h3>
           <p>
-            행사를 만들고 좌석·등급 목록을 추가한 뒤 이메일로 입장권을 발급합니다. 명단은 CSV로
+            이벤트를 만들고 좌석·등급 목록을 추가한 뒤 이메일로 입장권을 발급합니다. 명단은 CSV로
             한 번에 올릴 수 있어요.
           </p>
           <Link to="/tickets">입장권 관리로 이동</Link>

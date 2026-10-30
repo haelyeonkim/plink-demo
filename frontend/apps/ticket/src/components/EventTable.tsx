@@ -38,13 +38,13 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
   if (!loading && sessions.length === 0) {
     return (
       <div className="console-empty">
-        <h3>첫 행사를 만들어 보세요</h3>
+        <h3>첫 이벤트를 만들어 보세요</h3>
         <ol>
-          <li><b>행사 만들기</b> 일시와 장소를 정해요.</li>
+          <li><b>이벤트 만들기</b> 일시와 장소를 정해요.</li>
           <li><b>입장권 발급</b> 명단을 올리면 한 사람씩 링크가 나가요.</li>
           <li><b>게이트 연결</b> 태블릿을 연결하고 입장을 확인해요.</li>
         </ol>
-        <Link className="btn-primary" to="/tickets/sessions/new">행사 만들기</Link>
+        <Link className="btn-primary" to="/tickets/sessions/new">이벤트 만들기</Link>
       </div>
     );
   }
@@ -63,13 +63,13 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
           ))}
         </fieldset>
         <label className="console-search">
-          <span className="visually-hidden">행사 검색</span>
-          <input type="search" placeholder="행사명·장소 검색" value={query}
+          <span className="visually-hidden">이벤트 검색</span>
+          <input type="search" placeholder="이벤트명·장소 검색" value={query}
             onChange={event => setQuery(event.target.value)} />
         </label>
         <label className="console-check">
           <input type="checkbox" checked={showTest} onChange={event => setShowTest(event.target.checked)} />
-          테스트 행사 보기
+          테스트 이벤트 보기
         </label>
       </div>
 
@@ -77,7 +77,7 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
         <table className="console-table event-table">
           <thead>
             <tr>
-              <th>상태</th><th>행사</th><th>일시</th><th>입장 시작</th><th>장소</th>
+              <th>상태</th><th>이벤트</th><th>일시</th><th>입장 시작</th><th>장소</th>
               <th className="num">발급</th><th>등록</th><th className="num">장내</th>
             </tr>
           </thead>
@@ -110,13 +110,13 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
             })}
             {shown.length === 0 && (
               <tr><td colSpan={8} className="console-none">
-                {loading ? '행사를 불러오고 있어요.' : '조건에 맞는 행사가 없어요.'}
+                {loading ? '이벤트를 불러오고 있어요.' : '조건에 맞는 이벤트가 없어요.'}
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <p className="console-foot">행사 이름을 누르면 들어갑니다. 오늘·예정 행사가 위에, 종료된 행사는 아래에 놓입니다.</p>
+      <p className="console-foot">이벤트 이름을 누르면 들어갑니다. 오늘·예정 이벤트가 위에, 종료된 이벤트는 아래에 놓입니다.</p>
     </>
   );
 }

@@ -16,7 +16,7 @@ export default function TicketIntro() {
             게이트에서 바로 확인하고, 쿠폰과 혼잡도까지 한 곳에서 운영하세요.
           </p>
           <div className="th-actions">
-            <Link className="th-primary" to="/tickets/sessions/new">행사 만들기</Link>
+            <Link className="th-primary" to="/tickets/sessions/new">이벤트 만들기</Link>
             <Link className="th-secondary" to="/tickets">입장권 관리</Link>
           </div>
         </div>
@@ -66,15 +66,15 @@ export default function TicketIntro() {
           </article>
           <article>
             <h3>쿠폰과 혼잡도</h3>
-            <p>부스에서 쿠폰을 지급하고 사용하며, 행사장 혼잡도를 관람객 화면에 바로 알려요.</p>
+            <p>부스에서 쿠폰을 지급하고 사용하며, 현장 혼잡도를 관람객 화면에 바로 알려요.</p>
           </article>
         </div>
       </section>
 
       <section className="th-steps">
-        <h2>행사 하나에 세 단계</h2>
+        <h2>이벤트 하나에 세 단계</h2>
         <ol>
-          <li><b>01</b><span>행사 만들기</span><small>일시·장소·입장 정책을 정해요.</small></li>
+          <li><b>01</b><span>이벤트 만들기</span><small>일시·장소·입장 정책을 정해요.</small></li>
           <li><b>02</b><span>입장권 발급</span><small>명단을 올리면 한 사람씩 링크가 나가요.</small></li>
           <li><b>03</b><span>게이트 확인</span><small>단말을 연결하고 입장을 확인해요.</small></li>
         </ol>

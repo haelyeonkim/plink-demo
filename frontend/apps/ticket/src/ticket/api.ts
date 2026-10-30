@@ -325,7 +325,7 @@ export function adImageUrl(sessionId: string, token: string, ad: AdPost): string
 }
 
 /** What a board notice is about, as the page says it. */
-export const AD_CATEGORY: Record<string, string> = { SALE: '할인·이벤트', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
+export const AD_CATEGORY: Record<string, string> = { SALE: '할인·혜택', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
 
 // ---- A booth's own notices, from its terminal ----
 

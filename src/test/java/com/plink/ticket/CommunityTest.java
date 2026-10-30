@@ -57,7 +57,7 @@ class CommunityTest {
     @Autowired JdbcTemplate jdbc;
 
     private long newSession() {
-        return sessions.insert("소통 행사 " + Secrets.randomAlnum(6), "메인홀",
+        return sessions.insert("소통 이벤트 " + Secrets.randomAlnum(6), "메인홀",
             Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)), null);
     }
 

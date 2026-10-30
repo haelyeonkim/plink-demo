@@ -111,10 +111,10 @@ public class AdmissionService {
             String grantId, Runnable onAccepted) {
         if (!ticket.bound()) throw deny("등록이 완료되지 않은 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        if (ticket.sessionId != gate.sessionId) throw deny("다른 행사의 입장권이에요.");
+        if (ticket.sessionId != gate.sessionId) throw deny("다른 이벤트의 입장권이에요.");
 
         EventSession session = sessions.findById(ticket.sessionId)
-            .orElseThrow(() -> deny("행사 정보를 찾을 수 없어요."));
+            .orElseThrow(() -> deny("이벤트 정보를 찾을 수 없어요."));
         Presence presence = presence(ticket);
         String direction = resolveDirection(gate, requestedDirection, presence);
         Instant now = Instant.now();
@@ -190,7 +190,7 @@ public class AdmissionService {
             throw deny("입장 시작 시간 전이에요.");
         }
         if (session.faceRequired && !"FACE".equals(method) && !"STAFF".equals(method)) {
-            throw deny("이 행사는 얼굴 인식으로만 입장할 수 있어요.");
+            throw deny("이 이벤트는 얼굴 인식으로만 입장할 수 있어요.");
         }
         if (presence.entryCount > 0) {
             // Requiring a face only for re-entry is the cheapest control that actually
@@ -198,7 +198,7 @@ public class AdmissionService {
             if (session.reentryRequiresFace && !"FACE".equals(method) && !"STAFF".equals(method)) {
                 throw deny("재입장은 얼굴 인식으로만 가능해요.");
             }
-            if (!session.reentryAllowed()) throw deny("재입장이 허용되지 않는 행사예요.");
+            if (!session.reentryAllowed()) throw deny("재입장이 허용되지 않는 이벤트예요.");
             if (session.reentryLimited() && presence.reentryCount >= session.reentryMax) {
                 throw deny("재입장 횟수를 모두 사용했어요.");
             }

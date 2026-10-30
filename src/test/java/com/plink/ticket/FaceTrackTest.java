@@ -145,7 +145,7 @@ class FaceTrackTest {
 
         ResponseStatusException refused = assertThrows(ResponseStatusException.class,
             () -> faces.enrol(second, capture("same-person")));
-        assertTrue(refused.getReason().contains("이미 이 행사의 다른 입장권"), refused.getReason());
+        assertTrue(refused.getReason().contains("이미 이 이벤트의 다른 입장권"), refused.getReason());
     }
 
     @Test void aFaceAtTheGateAdmitsThroughTheSameLedger() {
@@ -244,7 +244,7 @@ class FaceTrackTest {
     }
 
     @Test void templatesArePurgedWhenTheRetentionWindowEnds() {
-        long sessionId = sessions.insert("지난 행사", null,
+        long sessionId = sessions.insert("지난 이벤트", null,
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)),
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)));
         sessions.updateFacePolicy(sessionId, false, false, "PASSIVE", "LOW_SCORE_ONLY", 7);

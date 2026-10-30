@@ -29,10 +29,10 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
       { key: 'chat', label: '장내 채팅', icon: NAV_ICONS.chat },
       { key: 'ads', label: '알림판', icon: NAV_ICONS.ads },
     ]],
-    ['설정', [{ key: 'settings', label: '행사 설정', icon: NAV_ICONS.settings }]],
+    ['설정', [{ key: 'settings', label: '이벤트 설정', icon: NAV_ICONS.settings }]],
   ];
   return (
-    <ConsoleNav label="행사 메뉴" back={{ to: '/tickets', label: '행사 목록' }} current={tab} groups={groups}
+    <ConsoleNav label="이벤트 메뉴" back={{ to: '/tickets', label: '이벤트 목록' }} current={tab} groups={groups}
       card={<>
         <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'out' : 'in'}`}>{WHEN_LABEL[when]}</span>
         <strong>{session.name}</strong>

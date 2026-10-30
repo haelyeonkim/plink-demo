@@ -23,16 +23,16 @@ import {
 
 type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
-const SETTINGS_NAMES: Record<string, string> = { details: '행사 정보', policy: '재입장·퇴장', crowd: '혼잡도' };
+const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', policy: '재입장·퇴장', crowd: '혼잡도' };
 
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
-  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '행사 설정',
+  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
-  ['event', '행사 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['fields', '발급 항목'],
+  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['fields', '발급 항목'],
 ];
 
 
@@ -142,7 +142,7 @@ export default function TicketAdmin() {
 
   const loadSessions = useCallback(async () => {
     try { setSessions(await read(await fetch('/api/admin/sessions'))); }
-    catch (err) { setError(err instanceof Error ? err.message : '행사를 불러오지 못했어요.'); }
+    catch (err) { setError(err instanceof Error ? err.message : '이벤트를 불러오지 못했어요.'); }
     finally { setSessionsLoaded(true); }
   }, []);
 
@@ -154,7 +154,7 @@ export default function TicketAdmin() {
       setBooths(await read(await fetch(`/api/admin/sessions/${id}/booths`)));
       setRevision(value => value + 1);
       setUpdatedAt(new Date());
-    } catch (err) { setError(err instanceof Error ? err.message : '행사 정보를 불러오지 못했어요.'); }
+    } catch (err) { setError(err instanceof Error ? err.message : '이벤트 정보를 불러오지 못했어요.'); }
   }, []);
 
   // A new search or filter starts from the first page; a new event starts clean.
@@ -345,7 +345,7 @@ export default function TicketAdmin() {
     await read(await mutate(`/api/admin/sessions/${id}?force=true`, { method: 'DELETE' }));
     setConfirmDelete(false);
     setIssued(null);
-    setNotice('행사를 삭제했어요.');
+    setNotice('이벤트를 삭제했어요.');
     await loadSessions();
     navigate('/tickets');
   });
@@ -597,7 +597,7 @@ export default function TicketAdmin() {
         testEvent: data.get('testEvent') === 'on' ? 'true' : 'false',
       }),
     }));
-    setNotice('행사 정보를 저장했어요. 발급된 입장권에도 바로 반영됩니다.');
+    setNotice('이벤트 정보를 저장했어요. 발급된 입장권에도 바로 반영됩니다.');
     await loadSessions();
   });
 
@@ -652,16 +652,16 @@ export default function TicketAdmin() {
     <section className="page-section page-wide console">
       {!session && (<>
         <div className="page-head">
-          <h2><span aria-current="page">행사</span><span className="count">{sessions.length}</span></h2>
+          <h2><span aria-current="page">이벤트</span><span className="count">{sessions.length}</span></h2>
           <span className="page-actions">
-            <Link className="btn-primary" to="/tickets/sessions/new">행사 추가</Link>
+            <Link className="btn-primary" to="/tickets/sessions/new">이벤트 추가</Link>
           </span>
         </div>
         <EventTable sessions={sessions} loading={!sessionsLoaded} />
       </>)}
 
       {selected !== null && !session && sessionsLoaded && (
-        <p className="console-none">이 행사를 찾을 수 없어요. <Link to="/tickets">행사 목록</Link>으로 돌아가세요.</p>
+        <p className="console-none">이 이벤트를 찾을 수 없어요. <Link to="/tickets">이벤트 목록</Link>으로 돌아가세요.</p>
       )}
 
       {session && (
@@ -674,7 +674,7 @@ export default function TicketAdmin() {
             <div>
               <h2>{TAB_TITLES[tab]}</h2>
               <p>{dayTime(session.startsAt)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
-                {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 행사' : ''}</p>
+                {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
             </div>
             <div className="console-actions">
               {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt) === 'today')) && (
@@ -777,7 +777,7 @@ export default function TicketAdmin() {
               )}
             </form>
             <div className="console-card">
-              <h3>이 행사</h3>
+              <h3>이 이벤트</h3>
               <dl className="ticket-meta">
               <dt>발급</dt><dd>{counts.all.toLocaleString()}장</dd>
               <dt>등록 완료</dt><dd>{counts.bound.toLocaleString()}장</dd>
@@ -1182,11 +1182,11 @@ export default function TicketAdmin() {
               {SETTINGS_TABS.map(([key, label]) => (
                 <a key={key} href={`#settings-${key}`}>{label}</a>
               ))}
-              <a className="danger" href="#settings-delete">행사 삭제</a>
+              <a className="danger" href="#settings-delete">이벤트 삭제</a>
             </nav>
             <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
               <div className="settings-side">
-                <h3 id="settings-event-title">행사 정보</h3>
+                <h3 id="settings-event-title">이벤트 정보</h3>
                 <p>관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</p>
               </div>
               <div className="settings-body">
@@ -1203,7 +1203,7 @@ export default function TicketAdmin() {
               </div>
               <div className="form-row">
                 <div className="field">
-                  <label htmlFor="event-starts">행사 시각</label>
+                  <label htmlFor="event-starts">이벤트 시각</label>
                   <input id="event-starts" name="startsAt" type="datetime-local" required
                     defaultValue={localInput(session.startsAt)} />
                 </div>
@@ -1215,11 +1215,11 @@ export default function TicketAdmin() {
               </div>
               <label className="field-inline">
                 <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
-                테스트 행사
+                테스트 이벤트
               </label>
               <p className="hint-text">
-                테스트 행사는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
-                명단이 들어간 행사에는 켜지 마세요.
+                테스트 이벤트는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
+                명단이 들어간 이벤트에는 켜지 마세요.
               </p>
               <p className="hint-text">
                 입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
@@ -1294,7 +1294,7 @@ export default function TicketAdmin() {
               </div>
               <p className="hint-text day-close-hint">
                 켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
-                처리합니다. 자정을 넘겨 계속되는 행사라면 기준 시각을 새벽으로 늦추세요.
+                처리합니다. 자정을 넘겨 계속되는 이벤트라면 기준 시각을 새벽으로 늦추세요.
               </p>
               <label className="field-inline">
                 <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
@@ -1302,7 +1302,7 @@ export default function TicketAdmin() {
               </label>
               <p className="hint-text">
                 이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
-                뿌리는 행사라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
+                뿌리는 이벤트라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
                 인증을 요구합니다.
               </p>
               <p className="hint-text">
@@ -1365,7 +1365,7 @@ export default function TicketAdmin() {
               <div className="settings-body">
             <div className="settings-form">
               <p className="hint-text">
-                입장권이 무엇을 담을지는 행사마다 다릅니다. 좌석과 등급도 여기서 만드는 항목 중
+                입장권이 무엇을 담을지는 이벤트마다 다릅니다. 좌석과 등급도 여기서 만드는 항목 중
                 하나일 뿐이고, 구역·트랙·식사처럼 필요한 이름을 직접 붙일 수 있어요. 값 목록을 비워
                 두면 발급할 때 자유롭게 입력합니다.
               </p>
@@ -1401,7 +1401,7 @@ export default function TicketAdmin() {
                   </div>
                 </div>
                 <p className="hint-text">
-                  '좌석' 유형은 같은 값을 두 장에 발급할 수 없습니다. 행사마다 좌석과 등급은 하나씩만
+                  '좌석' 유형은 같은 값을 두 장에 발급할 수 없습니다. 이벤트마다 좌석과 등급은 하나씩만
                   둘 수 있어요.
                 </p>
                 <button className="btn-primary" type="submit">항목 추가</button>
@@ -1411,14 +1411,14 @@ export default function TicketAdmin() {
             </section>
             <section id="settings-delete" className="settings-section danger" aria-labelledby="settings-delete-title">
               <div className="settings-side">
-                <h3 id="settings-delete-title">행사 삭제</h3>
+                <h3 id="settings-delete-title">이벤트 삭제</h3>
                 <p>입장권, 입·퇴장 기록, 등록된 단말이 함께 사라지고 되돌릴 수 없어요.</p>
               </div>
               <div className="settings-body">
                 {eventWhen(session.startsAt) === 'today' && (
-                  <p className="error-text">오늘 진행 중인 행사입니다. 행사가 끝난 뒤에 지우는 것을 권해요.</p>
+                  <p className="error-text">오늘 진행 중인 이벤트입니다. 이벤트가 끝난 뒤에 지우는 것을 권해요.</p>
                 )}
-                <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 행사 삭제…</button>
+                <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 이벤트 삭제…</button>
               </div>
             </section>
             {settingsDirty.size > 0 && (
@@ -1508,11 +1508,11 @@ export default function TicketAdmin() {
 
       <ConfirmDialog
         open={confirmTest != null}
-        title="테스트 행사로 바꿀까요?"
+        title="테스트 이벤트로 바꿀까요?"
         message={`발급 현황과 쿠폰 목록에 받는 사람의 이메일이 가리지 않고 전부 보입니다. `
-          + `실제 관람객 명단이 들어 있는 행사라면 취소하세요.`
+          + `실제 관람객 명단이 들어 있는 이벤트라면 취소하세요.`
           + (session?.ticketCount ? ` 지금 입장권 ${session.ticketCount.toLocaleString()}장이 발급되어 있어요.` : '')}
-        confirmLabel="테스트 행사로 저장"
+        confirmLabel="테스트 이벤트로 저장"
         onConfirm={() => { const form = confirmTest; setConfirmTest(null); if (form) void saveDetails(form); }}
         onCancel={() => setConfirmTest(null)}
       />
@@ -1794,7 +1794,7 @@ export default function TicketAdmin() {
 
       <ConfirmDialog
         open={confirmDelete && session != null}
-        title="행사를 삭제할까요?"
+        title="이벤트를 삭제할까요?"
         message={`"${session?.name}" 과 여기에 속한 모든 기록이 사라집니다. 되돌릴 수 없습니다.`}
         details={[
           ['발급된 입장권', occupancy?.tickets ?? 0],
@@ -1885,7 +1885,7 @@ export default function TicketAdmin() {
                     <div className="zone-meter-foot">게이트를 거치지 않고 관리자가 처리한 입장이에요.</div>
                   </div>
                 )}
-                <p className="console-foot">관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">행사 설정</Link>에서 바꿔요.</p>
+                <p className="console-foot">관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">이벤트 설정</Link>에서 바꿔요.</p>
               </section>
 
               <section className="console-card" aria-labelledby="live-gates">
