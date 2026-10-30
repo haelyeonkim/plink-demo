@@ -281,12 +281,15 @@ public class TicketRepository {
     /**
      * Transfer and lost-device recovery both rotate the token, which kills the old URL.
      * Presence and re-entry counters are deliberately left alone: the holder's movements
-     * so far still happened.
+     * so far still happened. A revoked ticket stays revoked: a new link is not the
+     * organiser switching it back on.
      */
     public void rotateToken(long id, String tokenHmac, String tokenCipher, String issuedToEmail,
             Timestamp claimExpiresAt, boolean countAsReissue) {
         jdbc.update("UPDATE ticket SET token_hmac = ?, token_cipher = ?, issued_to_email = ?, "
-            + "claim_expires_at = ?, status = 'ISSUED', holder_id = NULL, holder_email = NULL, "
+            + "claim_expires_at = ?, "
+            + "status = CASE WHEN status = 'REVOKED' THEN 'REVOKED' ELSE 'ISSUED' END, "
+            + "holder_id = NULL, holder_email = NULL, "
             + "bound_at = NULL, reissue_count = reissue_count + ? WHERE id = ?",
             tokenHmac, tokenCipher, issuedToEmail, claimExpiresAt, countAsReissue ? 1 : 0, id);
     }

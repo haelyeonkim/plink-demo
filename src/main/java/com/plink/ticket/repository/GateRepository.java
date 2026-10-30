@@ -109,8 +109,21 @@ public class GateRepository {
             tokenHmac, tokenCipher, codeHash, codeCipher, expiresAt, id);
     }
 
-    public void countSetupAttempt(String id) {
-        jdbc.update("UPDATE gate SET setup_attempts = setup_attempts + 1 WHERE id = ?", id);
+    /**
+     * Spends one of the setup code's attempts in the same statement that checks one is
+     * left, so guesses racing each other cannot all read "four so far".
+     *
+     * @return false when the attempts are already used up
+     */
+    public boolean takeSetupAttempt(String id, int max) {
+        return jdbc.update("UPDATE gate SET setup_attempts = setup_attempts + 1 "
+            + "WHERE id = ? AND setup_attempts < ?", id, max) == 1;
+    }
+
+    /** Gives back the attempt a correct code spent, so a working link is not worn out by use. */
+    public void refundSetupAttempt(String id) {
+        jdbc.update("UPDATE gate SET setup_attempts = setup_attempts - 1 "
+            + "WHERE id = ? AND setup_attempts > 0", id);
     }
 
     public void touch(String id) {

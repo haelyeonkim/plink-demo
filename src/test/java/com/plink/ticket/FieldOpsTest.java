@@ -154,14 +154,86 @@ class FieldOpsTest {
         Ticket ticket = boundTicket(sessionId);
         Gate entry = gate(sessionId, "IN");
         Map<String, Object> grant = presentations.issue(ticket, "IN", true);
-        // Captured well outside the freshness window a live scan would demand.
-        String code = TicketCodes.code(grant, 1, Instant.now().getEpochSecond() - 3600, Secrets.randomAlnum(12));
+        // The grant was opened an hour ago and the gate read it then, offline: well
+        // outside the freshness window a live scan would demand.
+        long anHourAgo = Instant.now().getEpochSecond() - 3600;
+        openedAt(grant, anHourAgo);
+        String code = TicketCodes.code(grant, 1, anHourAgo + 5, Secrets.randomAlnum(12));
 
         assertThrows(ResponseStatusException.class, () -> admissions.admit(entry, code, "QR"),
             "온라인 경로는 여전히 신선도를 요구합니다");
         Map<String, Object> replayed = offline.replay(entry,
             List.of(Map.of("code", code, "capturedAt", "2026-09-11T10:00:00Z")));
         assertEquals(1, replayed.get("applied"));
+    }
+
+    @Test void aCaptureOlderThanTheOfflineWindowIsFlagged() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId);
+        Gate entry = gate(sessionId, "IN");
+        Map<String, Object> grant = presentations.issue(ticket, "IN", true);
+        long longAgo = Instant.now().getEpochSecond() - 3 * 3600;
+        openedAt(grant, longAgo);
+        String code = TicketCodes.code(grant, 1, longAgo + 5, Secrets.randomAlnum(12));
+
+        Map<String, Object> replayed = offline.replay(entry,
+            List.of(Map.of("code", code, "capturedAt", "2026-09-11T10:00:00Z")));
+        assertEquals(0, replayed.get("applied"), "오프라인 허용 시간(기본 2시간)보다 오래된 기록은 반영하지 않습니다");
+        assertEquals(1, replayed.get("flagged"));
+        assertFalse(ledger.find(ticket.id).orElseThrow().inside());
+    }
+
+    @Test void aCaptureTimedOutsideItsGrantIsFlagged() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId);
+        Gate entry = gate(sessionId, "IN");
+        Map<String, Object> grant = presentations.issue(ticket, "IN", true);
+        // Signed with a time before the grant existed: no phone mints that.
+        String code = TicketCodes.code(grant, 1, Instant.now().getEpochSecond() - 1800, Secrets.randomAlnum(12));
+
+        Map<String, Object> replayed = offline.replay(entry,
+            List.of(Map.of("code", code, "capturedAt", "2026-09-11T10:00:00Z")));
+        assertEquals(0, replayed.get("applied"));
+        assertEquals(1, replayed.get("flagged"));
+    }
+
+    @Test void aQueuedEventCannotClaimToBeAFace() {
+        long sessionId = newSession();
+        // Only a face may come in; a QR queued as "FACE" must not pass for one.
+        sessions.updateFacePolicy(sessionId, true, false, "PASSIVE", "LOW_SCORE_ONLY", 7);
+        Ticket ticket = boundTicket(sessionId);
+        Gate entry = gate(sessionId, "IN");
+        Map<String, Object> grant = presentations.issue(ticket, "IN", true);
+
+        Map<String, Object> replayed = offline.replay(entry, List.of(Map.of(
+            "code", TicketCodes.code(grant, 1), "method", "FACE", "capturedAt", "2026-09-11T10:00:00Z")));
+        assertEquals(0, replayed.get("applied"));
+        assertEquals(1, replayed.get("flagged"));
+        assertFalse(ledger.find(ticket.id).orElseThrow().inside());
+    }
+
+    @Test void oneRefusedEventDoesNotTakeTheOthersWithIt() {
+        long sessionId = newSession();
+        sessions.updatePolicy(sessionId, "UNLIMITED", 0, 45, 0, true, "LENIENT");
+        Ticket ticket = boundTicket(sessionId);
+        Gate both = gate(sessionId, "BIDIRECTIONAL");
+        Map<String, Object> grant = presentations.issue(ticket, "IN", true);
+
+        Map<String, Object> replayed = offline.replay(both, List.of(
+            Map.of("code", TicketCodes.code(grant, 1), "capturedAt", "2026-09-11T10:00:00Z"),
+            Map.of("code", "PLK2S.not.a.real.code.x", "capturedAt", "2026-09-11T10:01:00Z")));
+        assertEquals(1, replayed.get("applied"));
+        assertEquals(1, replayed.get("flagged"));
+        assertTrue(ledger.find(ticket.id).orElseThrow().inside(), "앞선 입장은 그대로 남습니다");
+    }
+
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** Moves a grant's life back in time, as if the holder had opened it then. */
+    private void openedAt(Map<String, Object> grant, long epochSeconds) {
+        jdbc.update("UPDATE presentation_session SET issued_at = ?, expires_at = ? WHERE id = ?",
+            Timestamp.from(Instant.ofEpochSecond(epochSeconds)),
+            Timestamp.from(Instant.ofEpochSecond(epochSeconds + 90)), grant.get("grantId"));
     }
 
     @Test void contradictionsAreFlaggedNotForcedIntoTheState() {

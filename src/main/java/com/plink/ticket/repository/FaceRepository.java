@@ -89,9 +89,29 @@ public class FaceRepository {
             TEMPLATE, sessionId);
     }
 
+    /**
+     * A cheap summary of one session's live templates: how many, and the newest id.
+     * Templates are never edited in place - re-enrolling deletes and inserts - so any
+     * insert moves the newest id and any delete moves the count.
+     */
+    public long[] fingerprint(long sessionId) {
+        return jdbc.queryForObject("SELECT COUNT(*) AS n, COALESCE(MAX(id), 0) AS top FROM face_template "
+            + "WHERE session_id = ? AND revoked_at IS NULL",
+            (rs, row) -> new long[] { rs.getLong("n"), rs.getLong("top") }, sessionId);
+    }
+
     /** Withdrawal destroys the template immediately; there is nothing to keep. */
     public int deleteTemplate(long ticketId) {
         return jdbc.update("DELETE FROM face_template WHERE ticket_id = ?", ticketId);
+    }
+
+    /**
+     * Withdraws the consent and destroys the template together, for a ticket that is no
+     * longer that person's: a face left behind would still walk the previous holder in.
+     */
+    public int forget(long ticketId) {
+        withdrawConsent(ticketId);
+        return deleteTemplate(ticketId);
     }
 
     public int purgeExpired(Timestamp now) {

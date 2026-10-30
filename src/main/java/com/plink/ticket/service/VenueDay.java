@@ -23,4 +23,10 @@ public final class VenueDay {
     public static boolean changed(Instant since, Instant now, ZoneId zone, int closeHour) {
         return of(since, zone, closeHour).isBefore(of(now, zone, closeHour));
     }
+
+    /** The last second that still belongs to the venue day {@code at} falls in. */
+    public static Instant endOf(Instant at, ZoneId zone, int closeHour) {
+        return of(at, zone, closeHour).plusDays(1).atStartOfDay().plusHours(closeHour)
+            .atZone(zone).toInstant().minusSeconds(1);
+    }
 }

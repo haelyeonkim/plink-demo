@@ -25,6 +25,12 @@ public class TicketProperties {
     private int codePeriodSeconds = 10;
     /** Accepted clock difference between phone and server. */
     private int clockSkewSeconds = 20;
+    /**
+     * How old a code a gate captured while offline may be when it is replayed. Beyond
+     * this a queued entry is flagged, not applied: a terminal's queue is not allowed to
+     * write yesterday's movements into today's presence.
+     */
+    private int offlineMaxMinutes = 120;
     /** Grant issue limit per ticket per hour; an early signal of code-sharing attempts. */
     // Opening the code no longer asks for the passkey each time, and a booth visit opens it
     // too, so a busy visitor opens it far more often than ten times an hour.
@@ -96,6 +102,8 @@ public class TicketProperties {
     public void setCodePeriodSeconds(int v) { this.codePeriodSeconds = v; }
     public int getClockSkewSeconds() { return clockSkewSeconds; }
     public void setClockSkewSeconds(int v) { this.clockSkewSeconds = v; }
+    public int getOfflineMaxMinutes() { return offlineMaxMinutes; }
+    public void setOfflineMaxMinutes(int v) { this.offlineMaxMinutes = v; }
     public int getPresentationsPerHour() { return presentationsPerHour; }
     public void setPresentationsPerHour(int v) { this.presentationsPerHour = v; }
     public int getRebindMaxPerTicket() { return rebindMaxPerTicket; }

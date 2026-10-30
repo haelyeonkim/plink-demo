@@ -160,6 +160,7 @@ public class AdmissionService {
     private String enter(Ticket ticket, EventSession session, Presence presence, Gate gate,
             String method, Instant now) {
         String note = null;
+        boolean overnight = false;
         if (presence.inside()) {
             // A ticket that is already INSIDE is the anti-sharing invariant doing its job:
             // a forwarded code cannot walk a second person in. Forgiving an unmatched exit
@@ -185,6 +186,7 @@ public class AdmissionService {
                 "짝 없는 퇴장 보정 (" + correction + ")", null);
             presence = admissions.find(ticket.id).orElse(presence);
             note = "짝 없는 퇴장 보정 후 입장 (" + correction + ")";
+            overnight = dayChanged;
         }
         if (session.gateOpensAt != null && now.isBefore(session.gateOpensAt.toInstant())) {
             throw deny("입장 시작 시간 전이에요.");
@@ -192,7 +194,8 @@ public class AdmissionService {
         if (session.faceRequired && !"FACE".equals(method) && !"STAFF".equals(method)) {
             throw deny("이 이벤트는 얼굴 인식으로만 입장할 수 있어요.");
         }
-        if (presence.entryCount > 0) {
+        boolean newDay = overnight || startsNewDay(session, presence, now);
+        if (presence.entryCount > 0 && !newDay) {
             // Requiring a face only for re-entry is the cheapest control that actually
             // stops a ticket being passed around between entries.
             if (session.reentryRequiresFace && !"FACE".equals(method) && !"STAFF".equals(method)) {
@@ -207,9 +210,27 @@ public class AdmissionService {
                 throw deny("재입장 유효 시간이 지났어요.");
             }
         }
-        int reentries = presence.reentryCount + (presence.entryCount > 0 ? 1 : 0);
-        admissions.markInside(ticket.id, presence.entryCount + 1, reentries, gate.id);
+        admissions.markInside(ticket.id, presence.entryCount + 1, reentriesAfterEntry(presence, newDay), gate.id);
         return note;
+    }
+
+    /**
+     * Whether an entry now is the first of a new venue day rather than a return.
+     *
+     * <p>Re-entry rules - the grace window, the count, DISABLED - describe stepping out
+     * and back in during one day. On a multi-day event the holder who left last night
+     * is arriving, not returning: measuring them against last night's exit refused them
+     * at the door while someone who never scanned out got in.
+     */
+    private boolean startsNewDay(EventSession session, Presence presence, Instant now) {
+        return presence.lastExitAt != null && VenueDay.changed(
+            presence.lastExitAt.toInstant(), now, properties.venueZoneId(), session.dayCloseHour);
+    }
+
+    /** The re-entry count an entry leaves behind: a new day starts its own allowance. */
+    private static int reentriesAfterEntry(Presence presence, boolean newDay) {
+        if (newDay) return 0;
+        return presence.reentryCount + (presence.entryCount > 0 ? 1 : 0);
     }
 
     private String exit(Ticket ticket, EventSession session, Presence presence, Gate gate) {
@@ -247,25 +268,76 @@ public class AdmissionService {
         });
     }
 
-    /** Denials are evidence too, so they are appended in their own transaction. */
+    /**
+     * Denials are evidence too, so they are appended in their own transaction.
+     *
+     * <p>The row always belongs to the gate's own event. The code was refused, so nothing
+     * in it is verified: a ticket from another event named by it is not attributed, or
+     * any terminal could write refusals into an event it has nothing to do with.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordDenied(Gate gate, String code, String method, String reason) {
         Long ticketId = null;
-        Long sessionId = null;
         String grantId = null;
         String[] parts = code == null ? new String[0] : code.trim().split("\\.");
         if (parts.length == 6) {
             grantId = parts[1].length() <= 32 ? parts[1] : null;
             if (grantId != null) {
                 Grant grant = grants.findById(grantId).orElse(null);
-                if (grant != null) {
+                if (grant != null && tickets.findById(grant.ticketId)
+                        .filter(t -> t.sessionId == gate.sessionId).isPresent()) {
                     ticketId = grant.ticketId;
-                    sessionId = tickets.findById(grant.ticketId).map(t -> t.sessionId).orElse(null);
+                } else {
+                    grantId = null;
                 }
             }
         }
-        admissions.append(ticketId, sessionId == null ? gate.sessionId : sessionId, null, gate.id,
-            method, "DENIED", trim(reason), grantId);
+        admissions.append(ticketId, gate.sessionId, null, gate.id, method, "DENIED", trim(reason), grantId);
+    }
+
+    /**
+     * Staff correction from the console. The ledger is append-only, so a fix is a new
+     * entry carrying who made it and why - never an edit of what the gate recorded.
+     *
+     * <p>It takes the same locks, in the same order, as a scan: a correction landing
+     * while the holder is at a gate queues behind it rather than reading a state that
+     * is about to change. A correction that would change nothing is refused, so it can
+     * neither inflate the entry count nor leave a ledger row saying something happened.
+     */
+    @Transactional
+    public Map<String, Object> staffMove(long ticketId, String direction, String reason, String operator) {
+        Ticket ticket = tickets.lockById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        EventSession session = sessions.findById(ticket.sessionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
+        Presence presence = presence(ticket);
+        if ("IN".equals(direction)) {
+            // Taking someone out is always allowed - revoking does not eject anybody -
+            // but walking a switched-off or mid-transfer ticket in is what those states
+            // exist to stop.
+            if (ticket.revoked()) throw conflict("비활성화된 입장권은 입장 처리할 수 없어요.");
+            if ("TRANSFER_PENDING".equals(ticket.status)) throw conflict("양도 중인 입장권은 입장 처리할 수 없어요.");
+            if (presence.inside()) throw conflict("이미 장내에 있는 입장권이에요.");
+            boolean newDay = startsNewDay(session, presence, Instant.now());
+            admissions.markInside(ticket.id, presence.entryCount + 1, reentriesAfterEntry(presence, newDay), null);
+        } else {
+            if (!presence.inside()) throw conflict("장내에 있지 않은 입장권이에요.");
+            admissions.markOutside(ticket.id, null);
+        }
+        String outcome = "IN".equals(direction) ? "ADMITTED" : "EXITED";
+        admissions.appendDetailed(ticket.id, ticket.sessionId, direction, null, "STAFF", outcome, reason,
+            null, operator, false, false);
+        announce(ticket, session, outcome, direction, null);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("direction", direction);
+        result.put("operator", operator);
+        result.put("inside", "IN".equals(direction));
+        return result;
+    }
+
+    private static ResponseStatusException conflict(String message) {
+        return new ResponseStatusException(HttpStatus.CONFLICT, message);
     }
 
     private Map<String, Object> result(String outcome, String direction, Ticket ticket, EventSession session,

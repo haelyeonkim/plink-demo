@@ -127,7 +127,9 @@ public class PresentationService {
     /**
      * @param captured true when replaying a movement a terminal recorded offline: the
      *                 grant was live at capture time, so expiry alone must not discard a
-     *                 real entry. Signature, counter and single-use nonce still hold.
+     *                 real entry. Signature, counter and single-use nonce still hold, and
+     *                 the code's own time must sit inside the grant's life and within
+     *                 {@code plink.ticket.offline-max-minutes} of now.
      */
     public Verified verify(String code, boolean captured) {
         String[] parts = code == null ? new String[0] : code.trim().split("\\.");
@@ -166,8 +168,23 @@ public class PresentationService {
         }
         // Ahead of the server is the direction a mis-set device clock shows, and nothing
         // is gained by accepting a code minted in the future.
-        if (!captured && seconds - now > properties.getClockSkewSeconds()) {
+        if (seconds - now > properties.getClockSkewSeconds()) {
             throw deny("코드 시각이 올바르지 않아요. 화면을 새로 고쳐 주세요.");
+        }
+        if (captured) {
+            // A capture is exempt from the live window, not from time altogether. The
+            // signed timestamp has to fall inside the grant's own life - a phone only
+            // mints while its grant is open - and be recent enough that a queue cannot
+            // replay movements from hours ago into the current presence state.
+            long issued = grant.issuedAt.toInstant().getEpochSecond();
+            long expires = grant.expiresAt.toInstant().getEpochSecond();
+            if (seconds < issued - properties.getClockSkewSeconds()
+                    || seconds > expires + properties.getCodePeriodSeconds() + SCAN_GRACE_SECONDS) {
+                throw deny("코드 시각이 입장권 인증 시간과 맞지 않아요.");
+            }
+            if (now - seconds > properties.getOfflineMaxMinutes() * 60L) {
+                throw deny("오프라인 기록이 너무 오래되었어요.");
+            }
         }
         if (counter <= grant.lastCounter) throw deny("이미 지난 코드예요.");
         if (!nonces.tryUse(nonce)) throw deny("이미 사용한 코드예요.");

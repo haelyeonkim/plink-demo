@@ -29,10 +29,19 @@ public class TicketMaintenance {
     private final com.plink.ticket.live.LiveEvents live;
     private final com.plink.ticket.live.LiveSnapshots snapshots;
 
+    /**
+     * One transaction per closed row: the presence change and the ledger row that
+     * explains it land together or not at all, and one failing row does not undo the
+     * rows before it.
+     */
+    private final org.springframework.transaction.support.TransactionTemplate transactions;
+
     public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions,
             TransferService transfers, com.plink.ticket.face.FaceService faces,
             com.plink.ticket.config.TicketProperties properties, com.plink.ticket.live.LiveEvents live,
-            com.plink.ticket.live.LiveSnapshots snapshots) {
+            com.plink.ticket.live.LiveSnapshots snapshots,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
+        this.transactions = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
         this.properties = properties;
         this.live = live;
         this.snapshots = snapshots;
@@ -80,9 +89,7 @@ public class TicketMaintenance {
             if (insideSince.toInstant().isAfter(now.minus(threshold, ChronoUnit.MINUTES))) continue;
             long ticketId = ((Number) row.get("ticket_id")).longValue();
             long sessionId = ((Number) row.get("session_id")).longValue();
-            if (!admissions.markOutsideIfSince(ticketId, insideSince)) continue;
-            admissions.append(ticketId, sessionId, "OUT", null, "STAFF", "EXITED",
-                "AUTO_EXIT 정책에 따른 자동 정리", null);
+            if (!closeEntry(ticketId, sessionId, insideSince, null, "AUTO_EXIT 정책에 따른 자동 정리")) continue;
             announce(sessionId, ticketId);
             log.info("Auto-exited ticket {} after {} minutes inside", ticketId, threshold);
         }
@@ -104,10 +111,11 @@ public class TicketMaintenance {
             if (!VenueDay.changed(insideSince.toInstant(), now, zone, hour)) continue;
             long ticketId = ((Number) row.get("ticket_id")).longValue();
             long sessionId = ((Number) row.get("session_id")).longValue();
-            // Only the entry that was read: one made since then is today's, and stays.
-            if (!admissions.markOutsideIfSince(ticketId, insideSince)) continue;
-            admissions.append(ticketId, sessionId, "OUT", null, "STAFF", "EXITED",
-                "날짜 변경 자동 퇴장", null);
+            // Only the entry that was read: one made since then is today's, and stays. The
+            // exit is dated to the end of the day it closes, so the holder's first entry
+            // tomorrow reads as a new day rather than a late return.
+            Timestamp endOfDay = Timestamp.from(VenueDay.endOf(insideSince.toInstant(), zone, hour));
+            if (!closeEntry(ticketId, sessionId, insideSince, endOfDay, "날짜 변경 자동 퇴장")) continue;
             live.publishForTicket(sessionId, ticketId, "PRESENCE", snapshots.presence(ticketId));
             touched.add(sessionId);
         }
@@ -117,6 +125,15 @@ public class TicketMaintenance {
             live.publish(sessionId, "CROWDING", snapshots.crowding(sessionId));
         }
         if (!touched.isEmpty()) log.info("Closed overnight entries in {} event(s)", touched.size());
+    }
+
+    private boolean closeEntry(long ticketId, long sessionId, Timestamp insideSince, Timestamp exitAt,
+            String reason) {
+        return Boolean.TRUE.equals(transactions.execute(status -> {
+            if (!admissions.markOutsideIfSince(ticketId, insideSince, exitAt)) return false;
+            admissions.append(ticketId, sessionId, "OUT", null, "STAFF", "EXITED", reason, null);
+            return true;
+        }));
     }
 
     /** The holder's screen and the console hear about an exit nobody scanned. */

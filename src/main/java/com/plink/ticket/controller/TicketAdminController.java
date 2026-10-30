@@ -56,6 +56,7 @@ public class TicketAdminController {
     private final com.plink.ticket.repository.CouponRepository couponRepository;
     private final com.plink.ticket.service.CouponService coupons;
     private final com.plink.ticket.community.AdImageService adImages;
+    private final com.plink.ticket.service.SessionPolicyService policies;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -65,8 +66,10 @@ public class TicketAdminController {
             com.plink.ticket.repository.BoothRepository booths,
             com.plink.ticket.repository.CouponRepository couponRepository,
             com.plink.ticket.service.CouponService coupons,
-            com.plink.ticket.community.AdImageService adImages) {
+            com.plink.ticket.community.AdImageService adImages,
+            com.plink.ticket.service.SessionPolicyService policies) {
         this.adImages = adImages;
+        this.policies = policies;
         this.booths = booths;
         this.couponRepository = couponRepository;
         this.coupons = coupons;
@@ -156,85 +159,9 @@ public class TicketAdminController {
     /** Re-entry and exit rules are session policy, editable while the event runs. */
     @PutMapping("/sessions/{id}/policy")
     public Map<String, Object> updatePolicy(@PathVariable long id, @RequestBody Map<String, Object> body) {
-        EventSession current = ticketService.requireSession(id);
-        String mode = text(body.get("reentryMode"), current.reentryMode).toUpperCase(java.util.Locale.ROOT);
-        if (!List.of("DISABLED", "LIMITED", "UNLIMITED").contains(mode)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "재입장 모드는 DISABLED, LIMITED, UNLIMITED 중 하나여야 해요.");
-        }
-        String unmatched = text(body.get("unmatchedExit"), current.unmatchedExit).toUpperCase(java.util.Locale.ROOT);
-        if (!List.of("STRICT", "LENIENT", "AUTO_EXIT").contains(unmatched)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "퇴장 미스캔 정책은 STRICT, LENIENT, AUTO_EXIT 중 하나여야 해요.");
-        }
-        if (body.containsKey("transferMax") || body.containsKey("transferClosesMinutesBefore")
-                || body.containsKey("transferAfterFirstEntry")) {
-            sessions.updateTransferPolicy(id,
-                number(body.get("transferMax"), current.transferMax),
-                number(body.get("transferClosesMinutesBefore"), current.transferClosesMinutesBefore),
-                body.get("transferAfterFirstEntry") == null ? current.transferAfterFirstEntry
-                    : Boolean.parseBoolean(body.get("transferAfterFirstEntry").toString()));
-        }
-        if (body.containsKey("seats")) writeThrough(id, "좌석", "SEAT", body.get("seats"));
-        if (body.containsKey("tiers")) writeThrough(id, "등급", "TIER", body.get("tiers"));
-        if (body.containsKey("crowdBusyPercent") || body.containsKey("crowdSteadyPercent")) {
-            int busy = number(body.get("crowdBusyPercent"), current.crowdBusyPercent);
-            int steady = number(body.get("crowdSteadyPercent"), current.crowdSteadyPercent);
-            if (busy < 1 || busy > 100 || steady < 1 || steady > 100) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "혼잡도 기준은 1에서 100 사이의 백분율이어야 해요.");
-            }
-            if (steady >= busy) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "'보통' 기준은 '혼잡' 기준보다 낮아야 해요.");
-            }
-            sessions.updateCrowdLevels(id, busy, steady);
-            publishCrowding(id);
-        }
-        if (body.containsKey("dayCloseExit") || body.containsKey("dayCloseHour")) {
-            int hour = number(body.get("dayCloseHour"), current.dayCloseHour);
-            if (hour < 0 || hour > 23) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "날짜 기준 시각은 0시부터 23시 사이예요.");
-            }
-            sessions.updateDayClose(id,
-                body.get("dayCloseExit") == null ? current.dayCloseExit
-                    : Boolean.parseBoolean(body.get("dayCloseExit").toString()),
-                hour);
-        }
-        if (body.containsKey("claimRequiresOtp")) {
-            sessions.updateClaimPolicy(id, Boolean.parseBoolean(body.get("claimRequiresOtp").toString()));
-        }
-        if (body.containsKey("geoMode") || body.containsKey("venueLat") || body.containsKey("venueLon")
-                || body.containsKey("geoRadiusMeters")) {
-            String geoMode = text(body.get("geoMode"), current.geoMode).toUpperCase(java.util.Locale.ROOT);
-            if (!List.of("OFF", "ADVISE", "ENFORCE").contains(geoMode)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "위치 정책은 OFF, ADVISE, ENFORCE 중 하나여야 해요.");
-            }
-            sessions.updateGeoPolicy(id,
-                decimal(body.get("venueLat"), current.venueLat),
-                decimal(body.get("venueLon"), current.venueLon),
-                number(body.get("geoRadiusMeters"), current.geoRadiusMeters), geoMode);
-        }
-        if (body.containsKey("faceRequired") || body.containsKey("reentryRequiresFace")
-                || body.containsKey("faceLiveness") || body.containsKey("faceChallengeOn")
-                || body.containsKey("faceRetentionDays")) {
-            sessions.updateFacePolicy(id,
-                body.get("faceRequired") == null ? current.faceRequired
-                    : Boolean.parseBoolean(body.get("faceRequired").toString()),
-                body.get("reentryRequiresFace") == null ? current.reentryRequiresFace
-                    : Boolean.parseBoolean(body.get("reentryRequiresFace").toString()),
-                text(body.get("faceLiveness"), current.faceLiveness),
-                text(body.get("faceChallengeOn"), current.faceChallengeOn),
-                number(body.get("faceRetentionDays"), current.faceRetentionDays));
-        }
-        sessions.updatePolicy(id, mode,
-            number(body.get("reentryMax"), current.reentryMax),
-            number(body.get("reentryGraceMinutes"), current.reentryGraceMinutes),
-            number(body.get("reentryCooldownSeconds"), current.reentryCooldownSeconds),
-            body.get("exitScanRequired") == null ? current.exitScanRequired
-                : Boolean.parseBoolean(body.get("exitScanRequired").toString()),
-            unmatched);
+        // Checked whole, then written in one transaction; the phones watching hear about
+        // new crowding levels only once they are saved.
+        if (policies.update(id, body)) publishCrowding(id);
         return describe(ticketService.requireSession(id));
     }
 
@@ -528,18 +455,6 @@ public class TicketAdminController {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "항목을 찾을 수 없어요."));
         fields.delete(field.id);
         return Map.of("deleted", true, "label", field.label);
-    }
-
-    /** Keeps the older seats/tiers keys working by writing them into their field. */
-    private void writeThrough(long sessionId, String label, String kind, Object values) {
-        String stored = catalogue(values, null);
-        TicketField existing = fields.findBySession(sessionId).stream()
-            .filter(field -> kind.equals(field.kind)).findFirst().orElse(null);
-        if (existing == null) {
-            if (stored != null) fields.insert(sessionId, label, kind, stored);
-        } else {
-            fields.updateValues(existing.id, stored);
-        }
     }
 
     /** A ticket's own fields, as stored. Unreadable JSON is shown as nothing. */
@@ -1073,45 +988,18 @@ public class TicketAdminController {
     @PostMapping("/tickets/{ticketId}/movement")
     public Map<String, Object> staffMovement(@PathVariable long ticketId,
             @RequestBody Map<String, String> body, Authentication operator) {
-        Ticket ticket = tickets.findById(ticketId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         String direction = required(body.get("direction"), "방향을 지정해 주세요.").toUpperCase(java.util.Locale.ROOT);
         if (!List.of("IN", "OUT").contains(direction)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "방향은 IN 또는 OUT이어야 해요.");
         }
         String reason = required(body.get("reason"), "사유를 입력해 주세요.");
         String who = CurrentUser.of(operator).map(user -> user.email).orElse("unknown");
-
-        Presence presence = admissions.find(ticketId).orElse(null);
-        if (presence == null) {
-            admissions.create(ticketId, ticket.sessionId);
-            presence = admissions.find(ticketId).orElseThrow();
-        }
-        if ("IN".equals(direction)) {
-            admissions.markInside(ticketId, presence.entryCount + 1,
-                presence.reentryCount + (presence.entryCount > 0 ? 1 : 0), null);
-        } else {
-            admissions.markOutside(ticketId, null);
-        }
-        admissions.appendDetailed(ticketId, ticket.sessionId, direction, null, "STAFF",
-            "IN".equals(direction) ? "ADMITTED" : "EXITED", reason, null, who, false, false);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("direction", direction);
-        result.put("operator", who);
-        result.put("inside", "IN".equals(direction));
-        return result;
+        return admissionService.staffMove(ticketId, direction, reason, who);
     }
 
     /** Accepts a list or a block of text and stores one entry per line. */
     private static String catalogue(Object value, String fallback) {
-        if (value == null) return fallback;
-        java.util.stream.Stream<String> entries = value instanceof List<?> list
-            ? list.stream().map(String::valueOf)
-            : java.util.Arrays.stream(value.toString().split("[\\r\\n,]"));
-        List<String> cleaned = entries.map(String::trim).filter(entry -> !entry.isEmpty())
-            .distinct().limit(2000).toList();
-        return cleaned.isEmpty() ? null : String.join("\n", cleaned);
+        return com.plink.ticket.service.SessionPolicyService.catalogue(value, fallback);
     }
 
     private static Double decimal(Object value, Double fallback) {

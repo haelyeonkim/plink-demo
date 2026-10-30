@@ -269,6 +269,51 @@ class FaceTrackTest {
         assertTrue(attempts.stream().allMatch(row -> row.size() == 5), "점수와 결과만 남습니다");
     }
 
+    /**
+     * A ticket that changes hands must not keep the previous holder's face: the gate
+     * would otherwise still walk the seller in, on a ticket they sold.
+     */
+    @Test void aTransferDestroysTheSendersFace(@Autowired com.plink.ticket.service.TransferService transfers,
+            @Autowired com.plink.ticket.repository.TransferRepository transferRepository) {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "seller@example.com");
+        faces.consent(ticket, "seller@example.com", true);
+        faces.enrol(ticket, capture("seller"));
+        EventSession session = tickets.requireSession(sessionId);
+        assertEquals(ticket.id, faces.identify(session, capture("seller"), null, "g1").ticketId);
+
+        transfers.initiate(ticket, "buyer@example.com", null, null);
+        com.plink.ticket.model.Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+        transfers.accept(transfer, ticket, holderFor("buyer@example.com"));
+
+        assertTrue(faceRepository.findByTicket(ticket.id).isEmpty(), "이전 보유자의 얼굴은 삭제됩니다");
+        assertTrue(faceRepository.activeConsent(ticket.id).isEmpty(), "동의도 함께 철회됩니다");
+        ResponseStatusException unknown = assertThrows(ResponseStatusException.class,
+            () -> faces.identify(session, capture("seller"), null, "g1"));
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, unknown.getStatusCode(),
+            "판매자의 얼굴로는 더 이상 입장할 수 없습니다");
+    }
+
+    /** Matching keeps opened templates between frames, but never past a change. */
+    @Test void aWithdrawnFaceStopsMatchingAtOnce() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "holder@example.com");
+        faces.consent(ticket, "holder@example.com", true);
+        faces.enrol(ticket, capture("iota"));
+        EventSession session = tickets.requireSession(sessionId);
+        assertEquals(ticket.id, faces.identify(session, capture("iota"), null, "g1").ticketId);
+        assertEquals(ticket.id, faces.identify(session, capture("iota"), null, "g1").ticketId);
+
+        faces.withdraw(ticket);
+        assertThrows(ResponseStatusException.class, () -> faces.identify(session, capture("iota"), null, "g1"));
+
+        // And a new enrolment is seen on the next frame too.
+        Ticket other = boundTicket(sessionId, "second@example.com");
+        faces.consent(other, "second@example.com", true);
+        faces.enrol(other, capture("kappa"));
+        assertEquals(other.id, faces.identify(session, capture("kappa"), null, "g1").ticketId);
+    }
+
     @Test void anUnboundTicketCannotEnrolAFace() {
         long sessionId = newSession();
         Map<String, Object> issued = tickets.issue(sessionId, "nobody@example.com", "B-1", null);

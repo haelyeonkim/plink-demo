@@ -96,6 +96,9 @@ plink:
     venue-zone: ${TICKET_VENUE_ZONE:Asia/Seoul}
     presentation-ttl-seconds: ${TICKET_PRESENTATION_TTL_SECONDS:90}
     code-period-seconds: ${TICKET_CODE_PERIOD_SECONDS:10}
+    # How old an entry a gate queued while offline may be when it syncs; older ones are
+    # flagged for staff instead of being written into presence.
+    offline-max-minutes: ${TICKET_OFFLINE_MAX_MINUTES:120}
     rebind-max-per-ticket: ${TICKET_REBIND_MAX:2}
     # The From address. With Resend this must be on a domain verified there.
     mail-from: ${MAIL_FROM:no-reply@plink.local}

@@ -238,6 +238,96 @@ class TransferFlowTest {
         assertFalse(presence.inside());
     }
 
+    /**
+     * Recovery mid-transfer used to leave the transfer open: the sender got a fresh link
+     * and the recipient could still accept, and one ticket admitted two people.
+     */
+    @Test void recoveringMidTransferCancelsIt() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "sender@example.com");
+        transfers.initiate(ticket, "recipient@example.com", null, null);
+        Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+
+        tickets.reissue(ticketRepository.findById(ticket.id).orElseThrow(), "sender@example.com");
+        assertEquals("CANCELLED", transferRepository.findByClaimToken(transfer.toTokenHmac).orElseThrow().status);
+        assertTrue(mailbox.sent.stream().anyMatch(m -> m[0].equals("recipient@example.com")
+            && m[1].contains("취소")), "받는 사람에게 취소를 알립니다");
+
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> transfers.accept(transfer, ticket, holderFor("recipient@example.com")));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, refused.getStatusCode());
+        Ticket after = ticketRepository.findById(ticket.id).orElseThrow();
+        assertEquals("ISSUED", after.status);
+        assertNotEquals("recipient@example.com", after.holderEmail);
+        assertEquals("sender@example.com", after.issuedToEmail);
+    }
+
+    @Test void aConsoleReissueMidTransferCancelsItToo() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "sender@example.com");
+        transfers.initiate(ticket, "recipient@example.com", null, null);
+        Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+
+        tickets.reissueForConsole(ticket.id, false);
+        assertTrue(transferRepository.findPendingByTicket(ticket.id).isEmpty());
+        assertThrows(ResponseStatusException.class,
+            () -> tickets.resolve(sessionId, tokenFor("recipient@example.com")), "받은 링크는 더 이상 열리지 않습니다");
+        assertThrows(ResponseStatusException.class,
+            () -> transfers.accept(transfer, ticket, holderFor("recipient@example.com")));
+    }
+
+    @Test void anAcceptedTransferCannotBeCancelledAfterwards() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "sender@example.com");
+        transfers.initiate(ticket, "recipient@example.com", null, null);
+        Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+        transfers.accept(transfer, ticket, holderFor("recipient@example.com"));
+
+        assertTrue(assertThrows(ResponseStatusException.class, () -> transfers.cancel(ticket))
+            .getReason().contains("진행 중인 양도가 없어요"));
+        assertEquals("BOUND", ticketRepository.findById(ticket.id).orElseThrow().status);
+        assertEquals("recipient@example.com", ticketRepository.findById(ticket.id).orElseThrow().holderEmail);
+    }
+
+    @Test void aCancelledOrExpiredTransferCannotBeAccepted() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "sender@example.com");
+        transfers.initiate(ticket, "recipient@example.com", null, null);
+        Transfer cancelled = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+        transfers.cancel(ticket);
+        assertThrows(ResponseStatusException.class,
+            () -> transfers.accept(cancelled, ticket, holderFor("recipient@example.com")));
+        assertEquals("BOUND", ticketRepository.findById(ticket.id).orElseThrow().status);
+        assertEquals("sender@example.com", ticketRepository.findById(ticket.id).orElseThrow().holderEmail);
+
+        transfers.initiate(ticket, "recipient@example.com", null, null);
+        Transfer late = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+        expire(late.id);
+        assertTrue(assertThrows(ResponseStatusException.class,
+            () -> transfers.accept(late, ticket, holderFor("recipient@example.com")))
+            .getReason().contains("기한"));
+        assertEquals("sender@example.com", ticketRepository.findById(ticket.id).orElseThrow().holderEmail);
+        // Closed here rather than left for another test's expiry sweep to count.
+        transfers.cancel(ticket);
+    }
+
+    @Test void aRecipientWhoAlreadyHoldsATicketIsRefused() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "sender@example.com");
+        tickets.issue(sessionId, "taken@example.com", "B-1", null);
+        assertTrue(assertThrows(ResponseStatusException.class,
+            () -> transfers.initiate(ticket, "taken@example.com", null, null))
+            .getReason().contains("이미 이 이벤트의 입장권"));
+
+        // Issued to them after the transfer started: refused when they accept.
+        transfers.initiate(ticket, "later@example.com", null, null);
+        Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
+        tickets.issue(sessionId, "later@example.com", "B-2", null);
+        assertThrows(ResponseStatusException.class,
+            () -> transfers.accept(transfer, ticket, holderFor("later@example.com")));
+        assertEquals("sender@example.com", ticketRepository.findById(ticket.id).orElseThrow().holderEmail);
+    }
+
     /** Drags a pending transfer's deadline into the past. */
     private void expire(long transferId) {
         org.springframework.jdbc.core.JdbcTemplate jdbc =

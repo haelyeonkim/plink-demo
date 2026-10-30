@@ -42,12 +42,21 @@ public class EmailOtpRepository {
             MAPPER, email, purpose).stream().findFirst();
     }
 
-    public void incrementAttempts(long id) {
-        jdbc.update("UPDATE email_otp SET attempts = attempts + 1 WHERE id = ?", id);
+    /**
+     * Spends one attempt in the statement that checks one is left, so guesses sent in
+     * parallel cannot all read the same count and all be compared.
+     *
+     * @return false when the code is used up or already consumed
+     */
+    public boolean takeAttempt(long id, int max) {
+        return jdbc.update("UPDATE email_otp SET attempts = attempts + 1 "
+            + "WHERE id = ? AND attempts < ? AND consumed_at IS NULL", id, max) == 1;
     }
 
-    public void consume(long id) {
-        jdbc.update("UPDATE email_otp SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    /** @return whether this call consumed it; a code proves a mailbox once. */
+    public boolean consume(long id) {
+        return jdbc.update("UPDATE email_otp SET consumed_at = CURRENT_TIMESTAMP "
+            + "WHERE id = ? AND consumed_at IS NULL", id) == 1;
     }
 
     /** Invalidate outstanding codes for this purpose so only the newest one can be used. */

@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -45,6 +46,12 @@ public class TicketService {
     private final TextCipher cipher;
     private final CouponService coupons;
     private final com.plink.ticket.live.LiveEvents live;
+    /**
+     * Issuing and console re-issue commit the ticket before any message goes out, then
+     * report what was actually delivered. A link mailed from inside the transaction
+     * could outlive a rollback, and a slow relay would hold a pooled connection with it.
+     */
+    private final TransactionTemplate transactions;
     private final String baseUrl;
 
     public TicketService(TicketRepository tickets, TicketFieldRepository fields,
@@ -53,8 +60,10 @@ public class TicketService {
             TransferRepository transfers, PresentationService presentations, EmailSender mail,
             MessageSender sms, TicketProperties properties, TextCipher cipher, CouponService coupons,
             com.plink.ticket.live.LiveEvents live,
+            org.springframework.transaction.PlatformTransactionManager transactionManager,
             @Value("${plink.auth.base-url}") String baseUrl) {
         this.live = live;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.coupons = coupons;
         this.tickets = tickets;
         this.fields = fields;
@@ -91,7 +100,6 @@ public class TicketService {
         return baseUrl + "/tickets/" + sessionId + "/" + token;
     }
 
-    @Transactional
     public Map<String, Object> issue(long sessionId, String email, String seat, String tier) {
         return issue(sessionId, email, seat, tier, null);
     }
@@ -113,12 +121,57 @@ public class TicketService {
      * @param values what the organiser's own fields say for this ticket, keyed by the
      *     field's label. Seat and tier are passed separately because they have columns.
      */
-    @Transactional
     public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
             String rawPhone, boolean notify, Map<String, String> values) {
-        EventSession session = requireSession(sessionId);
+        Issued issued = transactions.execute(status -> create(sessionId, email, seat, tier, rawPhone, values));
+        // Committed: the link exists whatever happens to the messages below.
+        String delivered = notify ? deliver(issued.session, issued.recipient, issued.phone, issued.url,
+            "[" + issued.session.name + "] 입장권이 발급되었어요",
+            "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + issued.url
+            + "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
+            + "\n링크를 다른 사람에게 전달하지 마세요.") : "LINK";
+        tickets.recordDelivery(issued.id, delivered);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ticketId", issued.id);
+        result.put("ticketRef", issued.ref);
+        result.put("seat", issued.seat);
+        result.put("issuedToEmail", issued.recipient);
+        result.put("phone", issued.phone);
+        result.put("deliveredVia", delivered);
+        // Returned once, here, because the console has just created it. The token itself
+        // is never stored, so this is the only moment it can be shown without rotating.
+        result.put("url", issued.url);
+        result.put("claimExpiresAt", issued.claimExpiresAt.toInstant().toString());
+        return result;
+    }
+
+    /** What the issuing transaction leaves for the messages that follow it. */
+    private record Issued(long id, String ref, String seat, String recipient, String phone, String url,
+            Timestamp claimExpiresAt, EventSession session) {}
+
+    /**
+     * Mails and texts a link, and says how it went: "LINK" means nobody was notified and
+     * the operator has to hand the link over.
+     */
+    private String deliver(EventSession session, String recipient, String phone, String url,
+            String subject, String body) {
+        boolean mailed = mail.send(recipient, subject, body);
+        String delivered = mailed ? "EMAIL" : "LINK";
+        if (phone != null && sms.send(phone, smsText(session, url))) {
+            delivered = mailed ? "EMAIL+SMS" : "SMS";
+        }
+        return delivered;
+    }
+
+    private Issued create(long sessionId, String email, String seat, String tier,
+            String rawPhone, Map<String, String> values) {
         String recipient = EmailOtpService.normalize(email);
         String phone = normalizePhone(rawPhone);
+        // Held until the ticket is in: two issues to one address, or an issue racing a
+        // transfer to it, would otherwise both pass the check below.
+        EventSession session = sessions.lockById(sessionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
         // One ticket per address per event. Two links to the same inbox are two links
         // that cannot both be used - the second binds a device, the first is left dead
         // in a mailbox - and on the door it reads as one person holding two entries.
@@ -156,32 +209,7 @@ public class TicketService {
                 seat == null ? "입장권을 발급하지 못했어요." : seat + " 좌석은 이미 발급되었어요.");
         }
         admissions.create(id, sessionId);
-
-        String url = urlFor(sessionId, token);
-        boolean mailed = notify && mail.send(recipient, "[" + session.name + "] 입장권이 발급되었어요",
-            "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + url
-            + "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
-            + "\n링크를 다른 사람에게 전달하지 마세요.");
-
-        // "LINK" means nobody was notified and the operator has to hand the link over.
-        String delivered = mailed ? "EMAIL" : "LINK";
-        if (notify && phone != null && sms.send(phone, smsText(session, url))) {
-            delivered = mailed ? "EMAIL+SMS" : "SMS";
-        }
-        tickets.recordDelivery(id, delivered);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ticketId", id);
-        result.put("ticketRef", ref);
-        result.put("seat", seat);
-        result.put("issuedToEmail", recipient);
-        result.put("phone", phone);
-        result.put("deliveredVia", delivered);
-        // Returned once, here, because the console has just created it. The token itself
-        // is never stored, so this is the only moment it can be shown without rotating.
-        result.put("url", url);
-        result.put("claimExpiresAt", claimExpiresAt.toInstant().toString());
-        return result;
+        return new Issued(id, ref, seat, recipient, phone, urlFor(sessionId, token), claimExpiresAt, session);
     }
 
     /**
@@ -191,43 +219,61 @@ public class TicketService {
      * up again - showing one always means minting a new one, and the previous link stops
      * resolving immediately. That is the cost of not keeping live links in the database.
      */
-    @Transactional
     public Map<String, Object> reissueForConsole(long ticketId, boolean notify) {
-        Ticket ticket = tickets.lockById(ticketId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
-        EventSession session = requireSession(ticket.sessionId);
-        String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
-
-        tickets.unbind(ticket.id);
-        presentations.revokeFor(ticket.id);
-        String token = Secrets.randomToken(16);
-        Timestamp claimExpiresAt = Timestamp.from(
-            Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
-        tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
-            claimExpiresAt, true);
-        // The phone that held it stops hearing about it now, not when it next reconnects.
-        live.dropTicket(ticket.id);
-
-        String url = urlFor(ticket.sessionId, token);
-        String delivered = "LINK";
-        if (notify) {
-            boolean mailed = mail.send(recipient, "[" + session.name + "] 입장권 링크",
-                "아래 링크를 휴대폰에서 열고 등록해 주세요. 이전 링크는 더 이상 사용할 수 없습니다.\n\n" + url);
-            delivered = mailed ? "EMAIL" : "LINK";
-            if (ticket.phone != null && sms.send(ticket.phone, smsText(session, url))) {
-                delivered = mailed ? "EMAIL+SMS" : "SMS";
-            }
-        }
+        Reissued reissued = transactions.execute(status -> {
+            Ticket ticket = tickets.lockById(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+            EventSession session = requireSession(ticket.sessionId);
+            String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
+            String token = rotate(ticket, recipient);
+            Timestamp claimExpiresAt = tickets.findById(ticket.id).orElseThrow().claimExpiresAt;
+            return new Reissued(ticket, session, recipient, urlFor(ticket.sessionId, token), claimExpiresAt);
+        });
+        Ticket ticket = reissued.ticket;
+        String delivered = notify ? deliver(reissued.session, reissued.recipient, ticket.phone, reissued.url,
+            "[" + reissued.session.name + "] 입장권 링크",
+            "아래 링크를 휴대폰에서 열고 등록해 주세요. 이전 링크는 더 이상 사용할 수 없습니다.\n\n" + reissued.url)
+            : "LINK";
         tickets.recordDelivery(ticket.id, delivered);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketId", ticket.id);
         result.put("ticketRef", ticket.ticketRef);
-        result.put("url", url);
+        result.put("url", reissued.url);
         result.put("deliveredVia", delivered);
         result.put("notified", notify);
-        result.put("claimExpiresAt", claimExpiresAt.toInstant().toString());
+        result.put("claimExpiresAt", reissued.claimExpiresAt.toInstant().toString());
         return result;
+    }
+
+    private record Reissued(Ticket ticket, EventSession session, String recipient, String url,
+            Timestamp claimExpiresAt) {}
+
+    /**
+     * Drops the binding and mints a new token for a ticket the caller has locked, and
+     * returns the token. Shared by the holder's recovery and the console's re-issue.
+     *
+     * <p>A transfer still open on the ticket is cancelled in the same transaction. The
+     * rotation puts the ticket back to ISSUED, which is no longer "transfer pending":
+     * left open, the recipient could still accept it and both the recovered link and the
+     * claim link would admit somebody.
+     */
+    private String rotate(Ticket locked, String recipient) {
+        for (Transfer open : transfers.lockPendingByTicket(locked.id)) {
+            if (!transfers.close(open.id, "CANCELLED")) continue;
+            AfterCommit.run(() -> mail.send(open.toEmail, "입장권 양도가 취소되었어요",
+                "입장권이 재발급되어 양도가 취소되었습니다. 받은 링크는 더 이상 사용할 수 없어요."));
+        }
+        tickets.unbind(locked.id);
+        presentations.revokeFor(locked.id);
+        String token = Secrets.randomToken(16);
+        Timestamp claimExpiresAt = Timestamp.from(
+            Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
+        tickets.rotateToken(locked.id, tokenHmac(token), cipher.seal(token), recipient,
+            claimExpiresAt, true);
+        // The phone that held it stops hearing about it now, not when it next reconnects.
+        live.dropTicket(locked.id);
+        return token;
     }
 
     /**
@@ -314,7 +360,14 @@ public class TicketService {
      * the old link stops resolving at the same moment.
      */
     @Transactional
-    public Map<String, Object> reissue(Ticket ticket, String verifiedEmail) {
+    public Map<String, Object> reissue(Ticket resolved, String verifiedEmail) {
+        // Read again under the lock: the ticket may have been transferred, revoked or
+        // recovered since the page resolved it, and the checks below are about now.
+        Ticket ticket = tickets.lockById(resolved.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (ticket.revoked()) {
+            throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
+        }
         String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
         if (!verifiedEmail.equalsIgnoreCase(recipient)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "입장권에 등록된 이메일로만 재발급할 수 있어요.");
@@ -324,21 +377,10 @@ public class TicketService {
                 "재발급 가능 횟수를 모두 사용했어요. 안내 데스크에서 도움을 받아 주세요.");
         }
         EventSession session = requireSession(ticket.sessionId);
-        tickets.unbind(ticket.id);
-        presentations.revokeFor(ticket.id);
-
-        String token = Secrets.randomToken(16);
-        Timestamp claimExpiresAt = Timestamp.from(
-            Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS));
-        tickets.rotateToken(ticket.id, tokenHmac(token), cipher.seal(token), recipient,
-            claimExpiresAt, true);
-        // The phone that held it stops hearing about it now, not when it next reconnects.
-        live.dropTicket(ticket.id);
-
-        String url = urlFor(ticket.sessionId, token);
-        mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
+        String url = urlFor(ticket.sessionId, rotate(ticket, recipient));
+        AfterCommit.run(() -> mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
             "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
-            + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요.");
+            + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요."));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reissued", true);

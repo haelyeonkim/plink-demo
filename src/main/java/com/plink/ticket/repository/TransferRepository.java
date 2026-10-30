@@ -55,14 +55,35 @@ public class TransferRepository {
         return jdbc.query("SELECT * FROM ticket_transfer WHERE ticket_id = ? ORDER BY id DESC", MAPPER, ticketId);
     }
 
-    public void close(long id, String status) {
-        jdbc.update("UPDATE ticket_transfer SET status = ?, closed_at = CURRENT_TIMESTAMP WHERE id = ?",
-            status, id);
+    /**
+     * The transfer row under lock. Callers lock the ticket first, so a cancel, an
+     * expiry, a recovery and an acceptance of the same ticket all queue in one order.
+     */
+    public Optional<Transfer> lockById(long id) {
+        return jdbc.query("SELECT * FROM ticket_transfer WHERE id = ? FOR UPDATE", MAPPER, id)
+            .stream().findFirst();
     }
 
-    public void accept(long id) {
-        jdbc.update("UPDATE ticket_transfer SET status = 'ACCEPTED', accepted_at = CURRENT_TIMESTAMP, "
-            + "closed_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    /** Every still-pending transfer of a ticket, locked, newest first. */
+    public List<Transfer> lockPendingByTicket(long ticketId) {
+        return jdbc.query("SELECT * FROM ticket_transfer WHERE ticket_id = ? AND status = 'PENDING' "
+            + "ORDER BY id DESC FOR UPDATE", MAPPER, ticketId);
+    }
+
+    /**
+     * Closes a transfer only if nothing has closed it since it was read.
+     *
+     * @return whether this call was the one that closed it
+     */
+    public boolean close(long id, String status) {
+        return jdbc.update("UPDATE ticket_transfer SET status = ?, closed_at = CURRENT_TIMESTAMP "
+            + "WHERE id = ? AND status = 'PENDING'", status, id) == 1;
+    }
+
+    /** @return whether the transfer was still pending, and is now accepted */
+    public boolean accept(long id) {
+        return jdbc.update("UPDATE ticket_transfer SET status = 'ACCEPTED', accepted_at = CURRENT_TIMESTAMP, "
+            + "closed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'PENDING'", id) == 1;
     }
 
     /** Pending rows whose window has closed; the ticket returns to the sender. */
