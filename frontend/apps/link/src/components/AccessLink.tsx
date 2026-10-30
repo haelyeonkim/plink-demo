@@ -2,7 +2,9 @@ import Icon from '@shared/components/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { accessLink } from '../api';
-import { openWithPasskey, passkeyError, supportsPasskeys, type Opened } from '../passkey';
+import {
+  EmailCodeRequired, openWithPasskey, passkeyError, supportsPasskeys, verifyEmailCode, type Opened,
+} from '../passkey';
 import ContentView from './ContentView';
 import type { AccessInfo } from '../types';
 
@@ -12,6 +14,10 @@ export default function AccessLink() {
   const [info, setInfo] = useState<AccessInfo | null>(null);
   const [password, setPassword] = useState('');
   const [contact, setContact] = useState('');
+  // Set once the server has mailed a code: the first passkey for an address needs the
+  // mailbox as well as the address typed into it.
+  const [verification, setVerification] = useState<{ sentTo: string; sent: boolean } | null>(null);
+  const [emailCode, setEmailCode] = useState('');
   const [error, setError] = useState('');
   const [opened, setOpened] = useState<Opened | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,6 +28,7 @@ export default function AccessLink() {
   useEffect(() => {
     let active = true;
     setInfo(null); setOpened(null); setError(''); setLoading(true); setPassword(''); setContact('');
+    setVerification(null); setEmailCode('');
     accessLink(shortCode, slug).then(data => {
       if (!active) return;
       setInfo(data);
@@ -65,9 +72,21 @@ export default function AccessLink() {
     if (busy) return;
     setBusy(true); setError('');
     try {
+      if (verification) {
+        await verifyEmailCode(shortCode, emailCode, slug);
+        // The session remembers it from here; a cancelled passkey sheet does not need
+        // a second code.
+        if (currentCode.current === shortCode) { setVerification(null); setEmailCode(''); }
+      }
       const result = await openWithPasskey(shortCode, password, slug, contact);
       if (currentCode.current === shortCode) setOpened(result);
     } catch (err) {
+      if (err instanceof EmailCodeRequired) {
+        if (currentCode.current === shortCode) {
+          setVerification({ sentTo: err.sentTo, sent: err.sent }); setEmailCode('');
+        }
+        return;
+      }
       if (currentCode.current === shortCode) {
         setError(passkeyError(err));
         try { const data = await accessLink(shortCode, slug); if (currentCode.current === shortCode) setInfo(data); } catch { /* keep original error */ }
@@ -124,6 +143,19 @@ export default function AccessLink() {
                 </div>
               )}
               {info.hasPassword && <div className="field"><label htmlFor="link-password">전달받은 비밀번호</label><input id="link-password" type="password" required value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></div>}
+              {verification && (
+                <div className="field">
+                  <label htmlFor="link-email-code">이메일 인증번호</label>
+                  <input id="link-email-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}"
+                    maxLength={6} required value={emailCode} disabled={busy}
+                    onChange={e => setEmailCode(e.target.value.replace(/\D/g, ''))} />
+                  <p className="hint-text" role="status">
+                    {verification.sent
+                      ? `${verification.sentTo} 주소로 6자리 인증번호를 보냈어요. 처음 패스키를 만들 때 한 번만 확인해요.`
+                      : `${verification.sentTo} 주소로 보낸 인증번호를 입력해 주세요. 새 번호는 1분 뒤에 다시 받을 수 있어요.`}
+                  </p>
+                </div>
+              )}
               {error && <p className="error-text" role="alert">{error}</p>}
               <button className="btn-primary" type="submit" disabled={busy}>{busy ? '기기에서 패스키 확인을 완료해 주세요…' : info.claimed ? '내 패스키로 링크 열기' : '패스키로 수신 확정하기'}</button>
               {!info.claimed && <p className="passkey-footnote">별도 회원가입 없이 지문·얼굴 인식으로 확정합니다. 패스링크 패스키가 이미 있으면 그대로 사용하고, 없으면 이번에 하나만 만듭니다.</p>}
