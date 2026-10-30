@@ -603,4 +603,177 @@ class ConsoleOperationsTest {
         assertTrue(ticketRepository.findById(ticketId).isEmpty(), "입장권도 함께 지워집니다");
         assertTrue(sessions.findById(sessionId).isEmpty());
     }
+
+    /** Two issues to one address at once: the check and the insert are one step now. */
+    @Test void racingIssuesToOneAddressMakeOneTicket() throws Exception {
+        long sessionId = newSession();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            java.util.List<java.util.concurrent.Future<Boolean>> tries = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                String seat = "R-" + i;
+                tries.add(pool.submit(() -> {
+                    try {
+                        tickets.issue(sessionId, "race@example.com", seat, null, null);
+                        return true;
+                    } catch (ResponseStatusException refused) {
+                        return false;
+                    }
+                }));
+            }
+            int issued = 0;
+            for (var attempt : tries) if (attempt.get(10, java.util.concurrent.TimeUnit.SECONDS)) issued++;
+            assertEquals(1, issued);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, ticketRepository.findLiveBySessionAndEmail(sessionId, "race@example.com").size());
+    }
+
+    // --- gate setup and terminal binding ---------------------------------------
+
+    @Autowired com.plink.ticket.service.GateSetupService gateSetup;
+    @Autowired com.plink.ticket.controller.GateController gateController;
+
+    private String setupToken(Map<String, Object> opened) {
+        String url = String.valueOf(opened.get("setupUrl"));
+        return url.substring(url.lastIndexOf('/') + 1);
+    }
+
+    /**
+     * Five wrong codes lock the link. The count used to roll back with the refusal it
+     * belonged to, which left a 6-digit code open to guessing for as long as one liked.
+     */
+    @Test void fiveWrongSetupCodesLockTheLink() {
+        long sessionId = newSession();
+        String gateId = "g" + Secrets.randomAlnum(8);
+        String token = Secrets.randomToken(24);
+        gates.insert(gateId, sessionId, "정문", "A", "IN", gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
+        Map<String, Object> opened = gateSetup.open(gateId);
+        String link = setupToken(opened);
+        String right = String.valueOf(opened.get("setupCode"));
+        String wrong = right.equals("000000") ? "111111" : "000000";
+
+        for (int i = 0; i < 5; i++) {
+            ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+                () -> gateSetup.complete(link, wrong, "tablet-1"));
+            assertEquals(HttpStatus.FORBIDDEN, refused.getStatusCode());
+        }
+        assertEquals(5, gates.findById(gateId).orElseThrow().setupAttempts, "틀린 시도는 모두 남습니다");
+        ResponseStatusException locked = assertThrows(ResponseStatusException.class,
+            () -> gateSetup.complete(link, right, "tablet-1"));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, locked.getStatusCode(), "맞는 번호여도 잠긴 뒤에는 통하지 않습니다");
+
+        // A fresh link starts over, and a right code does not wear it down.
+        Map<String, Object> again = gateSetup.open(gateId);
+        assertEquals(token, gateSetup.complete(setupToken(again), String.valueOf(again.get("setupCode")), "tablet-1")
+            .get("gateToken"));
+        assertEquals(0, gates.findById(gateId).orElseThrow().setupAttempts);
+    }
+
+    @Test void aBoundGateRefusesARequestThatDoesNotNameItsDevice() {
+        long sessionId = newSession();
+        String gateId = "g" + Secrets.randomAlnum(8);
+        String token = Secrets.randomToken(24);
+        gates.insert(gateId, sessionId, null, null, "IN", gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry());
+        // Not yet held by anyone: the header is not demanded of a gate nobody has claimed.
+        assertEquals(gateId, gateAuth.authenticate(gateId, token, null).id);
+
+        gateAuth.authenticate(gateId, token, "tablet-1");
+        ResponseStatusException anonymous = assertThrows(ResponseStatusException.class,
+            () -> gateAuth.authenticate(gateId, token, null));
+        assertEquals(HttpStatus.UNAUTHORIZED, anonymous.getStatusCode());
+
+        // The offline queue is held to the same device as every other terminal route.
+        Map<String, Object> empty = Map.of("events", java.util.List.of());
+        assertThrows(ResponseStatusException.class, () -> gateController.sync(gateId, token, null, empty));
+        assertThrows(ResponseStatusException.class, () -> gateController.sync(gateId, token, "tablet-2", empty));
+        assertEquals(0, gateController.sync(gateId, token, "tablet-1", empty).get("received"));
+    }
+
+    // --- email codes ----------------------------------------------------------------
+
+    @Autowired com.plink.ticket.service.EmailOtpService otp;
+
+    @Test void anEmailCodeAllowsFiveTriesInAll() throws Exception {
+        String email = "otp-" + Secrets.randomAlnum(6).toLowerCase(java.util.Locale.ROOT) + "@example.com";
+        otp.issue(email, "TEST", "인증번호", "테스트");
+        String right = mailbox.lastCode().orElseThrow();
+        String wrong = right.equals("000000") ? "111111" : "000000";
+
+        // Fired together, the guesses still cannot outnumber the allowance.
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.List<java.util.concurrent.Future<HttpStatus>> tries = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            tries.add(pool.submit(() -> {
+                try {
+                    otp.verify(email, "TEST", wrong);
+                    return HttpStatus.OK;
+                } catch (ResponseStatusException refused) {
+                    return HttpStatus.valueOf(refused.getStatusCode().value());
+                }
+            }));
+        }
+        long compared = 0;
+        for (var attempt : tries) {
+            if (attempt.get(10, java.util.concurrent.TimeUnit.SECONDS) == HttpStatus.BAD_REQUEST) compared++;
+        }
+        pool.shutdownNow();
+        assertEquals(5, compared, "다섯 번까지만 비교합니다");
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, assertThrows(ResponseStatusException.class,
+            () -> otp.verify(email, "TEST", right)).getStatusCode());
+    }
+
+    @Test void anEmailCodeIsUsedOnce() {
+        String email = "once-" + Secrets.randomAlnum(6).toLowerCase(java.util.Locale.ROOT) + "@example.com";
+        otp.issue(email, "TEST", "인증번호", "테스트");
+        String right = mailbox.lastCode().orElseThrow();
+        otp.verify(email, "TEST", right);
+        assertThrows(ResponseStatusException.class, () -> otp.verify(email, "TEST", right));
+    }
+
+    // --- event policy ---------------------------------------------------------------
+
+    /** A save with one bad value saves nothing, not the fields that came before it. */
+    @Test void aPolicySaveWithABadValueChangesNothing() {
+        long sessionId = newSession();
+        com.plink.ticket.model.EventSession before = tickets.requireSession(sessionId);
+
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("transferMax", 5);
+        body.put("crowdBusyPercent", 90);
+        body.put("crowdSteadyPercent", 40);
+        body.put("seats", "A-1\nA-2");
+        body.put("dayCloseHour", 4);
+        body.put("reentryMode", "LIMITED");
+        body.put("reentryMax", -1);
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> adminController.updatePolicy(sessionId, body));
+        assertEquals(HttpStatus.BAD_REQUEST, refused.getStatusCode());
+
+        com.plink.ticket.model.EventSession after = tickets.requireSession(sessionId);
+        assertEquals(before.transferMax, after.transferMax);
+        assertEquals(before.crowdBusyPercent, after.crowdBusyPercent);
+        assertEquals(before.dayCloseHour, after.dayCloseHour);
+        assertEquals(before.reentryMode, after.reentryMode);
+        assertTrue(fields.findBySession(sessionId).isEmpty(), "좌석 목록도 저장되지 않습니다");
+
+        body.put("reentryMax", 2);
+        adminController.updatePolicy(sessionId, body);
+        com.plink.ticket.model.EventSession saved = tickets.requireSession(sessionId);
+        assertEquals(5, saved.transferMax);
+        assertEquals(2, saved.reentryMax);
+        assertEquals("LIMITED", saved.reentryMode);
+        assertEquals(4, saved.dayCloseHour);
+    }
+
+    @Test void negativePolicyNumbersAreRefused() {
+        long sessionId = newSession();
+        for (String key : java.util.List.of("reentryGraceMinutes", "reentryCooldownSeconds", "transferMax",
+                "transferClosesMinutesBefore", "faceRetentionDays", "geoRadiusMeters")) {
+            ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+                () -> adminController.updatePolicy(sessionId, Map.of(key, -1)), key);
+            assertEquals(HttpStatus.BAD_REQUEST, refused.getStatusCode(), key);
+        }
+    }
 }
