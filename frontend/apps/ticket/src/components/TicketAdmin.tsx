@@ -13,7 +13,7 @@ import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
 import GateSetupQr, { type SetupTarget } from './GateSetupQr';
-import { GateConnectDialog, GateNameDialog } from './GateDialogs';
+import { GateNameDialog } from './GateDialogs';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
 import ConsoleCoupons from './ConsoleCoupons';
@@ -90,8 +90,7 @@ export default function TicketAdmin() {
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
   // A setup link shown as a QR code for the tablet's camera.
   const [setupQr, setSetupQr] = useState<SetupTarget | null>(null);
-  // Connecting starts by choosing the terminal; naming happens when one is added or renamed.
-  const [connectPick, setConnectPick] = useState<{ title: string; gates: GateRow[] } | null>(null);
+  // A terminal is named when it is added, and can be renamed from its card.
   const [naming, setNaming] = useState<{ booth: BoothRow } | { gate: GateRow } | null>(null);
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
@@ -457,19 +456,6 @@ export default function TicketAdmin() {
     }));
     setNotice(`이름을 바꿨어요 · ${label}`);
     await loadSession(selected!);
-  });
-
-  /** The chosen terminal's QR: its open setup link, or a fresh one when that has lapsed. */
-  const connectGate = (gate: GateRow) => act(async () => {
-    const name = gate.label || gate.gateId;
-    if (gate.setupUrl && gate.setupCode) {
-      setSetupQr({ name, url: gate.setupUrl, code: gate.setupCode, expiresAt: gate.setupExpiresAt ?? null });
-    } else {
-      const result = await read(await mutate(`/api/admin/gates/${gate.gateId}/setup`, { method: 'POST' }));
-      setSetupQr({ name, url: result.setupUrl, code: result.setupCode, expiresAt: result.expiresAt ?? null });
-      await loadSession(selected!);
-    }
-    setConnectPick(null);
   });
 
   const addBooth = (form: HTMLFormElement) => act(async () => {
@@ -1245,12 +1231,13 @@ export default function TicketAdmin() {
                           onClick={() => void copyLink(gate.setupUrl ?? '')}>링크 복사</button>
                       </>) : problem === 1 ? (
                         <button className="btn-secondary" type="button" onClick={() => renewGate(gate.gateId)}>유효기간 연장</button>
-                      ) : (
-                        <button className="btn-secondary" type="button" onClick={() => openGrantSheet(gate)}>쿠폰 부여 설정</button>
-                      )}
+                      ) : null}
                       {!gate.boundDevice && !gate.setupUrl && (
                         <button className="btn-secondary" type="button" onClick={() => reopenSetup(gate.gateId)}>설정 링크 재발급</button>
                       )}
+                      {/* The same on every card, connected or not: which coupons this terminal
+                          hands over is settled before a tablet is, as often as after. */}
+                      <button className="btn-secondary" type="button" onClick={() => openGrantSheet(gate)}>쿠폰 부여 설정</button>
                     </div>
                   </article>
           );
@@ -1278,13 +1265,9 @@ export default function TicketAdmin() {
           return (
           <div className="console-stack">
             {doors.length > 0 && (
-              <div className="gate-summary-row">
-                <p className="console-summary">
-                  연결됨 {doors.length - offline} · 연결 안 됨 {offline} · 유효기간 임박 {expiring}
-                </p>
-                <button type="button" className="btn-secondary" disabled={busy}
-                  onClick={() => setConnectPick({ title: '게이트 연결', gates: byNeed(doors) })}>게이트 연결</button>
-              </div>
+              <p className="console-summary">
+                연결됨 {doors.length - offline} · 연결 안 됨 {offline} · 유효기간 임박 {expiring}
+              </p>
             )}
             <div className="gate-grid">{byNeed(doors).map(card)}</div>
             {doors.length === 0 && (
@@ -1365,10 +1348,6 @@ export default function TicketAdmin() {
                     </div>
                     <div className="booth-card-actions">
                       <Link className="btn-tiny" to={`?tab=coupons&booth=${booth.boothId}`}>쿠폰 보기</Link>
-                      {mine.length > 0 && (
-                        <button type="button" className="btn-tiny" disabled={busy}
-                          onClick={() => setConnectPick({ title: `${booth.name} · 단말 연결`, gates: mine })}>단말 연결</button>
-                      )}
                       <button type="button" className="btn-tiny" disabled={busy}
                         onClick={() => setNaming({ booth })}>단말 추가</button>
                       <button type="button" className="btn-tiny btn-tiny-danger"
@@ -2002,10 +1981,6 @@ export default function TicketAdmin() {
       />
 
       {setupQr && <GateSetupQr target={setupQr} onClose={() => setSetupQr(null)} />}
-      {connectPick && (
-        <GateConnectDialog title={connectPick.title} gates={connectPick.gates} busy={busy}
-          onPick={gate => void connectGate(gate)} onClose={() => setConnectPick(null)} />
-      )}
       {naming && (
         <GateNameDialog busy={busy}
           title={'booth' in naming ? `${naming.booth.name} · 단말 추가` : '이름 바꾸기'}
