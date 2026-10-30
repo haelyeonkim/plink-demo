@@ -6,6 +6,7 @@ import com.plink.ticket.model.Gate;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.repository.AdmissionRepository;
+import com.plink.ticket.repository.BoothRepository;
 import com.plink.ticket.repository.TicketRepository;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
@@ -51,10 +52,13 @@ public class CommunityService {
     private final TicketRepository ticketRows;
     private final LiveEvents live;
     private final AdImageService images;
+    private final BoothRepository booths;
 
     public CommunityService(CommunityRepository repo, TicketService tickets, TicketPasskeyService passkeys,
-            AdmissionRepository admissions, TicketRepository ticketRows, LiveEvents live, AdImageService images) {
+            AdmissionRepository admissions, TicketRepository ticketRows, LiveEvents live, AdImageService images,
+            BoothRepository booths) {
         this.images = images;
+        this.booths = booths;
         this.repo = repo;
         this.tickets = tickets;
         this.passkeys = passkeys;
@@ -228,7 +232,7 @@ public class CommunityService {
 
     @Transactional
     public Map<String, Object> like(TicketService.Resolved resolved, HttpSession session, long messageId) {
-        Member member = member(resolved, session);
+        Member member = writer(resolved, session);
         CommunityRepository.Message m = othersMessage(member, messageId);
         boolean liked = repo.toggleLike(m.id(), member.ticket().id);
         CommunityRepository.Message now = repo.findMessage(m.id()).orElseThrow();
@@ -239,22 +243,41 @@ public class CommunityService {
                 Timestamp.from(Instant.now().plus(settings.hotMinutes(), ChronoUnit.MINUTES)));
         }
         if (pinned) ping(m.sessionId(), repo.latestId(m.sessionId()));
-        else live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", now.id()));
+        else counts(now);
         return reaction(now, liked, false);
     }
 
     @Transactional
     public Map<String, Object> dislike(TicketService.Resolved resolved, HttpSession session, long messageId) {
-        Member member = member(resolved, session);
+        Member member = writer(resolved, session);
         CommunityRepository.Message m = othersMessage(member, messageId);
         boolean disliked = repo.toggleDislike(m.id(), member.ticket().id);
         CommunityRepository.Message now = repo.findMessage(m.id()).orElseThrow();
-        live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", now.id()));
+        counts(now);
         return reaction(now, false, disliked);
+    }
+
+    /**
+     * Sends the line's new counts rather than a bare "something changed": every phone in
+     * the room patches the one line, where a reload would cost each of them a full read
+     * of the chat for one tap.
+     */
+    private void counts(CommunityRepository.Message m) {
+        live.publish(m.sessionId(), "CHAT_LIKE", Map.of("messageId", m.id(), "likes", m.likes(), "dislikes", m.dislikes()));
     }
 
     private static Map<String, Object> reaction(CommunityRepository.Message m, boolean liked, boolean disliked) {
         return Map.of("messageId", m.id(), "likes", m.likes(), "dislikes", m.dislikes(), "liked", liked, "disliked", disliked);
+    }
+
+    /**
+     * Pressing on a line is writing to the room, under the same rules: a muted ticket, a
+     * closed chat or someone who has left reads but does not like, dislike or report.
+     */
+    private Member writer(TicketService.Resolved resolved, HttpSession session) {
+        Member member = member(resolved, session);
+        if (!member.canWrite()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, member.writeBlocked());
+        return member;
     }
 
     /** A line someone else wrote: nobody likes or dislikes their own. */
@@ -268,19 +291,22 @@ public class CommunityService {
 
     @Transactional
     public Map<String, Object> report(TicketService.Resolved resolved, HttpSession session, long messageId) {
-        Member member = member(resolved, session);
+        Member member = writer(resolved, session);
         CommunityRepository.Message m = visibleMessage(member, messageId);
         if (m.staff()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "운영팀 메시지는 신고할 수 없어요.");
         if (m.ticketId() != null && m.ticketId() == member.ticket().id) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "내 메시지는 신고할 수 없어요.");
         }
-        repo.report(m.id(), member.ticket().id);
+        // A second report from the same ticket changes nothing, and tells nobody.
+        if (!repo.report(m.id(), member.ticket().id)) return Map.of("reported", true);
         CommunityRepository.Message now = repo.findMessage(m.id()).orElseThrow();
         if (!now.hidden() && now.reports() >= repo.settings(m.sessionId()).reportHide()) {
             repo.setHidden(now.id(), true);
             live.publish(m.sessionId(), "CHAT_HIDE", Map.of("messageId", now.id()));
+        } else {
+            // Nothing changed on the phones; only the console counts reports.
+            live.publish(m.sessionId(), "CHAT_REPORT", Map.of("messageId", now.id()));
         }
-        live.publish(m.sessionId(), "CHAT_REPORT", Map.of("messageId", now.id()));
         return Map.of("reported", true);
     }
 
@@ -306,15 +332,28 @@ public class CommunityService {
         return rows;
     }
 
-    @Transactional
     public Map<String, Object> ad(TicketService.Resolved resolved, HttpSession session, long adId) {
         Member member = member(resolved, session);
-        Timestamp now = Timestamp.from(Instant.now());
-        CommunityRepository.Ad ad = repo.visibleAds(member.ticket().sessionId, now).stream()
-            .filter(a -> a.id() == adId).findFirst()
+        CommunityRepository.Ad ad = repo.visibleAd(member.ticket().sessionId, adId, Timestamp.from(Instant.now()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "글을 찾을 수 없어요."));
+        if (!firstView(ad.id(), member.ticket().id)) return adView(ad, true);
         repo.countView(ad.id());
         return adView(repo.findAd(ad.id()).orElseThrow(), true);
+    }
+
+    /**
+     * Who has opened which notice, so a view counts people rather than refreshes. Kept in
+     * memory: a restart may count someone twice, which a booth's tally can stand, and it
+     * costs the database nothing on the second open. Forgotten wholesale when it grows
+     * past what one event's room can fill.
+     */
+    private final Set<Viewed> viewed = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private record Viewed(long adId, long ticketId) {}
+    private static final int VIEWED_MAX = 200_000;
+
+    private boolean firstView(long adId, long ticketId) {
+        if (viewed.size() > VIEWED_MAX) viewed.clear();
+        return viewed.add(new Viewed(adId, ticketId));
     }
 
     /**
@@ -405,8 +444,8 @@ public class CommunityService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("settings", settingsView(repo.settings(sessionId)));
         result.put("messages", rows);
-        result.put("reported", repo.feed(sessionId, "REPORTED", 500, now).stream().filter(m -> !m.hidden()).count());
-        result.put("hiddenCount", repo.feed(sessionId, "HIDDEN", 500, now).size());
+        result.put("reported", repo.countReported(sessionId));
+        result.put("hiddenCount", repo.countHidden(sessionId));
         return result;
     }
 
@@ -440,9 +479,13 @@ public class CommunityService {
         live.publish(sessionId, "ALERT", Map.of());
     }
 
+    @Transactional
     public void setHidden(long sessionId, long messageId, boolean hidden) {
         CommunityRepository.Message m = consoleMessage(sessionId, messageId);
         repo.setHidden(m.id(), hidden);
+        // Put back by the organiser: the reports that hid it have been looked at, and one
+        // more should not hide it again at once.
+        if (!hidden) repo.clearReports(m.id());
         live.publish(sessionId, hidden ? "CHAT_HIDE" : "CHAT", hidden ? Map.of("messageId", m.id()) : Map.of("lastId", m.id()));
         if (m.alertUntil() != null) live.publish(sessionId, "ALERT", Map.of());
     }
@@ -468,6 +511,7 @@ public class CommunityService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "메시지를 찾을 수 없어요."));
     }
 
+    @Transactional
     public Map<String, Object> saveSettings(long sessionId, Map<String, Object> body) {
         tickets.requireSession(sessionId);
         CommunityRepository.Settings current = repo.settings(sessionId);
@@ -528,7 +572,12 @@ public class CommunityService {
     private record AdInput(String category, String title, String body, String place, Timestamp startsAt,
             Timestamp endsAt, boolean pinned, String imageId) {}
 
-    private AdInput input(long sessionId, Map<String, Object> body, boolean staff) {
+    /**
+     * @param boothId whose photos the notice may carry: the booth's own, or null for the
+     *                console's
+     * @param currentImage the photo the notice has now, which it may keep
+     */
+    private AdInput input(long sessionId, Map<String, Object> body, boolean staff, Long boothId, String currentImage) {
         String category = text(body.get("category"));
         if (category == null || !CATEGORIES.contains(category) || (!staff && "NOTICE".equals(category))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "분류를 골라 주세요.");
@@ -547,7 +596,7 @@ public class CommunityService {
         }
         boolean pinned = staff && Boolean.TRUE.equals(body.get("pinned"));
         return new AdInput(category, title, text, place, startsAt, endsAt, pinned,
-            images.attachable(sessionId, text(body.get("imageId"))));
+            images.attachable(sessionId, boothId, text(body.get("imageId")), currentImage));
     }
 
     private static String text(Object raw) {
@@ -566,8 +615,9 @@ public class CommunityService {
 
     public Map<String, Object> createAd(long sessionId, Map<String, Object> body) {
         tickets.requireSession(sessionId);
-        AdInput in = input(sessionId, body, true);
         Long boothId = body.get("boothId") instanceof Number n ? n.longValue() : null;
+        if (boothId != null) requireBooth(sessionId, boothId);
+        AdInput in = input(sessionId, body, true, null, null);
         long id = repo.insertAd(sessionId, boothId, in.category(), in.title(), in.body(), in.place(),
             in.startsAt(), in.endsAt(), in.pinned(), in.imageId());
         live.publish(sessionId, "ADS", Map.of());
@@ -576,7 +626,7 @@ public class CommunityService {
 
     public Map<String, Object> updateAd(long sessionId, long adId, Map<String, Object> body) {
         CommunityRepository.Ad ad = consoleAd(sessionId, adId);
-        AdInput in = input(sessionId, body, true);
+        AdInput in = input(sessionId, body, true, null, ad.imageId());
         repo.updateAd(ad.id(), in.category(), in.title(), in.body(), in.place(), in.startsAt(), in.endsAt(), in.pinned(),
             in.imageId());
         images.release(ad.imageId());
@@ -594,6 +644,13 @@ public class CommunityService {
         repo.deleteAd(ad.id());
         images.release(ad.imageId());
         live.publish(sessionId, "ADS", Map.of());
+    }
+
+    /** A booth of this event; the console cannot file a notice under another event's booth. */
+    private void requireBooth(long sessionId, long boothId) {
+        com.plink.ticket.model.Booth booth = booths.findById(boothId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));
+        if (booth.sessionId != sessionId) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "다른 이벤트의 부스예요.");
     }
 
     private CommunityRepository.Ad consoleAd(long sessionId, long adId) {
@@ -618,7 +675,7 @@ public class CommunityService {
 
     public Map<String, Object> boothCreate(Gate gate, Map<String, Object> body) {
         long boothId = boothOf(gate);
-        AdInput in = input(gate.sessionId, body, false);
+        AdInput in = input(gate.sessionId, body, false, boothId, null);
         long id = repo.insertAd(gate.sessionId, boothId, in.category(), in.title(), in.body(), in.place(),
             in.startsAt(), in.endsAt(), false, in.imageId());
         live.publish(gate.sessionId, "ADS", Map.of());
@@ -627,7 +684,7 @@ public class CommunityService {
 
     public Map<String, Object> boothUpdate(Gate gate, long adId, Map<String, Object> body) {
         CommunityRepository.Ad ad = boothAd(gate, adId);
-        AdInput in = input(gate.sessionId, body, false);
+        AdInput in = input(gate.sessionId, body, false, ad.boothId(), ad.imageId());
         repo.updateAd(ad.id(), in.category(), in.title(), in.body(), in.place(), in.startsAt(), in.endsAt(), ad.pinned(),
             in.imageId());
         images.release(ad.imageId());
@@ -650,19 +707,17 @@ public class CommunityService {
 
     public Map<String, Object> consoleUpload(long sessionId, org.springframework.web.multipart.MultipartFile file) {
         tickets.requireSession(sessionId);
-        return Map.of("imageId", images.upload(sessionId, file));
+        return Map.of("imageId", images.upload(sessionId, null, file));
     }
 
     public Map<String, Object> boothUpload(Gate gate, org.springframework.web.multipart.MultipartFile file) {
-        boothOf(gate);
-        return Map.of("imageId", images.upload(gate.sessionId, file));
+        return Map.of("imageId", images.upload(gate.sessionId, boothOf(gate), file));
     }
 
     /** A notice's photo, to a holder who may see the notice now. */
     public AdImageService.Download holderImage(TicketService.Resolved resolved, HttpSession session, long adId) {
         Member member = member(resolved, session);
-        CommunityRepository.Ad ad = repo.visibleAds(member.ticket().sessionId, Timestamp.from(Instant.now())).stream()
-            .filter(a -> a.id() == adId).findFirst()
+        CommunityRepository.Ad ad = repo.visibleAd(member.ticket().sessionId, adId, Timestamp.from(Instant.now()))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사진을 찾을 수 없어요."));
         return photoOf(ad);
     }

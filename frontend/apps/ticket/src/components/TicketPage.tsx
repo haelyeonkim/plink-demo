@@ -11,6 +11,7 @@ import { holdZoom } from '@shared/zoom';
 import FaceEnrolment from './FaceEnrolment';
 import Crowding from './Crowding';
 import { openLive } from '../ticket/live';
+import { chatCounts, useCoalesced, type ChatCounts } from '../ticket/coalesce';
 import ScanFlash, { type Movement } from './ScanFlash';
 import CouponWallet from './CouponWallet';
 import { boothColor, boothInitial, groupOf, type CouponGroup } from '../ticket/coupons';
@@ -115,9 +116,16 @@ export default function TicketPage() {
     window.scrollTo(0, 0);
   }, [setParams]);
   // The room's chat and board: whether they are open to this holder, and a nudge each
-  // time something new is said there.
+  // time something new is said there - one per channel, so a line in the chat does not
+  // reload the board. A like carries its counts and is patched in, not reloaded.
   const [community, setCommunity] = useState<CommunitySummary | null>(null);
-  const [tick, setTick] = useState(0);
+  const [roomTick, setRoomTick] = useState(0);
+  const [chatTick, setChatTick] = useState(0);
+  const [adsTick, setAdsTick] = useState(0);
+  const [counts, setCounts] = useState<ChatCounts | null>(null);
+  const nudgeRoom = useCoalesced(useCallback(() => setRoomTick(value => value + 1), []), 400, 400);
+  const nudgeChat = useCoalesced(useCallback(() => setChatTick(value => value + 1), []), 400, 400);
+  const nudgeAds = useCoalesced(useCallback(() => setAdsTick(value => value + 1), []), 400, 400);
   const seenKey = `plink.seen.${sessionId}.${token.slice(0, 12)}`;
   const [seen, setSeen] = useState<Seen>(() => readSeen(seenKey));
   const markSeen = useCallback((kind: keyof Seen, id: number) => {
@@ -136,19 +144,42 @@ export default function TicketPage() {
   const [recoveredTo, setRecoveredTo] = useState<string | null>(null);
   const recoveredRef = useRef(false);
 
-  const reload = useCallback(async () => {
-    if (recoveredRef.current) return;
-    try {
-      const view = await fetchTicket(sessionId, token);
-      setTicket(view);
-      setLoadError('');
-      if (view.locked) return;
-      const face = await fetchFaceStatus(sessionId, token).catch(() => null);
-      setFaceEnrolled(face?.enrolled ?? false);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.');
+  /**
+   * One read of the ticket at a time. A call while one is running asks for one more
+   * after it, so whoever awaits it sees what they just changed; with only one in flight,
+   * an older answer can never land on top of a newer one. {@code ifIdle} is for the
+   * nudges that only mean "check again" - focus and visibilitychange fire together on
+   * coming back to the screen - and joins a read already going instead.
+   */
+  const reading = useRef<Promise<void> | null>(null);
+  const readAgain = useRef(false);
+  const reload = useCallback((options?: { ifIdle?: boolean }): Promise<void> => {
+    if (recoveredRef.current) return Promise.resolve();
+    if (reading.current) {
+      if (!options?.ifIdle) readAgain.current = true;
+      return reading.current;
     }
+    const run = async () => {
+      do {
+        readAgain.current = false;
+        try {
+          const view = await fetchTicket(sessionId, token);
+          setTicket(view);
+          setLoadError('');
+          if (view.locked) continue;
+          const face = await fetchFaceStatus(sessionId, token).catch(() => null);
+          setFaceEnrolled(face?.enrolled ?? false);
+        } catch (err) {
+          setLoadError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.');
+        }
+      } while (readAgain.current && !recoveredRef.current);
+    };
+    const current = run().finally(() => { reading.current = null; });
+    reading.current = current;
+    return current;
   }, [sessionId, token]);
+  // A scan sends MOVEMENT and PRESENCE together, and a hand-over COUPON: one read for all.
+  const nudgeTicket = useCoalesced(useCallback(() => { void reload(); }, [reload]), 150);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -168,21 +199,32 @@ export default function TicketPage() {
       if (message.type === 'COUPON') {
         setUsed(message as unknown as Handover);
       }
-      if (message.type === 'PRESENCE' || message.type === 'MOVEMENT' || message.type === 'COUPON') {
-        void reload();
-      }
+      if (message.type === 'PRESENCE' || message.type === 'MOVEMENT' || message.type === 'COUPON') nudgeTicket();
       // The room said something: only that it did, the content comes from the server,
-      // which checks this holder is in.
-      if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE', 'ADS', 'ALERT'].includes(message.type)) setTick(value => value + 1);
+      // which checks this holder is in. A like says only a line's counts, which change
+      // nothing on the tiles.
+      if (message.type === 'CHAT_LIKE') {
+        const changed = chatCounts(message);
+        if (changed) { setCounts(changed); return; }
+      }
+      if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE'].includes(message.type)) nudgeChat();
+      if (message.type === 'ADS') nudgeAds();
+      if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE', 'ADS', 'ALERT'].includes(message.type)) nudgeRoom();
     });
     return () => live.close();
-  }, [sessionId, token, reload, showing]);
+  }, [sessionId, token, showing, nudgeTicket, nudgeChat, nudgeAds, nudgeRoom]);
 
   const presenceKey = ticket?.presence ? `${ticket.presence.inside}` : '';
+  // Only the latest summary may land: an older one arriving late would bring back a
+  // taken-down alert.
+  const summarySeq = useRef(0);
   useEffect(() => {
     if (!showing) return;
-    fetchCommunity(sessionId, token).then(setCommunity).catch(() => setCommunity(null));
-  }, [sessionId, token, showing, tick, presenceKey]);
+    const seq = ++summarySeq.current;
+    fetchCommunity(sessionId, token)
+      .then(next => { if (seq === summarySeq.current) setCommunity(next); })
+      .catch(() => { if (seq === summarySeq.current) setCommunity(null); });
+  }, [sessionId, token, showing, roomTick, presenceKey]);
 
   // An organiser alert that arrives while the page is open buzzes the phone once; one that
   // was already there when the page opened only shows.
@@ -227,7 +269,7 @@ export default function TicketPage() {
   // The gate changes this ticket's state, not the phone. Coming back to the screen -
   // after a scan, after the screen locked - has to show where the holder actually is.
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') void reload(); };
+    const refresh = () => { if (document.visibilityState === 'visible') void reload({ ifIdle: true }); };
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('focus', refresh);
     return () => {
@@ -509,7 +551,8 @@ export default function TicketPage() {
         <RotatingCode key={grant.grantId} grant={grant} ticket={ticket} movement={movement} used={used}
           coupon={grant.direction === 'CPN' ? codeFor : null}
           onAnother={group => openCouponCode(group)}
-          onDone={async () => { setGrant(null); setCodeFor(null); await reload(); }} onRefresh={reload} />
+          onDone={async () => { setGrant(null); setCodeFor(null); await reload(); }}
+          onRefresh={() => reload({ ifIdle: true })} />
       </section>
     );
   }
@@ -570,10 +613,10 @@ export default function TicketPage() {
               onNews={entered ? () => go('ads') : null} />
           )}
           {view === 'chat' && (entered
-            ? <TicketChat sessionId={sessionId} token={token} tick={tick} onSeen={markChat} />
+            ? <TicketChat sessionId={sessionId} token={token} tick={chatTick} counts={counts} onSeen={markChat} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'ads' && (entered
-            ? <TicketAds sessionId={sessionId} token={token} tick={tick} seenId={seen.ads} onSeen={markAds} />
+            ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
         </section>
         {tabBar}
@@ -698,7 +741,7 @@ export default function TicketPage() {
                   </form>
                 )}
                 <FaceEnrolment sessionId={sessionId} token={token}
-                  inside={ticket.presence.inside} onChange={reload} />
+                  inside={ticket.presence.inside} onChange={() => reload()} />
               </div>
             )}
           </>

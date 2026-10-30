@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
 import { read, shortTime } from '../console/model';
+import { openLive } from '../ticket/live';
+import { chatCounts, useCoalesced } from '../ticket/coalesce';
 
 interface FeedRow {
   id: number; author: string; ticketId: number | null; ticketRef: string | null; staff: boolean; notice: boolean;
@@ -20,8 +22,10 @@ const post = (url: string, body: unknown, method = 'POST') => mutate(url, {
  * The organiser's side of the room's chat: send a notice, watch what is said, hide what
  * should not be there, stop a ticket writing, and set the rules.
  */
-export default function ConsoleChat({ sessionId, tick, onNotice, onError }: {
-  sessionId: number; tick: number; onNotice: (text: string) => void; onError: (text: string) => void;
+export default function ConsoleChat({ sessionId, onNotice, onError }: {
+  /** Ignored: the chat listens to the event's channel itself, and tells a like from a new line. */
+  tick?: number;
+  sessionId: number; onNotice: (text: string) => void; onError: (text: string) => void;
 }) {
   const [view, setView] = useState<ConsoleChatView | null>(null);
   const [filter, setFilter] = useState<Filter>('ALL');
@@ -31,11 +35,39 @@ export default function ConsoleChat({ sessionId, tick, onNotice, onError }: {
   const [alert, setAlert] = useState(false);
   const base = `/api/admin/sessions/${sessionId}/chat`;
 
+  // Only the latest read may fill the feed: a slow answer to an older filter is dropped.
+  const latest = useRef(0);
   const load = useCallback(async () => {
-    try { setView(await read(await fetch(`${base}?filter=${filter}`))); }
-    catch (err) { onError(err instanceof Error ? err.message : '채팅을 불러오지 못했어요.'); }
+    const seq = ++latest.current;
+    try {
+      const next = await read(await fetch(`${base}?filter=${filter}`)) as ConsoleChatView;
+      if (seq === latest.current) setView(next);
+    } catch (err) {
+      if (seq === latest.current) onError(err instanceof Error ? err.message : '채팅을 불러오지 못했어요.');
+    }
   }, [base, filter, onError]);
-  useEffect(() => { void load(); }, [load, tick]);
+  useEffect(() => { void load(); }, [load]);
+
+  // A busy room says something several times a second; the feed reads again once per
+  // burst, and a like only moves that line's counts.
+  const nudge = useCoalesced(useCallback(() => { void load(); }, [load]), 600);
+  useEffect(() => {
+    const live = openLive(`/ws/admin/sessions/${sessionId}`, message => {
+      if (message.type === 'CHAT_LIKE') {
+        const counts = chatCounts(message);
+        if (counts) {
+          setView(current => current && ({
+            ...current,
+            messages: current.messages.map(row => row.id === counts.messageId
+              ? { ...row, likes: counts.likes, dislikes: counts.dislikes } : row),
+          }));
+          return;
+        }
+      }
+      if (['CHAT', 'CHAT_REPORT', 'CHAT_HIDE', 'CHAT_LIKE'].includes(message.type)) nudge();
+    });
+    return () => live.close();
+  }, [sessionId, nudge]);
 
   const act = async (work: () => Promise<unknown>, done: string) => {
     try { await work(); onNotice(done); await load(); }

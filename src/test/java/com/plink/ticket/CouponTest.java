@@ -368,7 +368,7 @@ class CouponTest {
         Coupon other = waiting(theirs, "웰컴 커피");
         assertEquals(HttpStatus.NOT_FOUND, assertThrows(ResponseStatusException.class,
             () -> coupons.openCode(mine, other.id)).getStatusCode());
-        couponRepository.setStatus(waiting(mine, "웰컴 커피").id, "VOID");
+        couponRepository.voidCoupon(waiting(mine, "웰컴 커피").id);
         Coupon voided = couponRepository.findByTicket(mine.id).get(0);
         assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
             () -> coupons.openCode(mine, voided.id)).getStatusCode());
@@ -467,6 +467,41 @@ class CouponTest {
             () -> coupons.openCode(ticket, coffee.id)).getStatusCode());
         assertThrows(ResponseStatusException.class, () -> coupons.redeemByCode(boothGate(booth), shown));
         assertEquals("ISSUED", couponRepository.findById(coffee.id).orElseThrow().status);
+    }
+
+    /** Nor does it collect anything new at a giving terminal. */
+    @Test void aTicketBeingTransferredIsGivenNothing() {
+        newSession();
+        Ticket ticket = boundTicket("leaving-grant@example.com", null);
+        long booth = booths.insert(sessionId, "커피 스탠드", null);
+        long refill = coupons.defineOffer(sessionId, booth, "리필", null).id;
+        Gate stand = boothGate(booth);
+        coupons.setGateGrants(stand, Map.of(refill, false));
+        String shown = code(ticket);
+        ticketRepository.updateStatus(ticket.id, "TRANSFER_PENDING");
+        assertEquals(HttpStatus.FORBIDDEN, assertThrows(ResponseStatusException.class,
+            () -> coupons.grantByCode(stand, shown)).getStatusCode());
+
+        // A transfer started while the counter was choosing stops the hand-over too.
+        ticketRepository.updateStatus(ticket.id, "BOUND");
+        String pick = String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick"));
+        ticketRepository.updateStatus(ticket.id, "TRANSFER_PENDING");
+        assertThrows(ResponseStatusException.class, () -> coupons.grantPicked(stand, pick, Map.of(refill, 1)));
+        assertTrue(couponRepository.findByTicket(ticket.id).isEmpty());
+    }
+
+    /**
+     * The single-coupon status route set any status unconditionally - a used coupon put
+     * back kept its hand-over time - and nothing called it. Only the guarded bulk route is left.
+     */
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("requestMappingHandlerMapping")
+    org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping mappings;
+
+    @Test void onlyTheGuardedRouteMovesACoupon() {
+        List<String> routes = mappings.getHandlerMethods().keySet().stream()
+            .flatMap(info -> info.getPatternValues().stream()).toList();
+        assertFalse(routes.contains("/api/admin/coupons/{couponId}/status"));
+        assertTrue(routes.contains("/api/admin/sessions/{id}/coupons/status"));
     }
 
     /** A coupon given back after being voided is unused again, with no hand-over on record. */

@@ -69,11 +69,18 @@ public class CommunityRepository {
         return jdbc.query(MESSAGE_SELECT + "WHERE m.id = ?", MESSAGE, id).stream().findFirst();
     }
 
-    /** The newest lines after {@code afterId}, oldest first, at most {@code limit}. */
+    /**
+     * Lines oldest first, at most {@code limit}: from the start the newest ones, and after
+     * {@code afterId} the next ones - taking the newest there would skip whatever lies
+     * between {@code afterId} and them.
+     */
     public List<Message> recent(long sessionId, long afterId, int limit, boolean withHidden) {
-        List<Message> rows = new ArrayList<>(jdbc.query(MESSAGE_SELECT
-            + "WHERE m.session_id = ? AND m.id > ?" + (withHidden ? "" : " AND m.hidden = FALSE")
-            + " ORDER BY m.id DESC LIMIT ?", MESSAGE, sessionId, afterId, limit));
+        String where = "WHERE m.session_id = ? AND m.id > ?" + (withHidden ? "" : " AND m.hidden = FALSE");
+        if (afterId > 0) {
+            return jdbc.query(MESSAGE_SELECT + where + " ORDER BY m.id ASC LIMIT ?", MESSAGE, sessionId, afterId, limit);
+        }
+        List<Message> rows = new ArrayList<>(jdbc.query(MESSAGE_SELECT + where + " ORDER BY m.id DESC LIMIT ?",
+            MESSAGE, sessionId, afterId, limit));
         java.util.Collections.reverse(rows);
         return rows;
     }
@@ -91,6 +98,19 @@ public class CommunityRepository {
                 MESSAGE, sessionId, now, limit)
             : jdbc.query(MESSAGE_SELECT + "WHERE m.session_id = ?" + where + " ORDER BY m.id DESC LIMIT ?",
                 MESSAGE, sessionId, limit);
+    }
+
+    /** Lines with a report that are still showing: what waits for the organiser to look at. */
+    public int countReported(long sessionId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM chat_message WHERE session_id = ? AND report_count > 0 "
+            + "AND hidden = FALSE", Integer.class, sessionId);
+        return n == null ? 0 : n;
+    }
+
+    public int countHidden(long sessionId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM chat_message WHERE session_id = ? AND hidden = TRUE",
+            Integer.class, sessionId);
+        return n == null ? 0 : n;
     }
 
     /** What is held at the top now: the latest pinned notice, and the most liked popular line. */
@@ -157,7 +177,14 @@ public class CommunityRepository {
         return toggle("chat_dislike", "dislike_count", "chat_like", "like_count", messageId, ticketId);
     }
 
+    /**
+     * Each reaction first holds the line's row, so taps on one line take turns: a double
+     * tap is two toggles rather than a duplicate key, and a like racing a dislike from the
+     * same ticket cannot leave both. Counters move only with a row actually added or
+     * removed. Callers run this inside a transaction, which is what keeps the hold.
+     */
     private boolean toggle(String table, String count, String otherTable, String otherCount, long messageId, long ticketId) {
+        lockMessage(messageId);
         int removed = jdbc.update("DELETE FROM " + table + " WHERE message_id = ? AND ticket_id = ?", messageId, ticketId);
         if (removed > 0) {
             jdbc.update("UPDATE chat_message SET " + count + " = " + count + " - 1 WHERE id = ? AND " + count + " > 0", messageId);
@@ -167,19 +194,41 @@ public class CommunityRepository {
             jdbc.update("UPDATE chat_message SET " + otherCount + " = " + otherCount + " - 1 WHERE id = ? AND "
                 + otherCount + " > 0", messageId);
         }
-        jdbc.update("INSERT INTO " + table + " (message_id, ticket_id) VALUES (?, ?)", messageId, ticketId);
-        jdbc.update("UPDATE chat_message SET " + count + " = " + count + " + 1 WHERE id = ?", messageId);
+        if (insertOnce(table, messageId, ticketId)) {
+            jdbc.update("UPDATE chat_message SET " + count + " = " + count + " + 1 WHERE id = ?", messageId);
+        }
         return true;
+    }
+
+    private void lockMessage(long messageId) {
+        jdbc.query("SELECT id FROM chat_message WHERE id = ? FOR UPDATE", rs -> { }, messageId);
+    }
+
+    /**
+     * Adds the pair unless it is there. Written so a row already present is no error: in
+     * Postgres a failed insert would spoil the whole transaction, not just this statement.
+     */
+    private boolean insertOnce(String table, long messageId, long ticketId) {
+        return jdbc.update("INSERT INTO " + table + " (message_id, ticket_id) SELECT CAST(? AS BIGINT), CAST(? AS BIGINT) "
+            + "WHERE NOT EXISTS (SELECT 1 FROM " + table + " WHERE message_id = ? AND ticket_id = ?)",
+            messageId, ticketId, messageId, ticketId) > 0;
     }
 
     /** Counts one report per ticket; a second report from the same ticket changes nothing. */
     public boolean report(long messageId, long ticketId) {
-        Integer already = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM chat_report WHERE message_id = ? AND ticket_id = ?", Integer.class, messageId, ticketId);
-        if (already != null && already > 0) return false;
-        jdbc.update("INSERT INTO chat_report (message_id, ticket_id) VALUES (?, ?)", messageId, ticketId);
+        lockMessage(messageId);
+        if (!insertOnce("chat_report", messageId, ticketId)) return false;
         jdbc.update("UPDATE chat_message SET report_count = report_count + 1 WHERE id = ?", messageId);
         return true;
+    }
+
+    /**
+     * Forgets a line's reports: the organiser has looked at it and put it back, so it
+     * takes as many fresh reports to hide again as it did the first time.
+     */
+    public void clearReports(long messageId) {
+        jdbc.update("DELETE FROM chat_report WHERE message_id = ?", messageId);
+        jdbc.update("UPDATE chat_message SET report_count = 0 WHERE id = ?", messageId);
     }
 
     public void setHidden(long messageId, boolean hidden) {
@@ -225,8 +274,15 @@ public class CommunityRepository {
             .stream().findFirst().orElse(Settings.DEFAULT);
     }
 
+    /**
+     * Updates the event's row, or makes it the first time. Never a delete first: between
+     * the two a phone would read the defaults - an open chat - for a chat just closed.
+     */
     public void saveSettings(long sessionId, Settings s) {
-        jdbc.update("DELETE FROM chat_setting WHERE session_id = ?", sessionId);
+        int updated = jdbc.update("UPDATE chat_setting SET enabled = ?, cooldown_seconds = ?, max_length = ?, "
+            + "hot_likes = ?, hot_minutes = ?, report_hide = ? WHERE session_id = ?", s.enabled(), s.cooldownSeconds(),
+            s.maxLength(), s.hotLikes(), s.hotMinutes(), s.reportHide(), sessionId);
+        if (updated > 0) return;
         jdbc.update("INSERT INTO chat_setting (session_id, enabled, cooldown_seconds, max_length, hot_likes, "
             + "hot_minutes, report_hide) VALUES (?, ?, ?, ?, ?, ?, ?)", sessionId, s.enabled(), s.cooldownSeconds(),
             s.maxLength(), s.hotLikes(), s.hotMinutes(), s.reportHide());
@@ -252,6 +308,12 @@ public class CommunityRepository {
         return jdbc.query(AD_SELECT + "WHERE a.session_id = ? AND a.hidden = FALSE AND a.starts_at <= ? "
             + "AND (a.ends_at IS NULL OR a.ends_at > ?) ORDER BY a.pinned DESC, a.starts_at DESC",
             AD, sessionId, now, now);
+    }
+
+    /** One notice, if a holder may see it now. */
+    public Optional<Ad> visibleAd(long sessionId, long id, Timestamp now) {
+        return jdbc.query(AD_SELECT + "WHERE a.id = ? AND a.session_id = ? AND a.hidden = FALSE AND a.starts_at <= ? "
+            + "AND (a.ends_at IS NULL OR a.ends_at > ?)", AD, id, sessionId, now, now).stream().findFirst();
     }
 
     public List<Ad> allAds(long sessionId) {
@@ -319,14 +381,21 @@ public class CommunityRepository {
 
     // ---- Photos on the board ----
 
-    public record Image(String id, long sessionId, String key, String backend, String type) {}
+    /** A stored photo; {@code boothId} is the booth that put it up, null for the console. */
+    public record Image(String id, long sessionId, String key, String backend, String type, Long boothId) {}
 
     private static final RowMapper<Image> IMAGE = (rs, row) -> new Image(rs.getString("id"), rs.getLong("session_id"),
-        rs.getString("storage_key"), rs.getString("storage_backend"), rs.getString("media_type"));
+        rs.getString("storage_key"), rs.getString("storage_backend"), rs.getString("media_type"),
+        (Long) rs.getObject("booth_id", Long.class));
 
-    public void insertImage(String id, long sessionId, String key, String backend, String type, long size) {
-        jdbc.update("INSERT INTO ad_image (id, session_id, storage_key, storage_backend, media_type, byte_size, created_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?)", id, sessionId, key, backend, type, size, Timestamp.from(java.time.Instant.now()));
+    public void insertImage(String id, long sessionId, Long boothId, String key, String backend, String type, long size) {
+        jdbc.update("INSERT INTO ad_image (id, session_id, booth_id, storage_key, storage_backend, media_type, byte_size, "
+            + "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", id, sessionId, boothId, key, backend, type, size,
+            Timestamp.from(java.time.Instant.now()));
+    }
+
+    public List<Image> imagesOf(long sessionId) {
+        return jdbc.query("SELECT * FROM ad_image WHERE session_id = ?", IMAGE, sessionId);
     }
 
     public Optional<Image> findImage(String id) {

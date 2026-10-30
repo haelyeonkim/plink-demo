@@ -208,10 +208,6 @@ public class CouponRepository {
             + "WHERE id = ? AND status = 'ISSUED'", at, gateId, id);
     }
 
-    public void setStatus(long id, String status) {
-        jdbc.update("UPDATE coupon SET status = ? WHERE id = ?", status, id);
-    }
-
     public void delete(long id) {
         jdbc.update("DELETE FROM coupon WHERE id = ?", id);
     }

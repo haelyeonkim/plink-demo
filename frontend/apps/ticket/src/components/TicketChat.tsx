@@ -3,6 +3,7 @@ import {
   dislikeChat, fetchChat, likeChat, reportChat, sendChat, type ChatMessage, type ChatView, type Reaction,
 } from '../ticket/api';
 import { boothColor } from '../ticket/coupons';
+import type { ChatCounts } from '../ticket/coalesce';
 
 function clock(value: string): string {
   const d = new Date(value);
@@ -15,7 +16,12 @@ function useCountdown(nextAt: string | null): number {
   const until = nextAt ? new Date(nextAt).getTime() : 0;
   useEffect(() => {
     if (until <= Date.now()) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const timer = window.setInterval(() => {
+      const at = Date.now();
+      setNow(at);
+      // Once the wait is over there is nothing left to count.
+      if (at >= until) window.clearInterval(timer);
+    }, 250);
     return () => window.clearInterval(timer);
   }, [until]);
   return Math.max(0, Math.ceil((until - now) / 1000));
@@ -80,8 +86,8 @@ const speaker = (m: ChatMessage) => (m.staff ? 'staff' : m.mine ? 'me' : m.autho
  * can be answered, liked or reported; one that gathers enough likes is held at the top for
  * a while, below the organiser's notice. Writing waits out a cooldown between lines.
  */
-export default function TicketChat({ sessionId, token, tick, onSeen }: {
-  sessionId: string; token: string; tick: number; onSeen: (latestId: number) => void;
+export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
+  sessionId: string; token: string; tick: number; counts: ChatCounts | null; onSeen: (latestId: number) => void;
 }) {
   const [view, setView] = useState<ChatView | null>(null);
   const [error, setError] = useState('');
@@ -100,17 +106,35 @@ export default function TicketChat({ sessionId, token, tick, onSeen }: {
   }, []);
   useFitToScreen(keepBottom);
 
+  // Only the latest read may fill the room: a slow answer to an older one is dropped.
+  const latest = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++latest.current;
     try {
       const next = await fetchChat(sessionId, token);
+      if (seq !== latest.current) return;
       setView(next);
       setError('');
       const last = next.messages[next.messages.length - 1];
       if (last) onSeen(last.id);
-    } catch (err) { setError(err instanceof Error ? err.message : '채팅을 불러오지 못했어요.'); }
+    } catch (err) {
+      if (seq === latest.current) setError(err instanceof Error ? err.message : '채팅을 불러오지 못했어요.');
+    }
   }, [sessionId, token, onSeen]);
 
   useEffect(() => { void load(); }, [load, tick]);
+  // Someone pressed on a line: its new counts, wherever it shows, without reading the room again.
+  useEffect(() => {
+    if (!counts) return;
+    const patch = (m: ChatMessage | null) => m && m.id === counts.messageId
+      ? { ...m, likes: counts.likes, dislikes: counts.dislikes } : m;
+    setView(current => current && ({
+      ...current,
+      notice: patch(current.notice),
+      hot: patch(current.hot),
+      messages: current.messages.map(m => patch(m)!),
+    }));
+  }, [counts]);
   // The socket only says something changed; this keeps a quiet page fresh if it drops.
   useEffect(() => {
     const timer = window.setInterval(() => { void load(); }, 20000);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AD_CATEGORY, adImageUrl, fetchAd, fetchAds, type AdPost } from '../ticket/api';
 
 type Filter = 'ALL' | 'SALE' | 'PROGRAM' | 'NOTICE';
@@ -36,13 +36,19 @@ export default function TicketAds({ sessionId, token, tick, seenId, onSeen }: {
   // "새 글" labels off the list the holder is looking at.
   const [baseline] = useState(seenId);
 
+  // Only the latest read may fill the board: a slow answer to an older one is dropped.
+  const latest = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++latest.current;
     try {
       const next = await fetchAds(sessionId, token);
+      if (seq !== latest.current) return;
       setAds(next);
       setError('');
       if (next.length > 0) onSeen(Math.max(...next.map(ad => ad.id)));
-    } catch (err) { setError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.'); }
+    } catch (err) {
+      if (seq === latest.current) setError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.');
+    }
   }, [sessionId, token, onSeen]);
   useEffect(() => { void load(); }, [load, tick]);
 
