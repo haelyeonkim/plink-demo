@@ -178,6 +178,8 @@ export default function GateScanner() {
   const [giving, setGiving] = useState(false);
   // A booth's own notices on the event's board, written here between scans.
   const [board, setBoard] = useState(false);
+  // Closing the board puts the camera back the way staff left it, not always on.
+  const scanningBeforeBoard = useRef(true);
   const [givenOut, setGivenOut] = useState(0);
   const modeGeneration = useRef(0);
   const [sending, setSending] = useState(false);
@@ -489,15 +491,21 @@ export default function GateScanner() {
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        const opened = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
         });
-        if (stopped || !video.current) return;
+        // Cleaned up while the permission prompt was open: nobody holds this stream, so it
+        // has to be closed here or the camera light stays on for good.
+        if (stopped || !video.current) { opened.getTracks().forEach(track => track.stop()); return; }
+        stream = opened;
         video.current.srcObject = stream;
         await video.current.play();
-        loop();
+        if (!stopped) loop();
       } catch {
+        // A run that has already been let go (a flip, a stop) failing late is not news,
+        // and must not switch off the run that replaced it.
+        if (stopped) return;
         setError('카메라를 열 수 없어요. 권한을 허용하고 HTTPS로 접속했는지 확인해 주세요.');
         setScanning(false);
       }
@@ -544,17 +552,26 @@ export default function GateScanner() {
     });
   }
 
+  // The timer and the 'online' event can both fire at once; one send at a time keeps a
+  // scan from being replayed twice.
+  const flushing = useRef(false);
   const flush = useCallback(async () => {
+    if (flushing.current || !gate) return;
     const events = readQueue();
-    if (events.length === 0 || !gate) return;
+    if (events.length === 0) return;
+    flushing.current = true;
     try {
       const result = await gateSync(gateId.trim(), gateToken.trim(), events);
-      writeQueue([]);
-      setQueued(0);
+      // Only what was sent leaves the queue: a scan queued while this was on its way is
+      // appended behind it and waits for the next round.
+      const left = readQueue().slice(events.length);
+      writeQueue(left);
+      setQueued(left.length);
       if (result.flagged > 0) {
         setError(`오프라인 기록 ${result.flagged}건이 장내 상태와 어긋나 조사 큐로 넘어갔어요.`);
       }
     } catch { /* stay queued until the network is back */ }
+    finally { flushing.current = false; }
   }, [gate, gateId, gateToken]);
 
   useEffect(() => {
@@ -747,7 +764,9 @@ export default function GateScanner() {
           </button>
         )}
         {gate.role === 'BOOTH' && !giving && (
-          <button className="btn-ghost" onClick={() => { setScanning(false); setBoard(true); }}>알림판</button>
+          <button className="btn-ghost" onClick={() => {
+            scanningBeforeBoard.current = scanning; setScanning(false); setBoard(true);
+          }}>알림판</button>
         )}
         {gate.role !== 'BOOTH' && !giving && (
           <button className="btn-ghost" onClick={() => {
@@ -764,7 +783,7 @@ export default function GateScanner() {
       {error && <p className="gate-error" role="alert">{error}</p>}
       {board && (
         <BoothBoard gateId={gateId} gateToken={gateToken} booth={gate.booth ?? gate.label ?? '부스'}
-          place={gate.zone} onClose={() => { setBoard(false); setScanning(true); }} />
+          place={gate.zone} onClose={() => { setBoard(false); setScanning(scanningBeforeBoard.current); }} />
       )}
     </section>
   );
