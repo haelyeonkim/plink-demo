@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
+import { Link } from 'react-router-dom';
 import { PAGE_SIZE, percent, read, shortTime, type BoothRow, type CouponFilter, type CouponRow, type OfferRow } from '../console/model';
 import { EMPTY_PAGE, Pager, useDebounced, type Paged } from './ListTools';
 
@@ -18,13 +19,12 @@ const send = (url: string, method: string, body?: unknown) => mutate(url, {
  * The event's coupons as two tables: the kinds each booth gives, with how far each has
  * gone, and every coupon handed out, to find one, act on many at once or export them.
  */
-export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, onChanged, onDeleteBooth, onNotice, onError }: {
+export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, onChanged, onNotice, onError }: {
   sessionId: number; booths: BoothRow[]; boothId: number | null; onBooth: (id: number | null) => void;
-  onChanged: () => Promise<void>; onDeleteBooth: (booth: BoothRow) => void;
+  onChanged: () => Promise<void>;
   onNotice: (text: string) => void; onError: (text: string) => void;
 }) {
   const [view, setView] = useState<View>('offers');
-  const [managing, setManaging] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -63,8 +63,6 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
   useEffect(() => { setPageNo(0); setPicked(new Set()); }, [filterQuery]);
   // A choice is about the rows on screen: another page starts it over.
   useEffect(() => { setPicked(new Set()); }, [pageNo]);
-  // With no booth yet there is nothing else to do here, so the booth form opens itself.
-  useEffect(() => { if (booths.length === 0) setManaging(true); }, [booths.length]);
   // The detail closes on Escape, as the other overlays do.
   useEffect(() => {
     if (!open) return;
@@ -156,46 +154,9 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
           ))}
         </div>
         <span className="coupon-toolbar-gap" />
-        <button type="button" className={`btn-tiny${managing ? ' on' : ''}`} aria-expanded={managing}
-          onClick={() => setManaging(value => !value)}>부스 관리</button>
+        {/* Booths themselves - and their terminals - are kept on their own screen. */}
+        <Link className="btn-tiny" to="?tab=booths">부스 관리</Link>
       </div>
-
-      {managing && (
-        <section className="console-card booth-manage" aria-labelledby="booth-manage">
-          <h3 id="booth-manage">부스</h3>
-          {booths.length > 0 && (
-            <div className="console-table-box flat">
-              <table className="console-table">
-                <thead><tr><th>이름</th><th>위치 안내</th><th className="num">쿠폰 종류</th><th className="num">지급</th><th aria-label="작업" /></tr></thead>
-                <tbody>
-                  {booths.map(booth => (
-                    <tr key={booth.boothId}>
-                      <td><b>{booth.name}</b></td>
-                      <td className="muted">{booth.note ?? '–'}</td>
-                      <td className="num">{booth.offers.length}</td>
-                      <td className="num">{booth.offers.reduce((n, o) => n + o.issued, 0).toLocaleString()}</td>
-                      <td className="row-actions">
-                        <button type="button" className="btn-tiny btn-tiny-danger" onClick={() => onDeleteBooth(booth)}>삭제</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <form className="inline-form" onSubmit={e => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const data = new FormData(form);
-            void act(() => send(`/api/admin/sessions/${sessionId}/booths`, 'POST', { name: data.get('name'), note: data.get('note') }),
-              `${data.get('name')} 부스를 만들었어요.`).then(ok => { if (ok) form.reset(); });
-          }}>
-            <label>이름<input name="name" required maxLength={80} placeholder="예: 커피 스탠드" /></label>
-            <label>위치 안내<input name="note" maxLength={120} placeholder="예: 로비 왼쪽" /></label>
-            <button className="btn-secondary" type="submit">부스 추가</button>
-          </form>
-        </section>
-      )}
 
       {view === 'offers' && (<>
         <div className="coupon-toolbar">
@@ -287,7 +248,7 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
               ))}
               {offers.length === 0 && (
                 <tr><td colSpan={9} className="console-none">
-                  {booths.length === 0 ? '먼저 부스를 만들어 주세요. 위의 부스 관리에서 추가할 수 있어요.'
+                  {booths.length === 0 ? '먼저 부스를 만들어 주세요. 부스 화면에서 추가할 수 있어요.'
                     : '아직 정해 둔 쿠폰 종류가 없어요. 쿠폰 종류 추가로 시작하세요.'}
                 </td></tr>
               )}

@@ -27,7 +27,7 @@ const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', po
 
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
-  gates: '게이트', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
+  gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
@@ -91,7 +91,6 @@ export default function TicketAdmin() {
   const [issued, setIssued] = useState<IssuedTicket | null>(null);
   const [gates, setGates] = useState<GateRow[]>([]);
   const [booths, setBooths] = useState<BoothRow[]>([]);
-  const [gateRole, setGateRole] = useState('ADMISSION');
   // The hand-out sheet: open with a ticket to give to that one person, or with null to
   // choose the recipients inside. `pickTickets` is that choice - everybody, or a few.
   const [couponSheet, setCouponSheet] =
@@ -424,6 +423,27 @@ export default function TicketAdmin() {
     }));
     form.reset();
     setGateSetup(gate);
+    await loadSession(selected!);
+  });
+
+  /** A booth's terminal: named after the booth, placed where the booth says it is. */
+  const addBoothTerminal = (booth: BoothRow) => act(async () => {
+    const terminal = await read(await mutate(`/api/admin/sessions/${selected}/gates`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: `${booth.name} 단말`, zone: booth.note || booth.name, role: 'BOOTH', boothId: booth.boothId }),
+    }));
+    setGateSetup(terminal);
+    await loadSession(selected!);
+  });
+
+  const addBooth = (form: HTMLFormElement) => act(async () => {
+    const data = new FormData(form);
+    await read(await mutate(`/api/admin/sessions/${selected}/booths`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: data.get('name'), note: data.get('note') }),
+    }));
+    form.reset();
+    setNotice(`${data.get('name')} 부스를 만들었어요.`);
     await loadSession(selected!);
   });
 
@@ -778,7 +798,10 @@ export default function TicketAdmin() {
       <div className="console-layout">
         <EventNav session={session} tab={tab} issued={counts.all}
           inside={occupancy?.inside ?? counts.inside}
-          gatesUp={gates.filter(gate => gate.boundDevice).length} gatesAll={gates.length} />
+          gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
+          gatesAll={gates.filter(gate => gate.role !== 'BOOTH').length}
+          terminalsUp={gates.filter(gate => gate.role === 'BOOTH' && gate.boundDevice).length}
+          terminalsAll={gates.filter(gate => gate.role === 'BOOTH').length} />
         <div className="console-main">
           <div className="console-head">
             <div>
@@ -1102,24 +1125,18 @@ export default function TicketAdmin() {
         );
       })()}
 
-      {session && tab === 'gates' && (() => {
-        // A gate that needs someone goes first: no tablet, then a date about to run out.
+      {session && (tab === 'gates' || tab === 'booths') && (() => {
+        // A terminal that needs someone goes first: no tablet, then a date about to run out.
         const rank = (gate: GateRow) => !gate.boundDevice ? 0 : ['warn', 'off'].includes(validity(gate).tone) ? 1 : 2;
-        const sorted = [...gates].sort((a, b) => rank(a) - rank(b));
-        const offline = gates.filter(gate => !gate.boundDevice).length;
-        const expiring = gates.filter(gate => ['warn', 'off'].includes(validity(gate).tone)).length;
-        return (
-          <div className="console-stack">
-            {gates.length > 0 && (
-              <p className="console-summary">
-                연결됨 {gates.length - offline} · 연결 안 됨 {offline} · 유효기간 임박 {expiring}
-              </p>
-            )}
-            <div className="gate-grid">
-              {sorted.map(gate => {
-                const valid = validity(gate);
-                const problem = rank(gate);
-                return (
+        const byNeed = (list: GateRow[]) => [...list].sort((a, b) => rank(a) - rank(b));
+        // A door admits people; a booth's terminal hands coupons over. They are set up the
+        // same way but looked after by different people, so each has its own screen.
+        const doors = gates.filter(gate => gate.role !== 'BOOTH');
+        const terminals = gates.filter(gate => gate.role === 'BOOTH');
+        const card = (gate: GateRow) => {
+          const valid = validity(gate);
+          const problem = rank(gate);
+          return (
                   <article key={gate.gateId} className={`gate-card${problem === 0 ? ' is-offline' : problem === 1 ? ' is-expiring' : ''}`}>
                     <div className="gate-card-head">
                       <div>
@@ -1192,70 +1209,9 @@ export default function TicketAdmin() {
                       )}
                     </div>
                   </article>
-                );
-              })}
-            </div>
-            {gates.length === 0 && (
-              <p className="console-none">아직 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
-            )}
-            <details className="console-card add-card" open={gates.length === 0}>
-              <summary>게이트 추가</summary>
-              <p className="hint-text">이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요. 부스 단말이면 쿠폰을 고를 수 있어요.</p>
-              <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
-                <div className="form-row">
-                  <div className="field">
-                    <label htmlFor="gate-new-label">이름</label>
-                    <input id="gate-new-label" name="label" />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="gate-new-zone">장소</label>
-                    <input id="gate-new-zone" name="zone" required placeholder="예: 메인홀" />
-                  </div>
-                </div>
-                {/* A booth terminal reads the same code, but to hand something over. */}
-                <div className="form-row">
-                  <div className="field">
-                    <label htmlFor="gate-new-role">역할</label>
-                    <select id="gate-new-role" name="role" value={gateRole}
-                      onChange={e => setGateRole(e.target.value)}>
-                      <option value="ADMISSION">입장 게이트</option>
-                      <option value="BOOTH" disabled={booths.length === 0}>
-                        {booths.length === 0 ? '부스 단말 (부스를 먼저 만드세요)' : '부스 단말 · 쿠폰'}
-                      </option>
-                    </select>
-                  </div>
-                  {/* A door has a way in and a way out; a booth has neither. */}
-                  {gateRole !== 'BOOTH' && (
-                    <div className="field">
-                      <label htmlFor="gate-new-direction">방향</label>
-                      <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
-                        <option value="BIDIRECTIONAL">입장·퇴장 겸용</option>
-                        <option value="IN">입장 전용</option>
-                        <option value="OUT">퇴장 전용</option>
-                      </select>
-                    </div>
-                  )}
-                  {gateRole === 'BOOTH' && (
-                    <div className="field">
-                      <label htmlFor="gate-new-booth">부스</label>
-                      <select id="gate-new-booth" name="boothId" required>
-                        {booths.map(booth => (
-                          <option key={booth.boothId} value={booth.boothId}>{booth.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                <details className="more-fields">
-                  <summary>게이트 ID 직접 정하기</summary>
-                  <div className="field">
-                    <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
-                    <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
-                      placeholder="예: main-door-1" />
-                  </div>
-                </details>
-                <button className="btn-secondary" type="submit">게이트 추가</button>
-                {gateSetup && (
+          );
+        };
+        const setupPanel = gateSetup && (
                   <div className="issued-link">
                     <p className="hint-text">
                       <b>{gateSetup.gateId}</b> · 이 링크를 태블릿에서 열고 아래 인증번호를 입력하면 연결됩니다.
@@ -1270,7 +1226,58 @@ export default function TicketAdmin() {
                       </button>
                     </div>
                   </div>
-                )}
+        );
+
+        if (tab === 'gates') {
+          const offline = doors.filter(gate => !gate.boundDevice).length;
+          const expiring = doors.filter(gate => ['warn', 'off'].includes(validity(gate).tone)).length;
+          return (
+          <div className="console-stack">
+            {doors.length > 0 && (
+              <p className="console-summary">
+                연결됨 {doors.length - offline} · 연결 안 됨 {offline} · 유효기간 임박 {expiring}
+              </p>
+            )}
+            <div className="gate-grid">{byNeed(doors).map(card)}</div>
+            {doors.length === 0 && (
+              <p className="console-none">아직 입장 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
+            )}
+            <details className="console-card add-card" open={doors.length === 0}>
+              <summary>게이트 추가</summary>
+              <p className="hint-text">
+                이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요.
+                쿠폰을 주는 부스 단말은 <Link to="?tab=booths">부스</Link>에서 추가해요.
+              </p>
+              <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
+                <input type="hidden" name="role" value="ADMISSION" />
+                <div className="form-row">
+                  <div className="field">
+                    <label htmlFor="gate-new-label">이름</label>
+                    <input id="gate-new-label" name="label" />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="gate-new-zone">장소</label>
+                    <input id="gate-new-zone" name="zone" required placeholder="예: 메인홀" />
+                  </div>
+                    <div className="field">
+                      <label htmlFor="gate-new-direction">방향</label>
+                      <select id="gate-new-direction" name="direction" defaultValue="BIDIRECTIONAL">
+                        <option value="BIDIRECTIONAL">입장·퇴장 겸용</option>
+                        <option value="IN">입장 전용</option>
+                        <option value="OUT">퇴장 전용</option>
+                      </select>
+                    </div>
+                </div>
+                <details className="more-fields">
+                  <summary>게이트 ID 직접 정하기</summary>
+                  <div className="field">
+                    <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
+                    <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
+                      placeholder="예: main-door-1" />
+                  </div>
+                </details>
+                <button className="btn-secondary" type="submit" disabled={busy}>게이트 추가</button>
+                {setupPanel && doors.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
               </form>
             </details>
             <p className="hint-text console-help">
@@ -1281,6 +1288,73 @@ export default function TicketAdmin() {
               현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다. 건물에 붙박이로 설치한
               단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.
             </p>
+          </div>
+          );
+        }
+
+        const connected = terminals.filter(gate => gate.boundDevice).length;
+        // A terminal whose booth was deleted still holds a token; it stays in view until released.
+        const orphans = terminals.filter(gate => !booths.some(booth => booth.boothId === gate.boothId));
+        return (
+          <div className="console-stack">
+            {booths.length > 0 && (
+              <p className="console-summary">
+                부스 {booths.length} · 단말 연결됨 {connected} · 연결 안 됨 {terminals.length - connected}
+              </p>
+            )}
+            {booths.map(booth => {
+              const mine = byNeed(terminals.filter(gate => gate.boothId === booth.boothId));
+              const given = booth.offers.reduce((sum, offer) => sum + offer.issued, 0);
+              return (
+                <section key={booth.boothId} className="console-card booth-card" aria-labelledby={`booth-${booth.boothId}`}>
+                  <div className="booth-card-head">
+                    <div>
+                      <h3 id={`booth-${booth.boothId}`}>{booth.name}</h3>
+                      <p className="muted">
+                        {booth.note || '위치 안내 없음'} · 쿠폰 {booth.offers.length}종 · 지급 {given.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="booth-card-actions">
+                      <Link className="btn-tiny" to={`?tab=coupons&booth=${booth.boothId}`}>쿠폰 보기</Link>
+                      <button type="button" className="btn-tiny" disabled={busy}
+                        onClick={() => addBoothTerminal(booth)}>단말 추가</button>
+                      <button type="button" className="btn-tiny btn-tiny-danger"
+                        onClick={() => setConfirmBooth(booth)}>삭제</button>
+                    </div>
+                  </div>
+                  {mine.length > 0
+                    ? <div className="gate-grid">{mine.map(card)}</div>
+                    : <p className="console-none">아직 단말이 없어요. <b>단말 추가</b>를 누르고 태블릿에서 설정 링크를 열어 주세요.</p>}
+                  {setupPanel && mine.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
+                </section>
+              );
+            })}
+            {orphans.length > 0 && (
+              <section className="console-card booth-card" aria-labelledby="booth-orphans">
+                <div className="booth-card-head">
+                  <div>
+                    <h3 id="booth-orphans">부스가 지워진 단말</h3>
+                    <p className="muted">더 이상 쿠폰을 주지 않아요. 연결을 해제하거나 토큰을 폐기하세요.</p>
+                  </div>
+                </div>
+                <div className="gate-grid">{orphans.map(card)}</div>
+              </section>
+            )}
+            {booths.length === 0 && (
+              <p className="console-none">아직 부스가 없어요. 아래에서 첫 부스를 만드세요.</p>
+            )}
+            <details className="console-card add-card" open={booths.length === 0}>
+              <summary>부스 추가</summary>
+              <p className="hint-text">
+                부스를 만들고 단말을 연결하면, 그 태블릿으로 관람객의 QR을 읽어 쿠폰을 주고 사용 처리해요.
+                부스가 줄 쿠폰은 <Link to="?tab=coupons">쿠폰</Link>에서 만들어요.
+              </p>
+              <form className="inline-form" onSubmit={e => { e.preventDefault(); addBooth(e.currentTarget); }}>
+                <label>이름<input name="name" required maxLength={80} placeholder="예: 커피 스탠드" /></label>
+                <label>위치 안내<input name="note" maxLength={120} placeholder="예: 로비 왼쪽" /></label>
+                <button className="btn-secondary" type="submit" disabled={busy}>부스 추가</button>
+              </form>
+            </details>
           </div>
         );
       })()}
@@ -1955,7 +2029,7 @@ export default function TicketAdmin() {
 
       {session && tab === 'coupons' && (
         <ConsoleCoupons key={session.id} sessionId={session.id} booths={booths} boothId={boothTab} onBooth={setBoothTab}
-          onChanged={() => loadSession(session.id)} onDeleteBooth={setConfirmBooth}
+          onChanged={() => loadSession(session.id)}
           onNotice={setNotice} onError={setError} />
       )}
 

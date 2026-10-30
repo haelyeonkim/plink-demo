@@ -25,8 +25,10 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
   const when = eventWhen(session.startsAt);
   const counts = summary?.counts ?? { all: 0, unclaimed: 0, bound: 0, inside: 0, revoked: 0, live: 0 };
   const doors = gates.filter(gate => gate.role !== 'BOOTH');
-  const connected = gates.filter(gate => gate.boundDevice);
-  const offline = gates.filter(gate => !gate.boundDevice);
+  const terminals = gates.filter(gate => gate.role === 'BOOTH');
+  const connected = doors.filter(gate => gate.boundDevice);
+  const offline = doors.filter(gate => !gate.boundDevice);
+  const offlineTerminals = terminals.filter(gate => !gate.boundDevice);
   const expiring = gates.filter(gate => ['warn', 'off'].includes(validity(gate).tone));
   const capacity = Object.values(session.zoneCapacity ?? {}).reduce((sum, n) => sum + n, 0);
   const inside = occupancy?.inside ?? counts.inside;
@@ -46,9 +48,15 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
       detail: `${offline.slice(0, 3).map(name).join(', ')}${offline.length > 3 ? ' 외' : ''} · 설정 링크를 태블릿에서 열어 주세요`,
       to: '?tab=gates', action: '게이트로' });
   }
+  if (offlineTerminals.length > 0) {
+    todos.push({ tone: 'warn', title: `부스 단말 ${offlineTerminals.length}대가 연결되지 않았어요`,
+      detail: `${offlineTerminals.slice(0, 3).map(name).join(', ')}${offlineTerminals.length > 3 ? ' 외' : ''} · 설정 링크를 태블릿에서 열어 주세요`,
+      to: '?tab=booths', action: '부스로' });
+  }
   if (expiring.length > 0) {
     todos.push({ tone: 'warn', title: `유효기간이 곧 끝나는 단말 ${expiring.length}대`,
-      detail: `${expiring.slice(0, 3).map(name).join(', ')} · 끝나면 스캔이 멈춰요`, to: '?tab=gates', action: '유효기간 연장' });
+      detail: `${expiring.slice(0, 3).map(name).join(', ')} · 끝나면 스캔이 멈춰요`,
+      to: expiring.every(gate => gate.role === 'BOOTH') ? '?tab=booths' : '?tab=gates', action: '유효기간 연장' });
   }
   if (counts.unclaimed > 0 && when !== 'past') {
     todos.push({ tone: 'info', title: `등록하지 않은 입장권 ${counts.unclaimed.toLocaleString()}장`,
@@ -57,7 +65,7 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
   if (when === 'upcoming') {
     if (counts.all > 0) todos.push({ tone: 'done', title: `입장권 ${counts.all.toLocaleString()}장 발급`,
       detail: `등록 완료 ${counts.bound.toLocaleString()}장`, to: '?tab=tickets', action: '발급 현황' });
-    if (doors.length > 0 && offline.length === 0) todos.push({ tone: 'done', title: `게이트 ${gates.length}곳 모두 연결`,
+    if (doors.length > 0 && offline.length === 0) todos.push({ tone: 'done', title: `게이트 ${doors.length}곳 모두 연결`,
       detail: '이벤트 당일 입장을 받을 준비가 됐어요.', to: '?tab=gates', action: '게이트' });
   }
 
@@ -99,8 +107,8 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
         </div>
         <div className={`kpi${offline.length > 0 ? ' kpi-warn' : ''}`}>
           <span className="kpi-label">게이트 연결</span>
-          <strong className="kpi-num">{connected.length}<small> / {gates.length}</small></strong>
-          <span className="kpi-note">{gates.length === 0 ? '게이트 없음'
+          <strong className="kpi-num">{connected.length}<small> / {doors.length}</small></strong>
+          <span className="kpi-note">{doors.length === 0 ? '게이트 없음'
             : offline.length > 0 ? `${offline.length}곳 연결 안 됨` : '모두 연결됨'}</span>
         </div>
       </div>

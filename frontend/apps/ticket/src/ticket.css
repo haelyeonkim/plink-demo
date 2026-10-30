@@ -1450,3 +1450,11 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .save-bar span { flex: 1; min-width: 180px; font-size: 14px; font-weight: 600; }
 .save-bar .btn-secondary { background: transparent; color: white; border-color: rgba(255, 255, 255, .35); }
 .settings-page:has(.save-bar) { padding-bottom: 8px; }
+
+/* A booth on the 부스 screen: its name and what it gives, then its terminals. */
+.booth-card { display: flex; flex-direction: column; gap: 14px; }
+.booth-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.booth-card-head h3 { margin: 0 0 4px; }
+.booth-card-head p { margin: 0; font-size: 13px; }
+.booth-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.booth-card .console-none { margin: 0; }

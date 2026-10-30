@@ -1,14 +1,16 @@
 import ConsoleNav, { NAV_ICONS, type ConsoleNavEntry } from '@shared/components/ConsoleNav';
 import { dayTime, eventWhen, type SessionRow } from '../console/model';
 
-export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'coupons' | 'chat' | 'ads' | 'settings';
+export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'settings';
 
 const WHEN_LABEL = { today: '오늘 진행', upcoming: '예정', past: '종료' } as const;
 
 /** An event's own menu, down the left of its console. */
-export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll }: {
+export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll, terminalsUp, terminalsAll }: {
   session: SessionRow; tab: ConsoleTab;
   issued: number; inside: number; gatesUp: number; gatesAll: number;
+  /** Booth terminals, counted apart from the doors. */
+  terminalsUp: number; terminalsAll: number;
 }) {
   const when = eventWhen(session.startsAt);
   const groups: Array<[string, ConsoleNavEntry<ConsoleTab>[]]> = [
@@ -23,6 +25,9 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
       { key: 'gates', label: '게이트', icon: NAV_ICONS.gates,
         ...(gatesAll > 0 ? { badge: `${gatesUp}/${gatesAll}`, badgeLabel: `게이트 ${gatesAll}곳 중 ${gatesUp}곳 연결`,
           warn: gatesUp < gatesAll } : {}) },
+      { key: 'booths', label: '부스', icon: NAV_ICONS.booths,
+        ...(terminalsAll > 0 ? { badge: `${terminalsUp}/${terminalsAll}`, badgeLabel: `부스 단말 ${terminalsAll}대 중 ${terminalsUp}대 연결`,
+          warn: terminalsUp < terminalsAll } : {}) },
       { key: 'coupons', label: '쿠폰', icon: NAV_ICONS.coupons },
     ]],
     ['장내 소통', [

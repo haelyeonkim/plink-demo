@@ -78,6 +78,7 @@ export const NAV_ICONS = {
   movements: 'M7 7h11l-3-3M17 17H6l3 3',
   gates: 'M5 4h14v16H5zM9 9h6v6H9z',
   coupons: 'M4 8a2 2 0 0 0 0 4v4h16v-4a2 2 0 0 1 0-4V4H4zM12 4v12',
+  booths: 'M4 10h16l-2-5H6zM5 10v10h14V10M10 20v-5h4v5',
   settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6',
   views: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
