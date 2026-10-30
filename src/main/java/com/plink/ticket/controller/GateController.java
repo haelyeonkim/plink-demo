@@ -112,8 +112,9 @@ public class GateController {
      */
     @GetMapping("/{gateId}/face/challenge")
     public Map<String, Object> faceChallenge(@PathVariable String gateId,
-            @RequestHeader(value = "X-Gate-Token", required = false) String token) {
-        auth.authenticate(gateId, token);
+            @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device) {
+        auth.authenticate(gateId, token, device);
         return Map.of("challenge", com.plink.ticket.service.Secrets.randomAlnum(10),
             "issuedAt", java.time.Instant.now().toString());
     }
@@ -148,12 +149,16 @@ public class GateController {
      * Hands back what the movements the terminal queued while offline. Nothing here is
      * accepted on the terminal's word: each code is re-verified and anything that
      * contradicts the ledger is flagged for investigation instead of applied.
+     *
+     * <p>Held to the bound device like every other terminal route: a queue is a batch
+     * of entries, and the token alone is not enough to post one.
      */
     @PostMapping("/{gateId}/sync")
     public Map<String, Object> sync(@PathVariable String gateId,
             @RequestHeader(value = "X-Gate-Token", required = false) String token,
+            @RequestHeader(value = "X-Gate-Device", required = false) String device,
             @RequestBody Map<String, Object> body) {
-        Gate gate = auth.authenticate(gateId, token);
+        Gate gate = auth.authenticate(gateId, token, device);
         Object events = body.get("events");
         if (!(events instanceof List<?> list)) {
             return Map.of("received", 0, "applied", 0, "flagged", 0, "conflicts", List.of());
@@ -206,8 +211,10 @@ public class GateController {
             @RequestBody Map<String, String> body) {
         Gate gate = auth.authenticate(gateId, token, device);
         String code = body.get("code");
-        String method = body.getOrDefault("method", "QR");
-        if (!"QR".equals(method) && !"FACE".equals(method)) method = "QR";
+        // A code read here is a QR, whatever the terminal says it is. Letting the body
+        // claim FACE would walk a QR through an event that requires a face; a face is
+        // only ever matched on the face route, by the server.
+        String method = "QR";
         // A booth asks a different question of the same code: not "may this person come
         // in?" but "is there still something here for them?".
         if (gate.booth()) return coupons.redeemByCode(gate, code);

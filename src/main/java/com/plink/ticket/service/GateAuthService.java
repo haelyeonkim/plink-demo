@@ -66,6 +66,13 @@ public class GateAuthService {
                 "단말 유효기간이 지났어요. 관리 화면에서 유효기간을 갱신해 주세요.");
         }
         if (deviceId == null || deviceId.isBlank()) {
+            // Leaving the header out must not be a way around the binding: once a tablet
+            // holds the gate, a request that does not say which device it is comes from
+            // something else carrying a copy of the token.
+            if (gate.boundDevice != null) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "단말 정보를 확인할 수 없어요. 게이트 화면을 새로 고쳐 주세요.");
+            }
             return gate;
         }
         if (gate.boundDevice == null) {
