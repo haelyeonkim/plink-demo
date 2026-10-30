@@ -148,7 +148,7 @@ export default function TicketAdmin() {
   const [confirmBulkOff, setConfirmBulkOff] = useState<number[] | null>(null);
   const [confirmBooth, setConfirmBooth] = useState<BoothRow | null>(null);
   // Both of these cut a working tablet off at the door, so the gate menu asks first.
-  const [confirmGate, setConfirmGate] = useState<{ gate: GateRow; action: 'rotate' | 'release' } | null>(null);
+  const [confirmGate, setConfirmGate] = useState<{ gate: GateRow; action: 'rotate' | 'release' | 'delete' } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -619,6 +619,12 @@ export default function TicketAdmin() {
   const releaseGate = (gateId: string) => act(async () => {
     await read(await mutate(`/api/admin/gates/${gateId}/release`, { method: 'POST' }));
     setNotice(`${gateId}의 단말 연결을 해제했어요.`);
+    await loadSession(selected!);
+  });
+
+  const deleteGate = (gate: GateRow) => act(async () => {
+    await read(await mutate(`/api/admin/gates/${gate.gateId}`, { method: 'DELETE' }));
+    setNotice(`${gate.role === 'BOOTH' ? '단말을' : '게이트를'} 삭제했어요 · ${gate.label || gate.gateId}`);
     await loadSession(selected!);
   });
 
@@ -1162,6 +1168,7 @@ export default function TicketAdmin() {
                         { label: '단말 연결 해제', onSelect: () => setConfirmGate({ gate, action: 'release' }), disabled: !gate.boundDevice },
                         'separator',
                         { label: '토큰 폐기', onSelect: () => setConfirmGate({ gate, action: 'rotate' }), danger: true },
+                        { label: gate.role === 'BOOTH' ? '단말 삭제' : '게이트 삭제', onSelect: () => setConfirmGate({ gate, action: 'delete' }), danger: true },
                       ]} />
                     </div>
                     <div className={`gate-status${gate.boundDevice ? ' on' : ''}`}>
@@ -1956,21 +1963,26 @@ export default function TicketAdmin() {
         open={confirmGate != null}
         title={confirmGate?.action === 'rotate'
           ? `'${confirmGate.gate.label || confirmGate.gate.gateId}' 토큰을 폐기할까요?`
-          : `'${confirmGate?.gate.label || confirmGate?.gate.gateId}' 단말 연결을 해제할까요?`}
+          : confirmGate?.action === 'delete'
+            ? (confirmGate.gate.role === 'BOOTH' ? '이 단말을 삭제할까요?' : '이 게이트를 삭제할까요?')
+            : `'${confirmGate?.gate.label || confirmGate?.gate.gateId}' 단말 연결을 해제할까요?`}
         message={confirmGate?.action === 'rotate'
           ? '지금 연결된 단말은 이 순간부터 스캔하지 못합니다. 다시 쓰려면 새 설정 링크로 연결해야 해요.'
-          : '연결된 태블릿이 이 게이트에서 풀려 더 이상 스캔하지 못합니다. 같은 태블릿이나 다른 단말을 설정 링크로 다시 연결할 수 있어요.'}
+          : confirmGate?.action === 'delete'
+            ? '목록에서 사라지고, 연결된 태블릿은 바로 스캔하지 못해요. 지금까지의 입·퇴장과 쿠폰 기록은 그대로 남아요. 되돌릴 수 없어요.'
+            : '연결된 태블릿이 이 게이트에서 풀려 더 이상 스캔하지 못합니다. 같은 태블릿이나 다른 단말을 설정 링크로 다시 연결할 수 있어요.'}
         details={confirmGate ? [
-          ['게이트', confirmGate.gate.label || confirmGate.gate.gateId],
-          ['게이트 ID', confirmGate.gate.gateId],
-          ['단말', confirmGate.gate.boundDevice ? `${confirmGate.gate.boundDevice}…` : '연결 안 됨'],
+          [confirmGate.gate.role === 'BOOTH' ? '부스 단말' : '게이트', confirmGate.gate.label || confirmGate.gate.gateId],
+          ['ID', confirmGate.gate.gateId],
+          ['연결된 태블릿', confirmGate.gate.boundDevice ? `${confirmGate.gate.boundDevice}…` : '없음'],
         ] : undefined}
-        confirmLabel={confirmGate?.action === 'rotate' ? '토큰 폐기' : '연결 해제'}
+        confirmLabel={confirmGate?.action === 'rotate' ? '토큰 폐기' : confirmGate?.action === 'delete' ? '삭제' : '연결 해제'}
         busy={busy}
         onConfirm={() => {
           if (!confirmGate) return;
           const { gate, action } = confirmGate;
-          void (action === 'rotate' ? rotateGateToken(gate.gateId) : releaseGate(gate.gateId))
+          void (action === 'rotate' ? rotateGateToken(gate.gateId)
+            : action === 'delete' ? deleteGate(gate) : releaseGate(gate.gateId))
             .then(done => { if (done) setConfirmGate(null); });
         }}
         onCancel={() => setConfirmGate(null)}

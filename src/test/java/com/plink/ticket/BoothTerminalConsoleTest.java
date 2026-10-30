@@ -30,6 +30,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -283,5 +285,47 @@ class BoothTerminalConsoleTest {
             .andExpect(status().isConflict());
         assertTrue(jdbc.queryForList("SELECT title FROM coupon_offer WHERE booth_id = ?", String.class, boothId)
             .isEmpty());
+    }
+
+    /** The organiser, as the console signs in: an account row the session check can find. */
+    private org.springframework.test.web.servlet.request.RequestPostProcessor organiser() {
+        jdbc.update("MERGE INTO admin_account (id, email, password_hash, slug, can_links, can_tickets, is_owner) "
+            + "KEY (id) VALUES (995, 'admin995@example.com', 'unused', 'admin-995', TRUE, TRUE, FALSE)");
+        com.plink.account.AdminAccount account = new com.plink.account.AdminAccount();
+        account.id = 995;
+        account.email = "admin995@example.com";
+        account.passwordHash = "unused";
+        account.canLinks = true;
+        account.canTickets = true;
+        com.plink.account.AdminPrincipal principal = new com.plink.account.AdminPrincipal(account);
+        return authentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, null,
+            principal.authorities().stream().map(org.springframework.security.core.authority.SimpleGrantedAuthority::new).toList()));
+    }
+
+    @Test void aDeletedTerminalIsGoneAndItsTabletIsRefusedButItsHistoryStays() throws Exception {
+        Terminal t = terminal("BOOTH", boothId);
+        long offer = createdOffer(t, "스티커");
+        jdbc.update("INSERT INTO gate_offer (gate_id, offer_id, auto_on_entry) VALUES (?, ?, FALSE)", t.id(), offer);
+        Ticket ticket = boundTicket();
+        coupons.issue(sessionId, offer, java.util.List.of(ticket.id));
+        jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = CURRENT_TIMESTAMP, redeemed_gate = ? WHERE ticket_id = ?",
+            t.id(), ticket.id);
+
+        mvc.perform(delete("/api/admin/gates/" + t.id()).with(organiser()).with(csrf()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.deleted").value(true));
+
+        assertTrue(gates.findById(t.id()).isEmpty());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM gate_offer WHERE gate_id = ?", Integer.class, t.id()));
+        // What it handed over is still on record.
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM coupon WHERE redeemed_gate = ?", Integer.class, t.id()));
+        mvc.perform(as(t, get(base(t) + "/dashboard"))).andExpect(status().isUnauthorized());
+        mvc.perform(delete("/api/admin/gates/" + t.id()).with(organiser()).with(csrf())).andExpect(status().isNotFound());
+    }
+
+    @Test void onlyAnOrganiserDeletesATerminal() throws Exception {
+        Terminal t = terminal("BOOTH", boothId);
+        mvc.perform(delete("/api/admin/gates/" + t.id()).with(csrf())).andExpect(status().isUnauthorized());
+        mvc.perform(as(t, delete("/api/admin/gates/" + t.id())).with(csrf())).andExpect(status().isUnauthorized());
+        assertTrue(gates.findById(t.id()).isPresent());
     }
 }

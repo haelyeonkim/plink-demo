@@ -932,6 +932,19 @@ public class TicketAdminController {
         return Map.of("released", true);
     }
 
+    /**
+     * Deletes a gate or booth terminal for good. A tablet still holding its token is
+     * refused from its next request, which brings it back to the setup screen.
+     */
+    @DeleteMapping("/gates/{gateId}")
+    public Map<String, Object> deleteGate(@PathVariable String gateId) {
+        Gate gate = gates.findById(gateId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
+        gates.delete(gateId);
+        log.info("audit: gate {} ({}) of event {} deleted", gate.id, gate.booth() ? "booth terminal" : "admission", gate.sessionId);
+        return Map.of("deleted", true, "gateId", gateId);
+    }
+
     @GetMapping("/sessions/{id}/gates")
     public List<Map<String, Object>> listGates(@PathVariable long id) {
         List<Map<String, Object>> result = new ArrayList<>();

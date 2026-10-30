@@ -77,6 +77,14 @@ public class GateRepository {
             + "last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", deviceId, id);
     }
 
+    /**
+     * Removes the gate. Its coupon grants go with it; what it recorded - admissions,
+     * refusals, coupons it handed over - keeps the gate's id, so the history stays whole.
+     */
+    public int delete(String id) {
+        return jdbc.update("DELETE FROM gate WHERE id = ?", id);
+    }
+
     /** Frees the gate so another terminal can take it, from the console. */
     public void releaseDevice(String id) {
         jdbc.update("UPDATE gate SET bound_device = NULL, bound_at = NULL WHERE id = ?", id);
