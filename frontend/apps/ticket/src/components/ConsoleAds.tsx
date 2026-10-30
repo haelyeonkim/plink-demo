@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
 import { shrinkPhoto } from '../ticket/photo';
+import { openLive } from '../ticket/live';
+import { useCoalesced } from '../ticket/coalesce';
 import { localInput, read, shortTime, type BoothRow } from '../console/model';
 
 interface AdRow {
@@ -18,8 +20,10 @@ const STATE: Record<AdRow['state'], [string, string]> = {
 };
 
 /** The organiser's view of the event's board: every booth's notices, and their own. */
-export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError }: {
-  sessionId: number; booths: BoothRow[]; tick: number;
+export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
+  /** Ignored: the board listens for ADS itself, rather than reloading on every chat line. */
+  tick?: number;
+  sessionId: number; booths: BoothRow[];
   onNotice: (text: string) => void; onError: (text: string) => void;
 }) {
   const [ads, setAds] = useState<AdRow[] | null>(null);
@@ -51,11 +55,23 @@ export default function ConsoleAds({ sessionId, booths, tick, onNotice, onError 
     finally { setUploading(false); }
   }
 
+  // Only the latest read may fill the list: a slow answer to an older one is dropped.
+  const latest = useRef(0);
   const load = useCallback(async () => {
-    try { setAds(await read(await fetch(base))); }
-    catch (err) { onError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.'); }
+    const seq = ++latest.current;
+    try {
+      const next = await read(await fetch(base)) as AdRow[];
+      if (seq === latest.current) setAds(next);
+    } catch (err) {
+      if (seq === latest.current) onError(err instanceof Error ? err.message : '알림판을 불러오지 못했어요.');
+    }
   }, [base, onError]);
-  useEffect(() => { void load(); }, [load, tick]);
+  useEffect(() => { void load(); }, [load]);
+  const nudge = useCoalesced(useCallback(() => { void load(); }, [load]), 600);
+  useEffect(() => {
+    const live = openLive(`/ws/admin/sessions/${sessionId}`, message => { if (message.type === 'ADS') nudge(); });
+    return () => live.close();
+  }, [sessionId, nudge]);
 
   const act = async (work: () => Promise<unknown>, done: string) => {
     try { await work(); onNotice(done); await load(); return true; }
