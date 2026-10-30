@@ -12,6 +12,8 @@ import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -120,21 +122,25 @@ public class ContentImportService {
             .header("User-Agent", "P-Link Content Importer/1.0")
             .header("Accept", "text/html,application/xhtml+xml")
             .GET().build();
+        // The body arrives as a stream and is read only up to the cap: a page that never
+        // ends must not be held in memory before its size is known.
+        HttpResponse<InputStream> response = null;
         try {
-            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() >= 300 && response.statusCode() < 400) {
                 String location = response.headers().firstValue("location")
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, "이동할 주소가 없어요."));
+                // Every hop is checked again: a public page may redirect to an internal one.
                 return fetch(publicUri(uri.resolve(location).toString()), redirects + 1);
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "웹페이지가 " + response.statusCode() + " 응답을 보냈어요.");
             }
-            if (response.body().length > MAX_DOWNLOAD) {
-                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "웹페이지가 너무 큽니다.");
+            if (response.headers().firstValueAsLong("content-length").orElse(0) > MAX_DOWNLOAD) {
+                throw tooLarge();
             }
-            return response.body();
+            return readCapped(response.body(), MAX_DOWNLOAD);
         } catch (ResponseStatusException known) {
             throw known;
         } catch (InterruptedException interrupted) {
@@ -142,7 +148,23 @@ public class ContentImportService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "웹페이지 가져오기가 중단됐어요.");
         } catch (IOException failed) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "웹페이지에 연결하지 못했어요.");
+        } finally {
+            // Closing abandons whatever the server is still sending.
+            if (response != null) {
+                try { response.body().close(); } catch (IOException ignored) { /* Already gone. */ }
+            }
         }
+    }
+
+    private static ResponseStatusException tooLarge() {
+        return new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "웹페이지가 너무 큽니다.");
+    }
+
+    /** Reads at most {@code cap} bytes, and refuses the body rather than truncate it. */
+    static byte[] readCapped(InputStream body, int cap) throws IOException {
+        byte[] bytes = body.readNBytes(cap + 1);
+        if (bytes.length > cap) throw tooLarge();
+        return bytes;
     }
 
     private URI publicUri(String value) {
@@ -158,17 +180,19 @@ public class ContentImportService {
         }
     }
 
-    /** Prevent the importer from becoming a way to read services inside the server. */
+    /**
+     * Prevent the importer from becoming a way to read services inside the server.
+     *
+     * <p>The connection resolves the name again, so a name that answers with a public
+     * address here and a private one there (DNS rebinding) is the remaining gap. The
+     * JVM's own lookup cache narrows it - it keeps an answer for 30 seconds regardless of
+     * the record's TTL, and the request follows this check within milliseconds - but a
+     * strict pin would need a client that takes a resolver, which the JDK's does not.
+     */
     private void assertPublicHost(URI uri) {
         try {
             for (InetAddress address : InetAddress.getAllByName(uri.getHost())) {
-                if (address.isAnyLocalAddress() || address.isLoopbackAddress()
-                        || address.isLinkLocalAddress() || address.isSiteLocalAddress()
-                        || address.isMulticastAddress()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "공개 웹페이지만 가져올 수 있어요.");
-                }
-                byte[] raw = address.getAddress();
-                if (raw.length == 16 && (raw[0] & 0xfe) == 0xfc) {
+                if (!isPublic(address)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "공개 웹페이지만 가져올 수 있어요.");
                 }
             }
@@ -177,6 +201,50 @@ public class ContentImportService {
         } catch (IOException unresolved) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "웹 주소를 찾을 수 없어요.");
         }
+    }
+
+    /** Whether an address is somewhere on the internet rather than near this server. */
+    static boolean isPublic(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return false;
+        }
+        byte[] raw = address.getAddress();
+        if (address instanceof Inet4Address) return isPublicV4(raw);
+        // fc00::/7, unique local.
+        if ((raw[0] & 0xfe) == 0xfc) return false;
+        // Forms that carry an IPv4 address inside: NAT64 (64:ff9b::/96), 6to4 (2002::/16)
+        // and the deprecated IPv4-compatible ::a.b.c.d. Each is judged by what it carries.
+        if (raw[0] == 0x00 && raw[1] == 0x64 && (raw[2] & 0xff) == 0xff && (raw[3] & 0xff) == 0x9b
+                && allZero(raw, 4, 12)) {
+            return isPublicFull(java.util.Arrays.copyOfRange(raw, 12, 16));
+        }
+        if (raw[0] == 0x20 && raw[1] == 0x02) return isPublicFull(java.util.Arrays.copyOfRange(raw, 2, 6));
+        if (allZero(raw, 0, 12)) return false;
+        return true;
+    }
+
+    private static boolean isPublicFull(byte[] v4) {
+        try {
+            return isPublic(InetAddress.getByAddress(v4));
+        } catch (java.net.UnknownHostException impossible) {
+            return false;
+        }
+    }
+
+    private static boolean isPublicV4(byte[] raw) {
+        int a = raw[0] & 0xff, b = raw[1] & 0xff, c = raw[2] & 0xff;
+        if (a == 0) return false;                               // 0.0.0.0/8, "this network"
+        if (a == 100 && (b & 0xc0) == 64) return false;         // 100.64.0.0/10, carrier-grade NAT
+        if (a == 192 && b == 0 && c == 0) return false;         // 192.0.0.0/24, protocol assignments
+        if (a == 198 && (b & 0xfe) == 18) return false;         // 198.18.0.0/15, benchmarking
+        if (a >= 240) return false;                             // 240.0.0.0/4 and broadcast
+        return true;
+    }
+
+    private static boolean allZero(byte[] raw, int from, int to) {
+        for (int i = from; i < to; i++) if (raw[i] != 0) return false;
+        return true;
     }
 
     private void readJsonLd(Document page, List<Map<String, String>> works) {
