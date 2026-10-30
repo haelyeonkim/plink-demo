@@ -82,6 +82,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/links/s/**").permitAll()
                 // Holder routes are guarded by the personal token plus the bound passkey.
                 .requestMatchers("/api/tickets/**").permitAll()
+                // Booth managers likewise: the invite token plus the mailbox, then the bound
+                // passkey. Session cookies carry the sign-in, so CSRF stays on for these.
+                .requestMatchers("/api/booth/**").permitAll()
                 // Gate terminals enrol with a setup link and code, then authenticate with their
                 // own token; both are checked in the controller.
                 .requestMatchers("/api/gates/**").permitAll()

@@ -57,6 +57,7 @@ public class TicketAdminController {
     private final com.plink.ticket.service.CouponService coupons;
     private final com.plink.ticket.community.AdImageService adImages;
     private final com.plink.ticket.service.SessionPolicyService policies;
+    private final com.plink.ticket.service.BoothManagerService boothManagers;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -67,7 +68,9 @@ public class TicketAdminController {
             com.plink.ticket.repository.CouponRepository couponRepository,
             com.plink.ticket.service.CouponService coupons,
             com.plink.ticket.community.AdImageService adImages,
-            com.plink.ticket.service.SessionPolicyService policies) {
+            com.plink.ticket.service.SessionPolicyService policies,
+            com.plink.ticket.service.BoothManagerService boothManagers) {
+        this.boothManagers = boothManagers;
         this.adImages = adImages;
         this.policies = policies;
         this.booths = booths;
@@ -655,6 +658,7 @@ public class TicketAdminController {
     public List<Map<String, Object>> listBooths(@PathVariable long id) {
         ticketService.requireSession(id);
         Map<Long, List<Map<String, Object>>> offers = coupons.offersByBooth(id);
+        Map<Long, Integer> managerCounts = boothManagers.openCounts(id);
         List<Map<String, Object>> result = new ArrayList<>();
         for (com.plink.ticket.model.Booth booth : booths.findBySession(id)) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -663,6 +667,8 @@ public class TicketAdminController {
             row.put("note", booth.note);
             // What this booth may give, and how each has gone.
             row.put("offers", offers.getOrDefault(booth.id, List.of()));
+            // Who else can run it from a phone: invited or signed in, not revoked.
+            row.put("managers", managerCounts.getOrDefault(booth.id, 0));
             result.add(row);
         }
         return result;
