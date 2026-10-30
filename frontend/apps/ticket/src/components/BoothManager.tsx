@@ -1,17 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Toast from '@shared/components/Toast';
 import { ApiError } from '../ticket/api';
 import { passkeyError, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import {
-  boothPasskey, fetchDashboard, fetchInvite, requestBoothOtp, verifyBoothOtp,
-  type BoothDashboard, type BoothInvite,
+  boothPasskey, fetchInvite, managerClient, requestBoothOtp, verifyBoothOtp, type BoothInvite,
 } from '../booth/api';
-import BoothOverview from './booth/BoothOverview';
-import BoothOffers from './booth/BoothOffers';
-import BoothIssue from './booth/BoothIssue';
-import BoothScan from './booth/BoothScan';
-import BoothCoupons from './booth/BoothCoupons';
+import BoothConsole, { MANAGER_TABS, type BoothTab } from './booth/BoothConsole';
 
 type Phase =
   | { kind: 'loading' }
@@ -20,11 +15,6 @@ type Phase =
   | { kind: 'claim' }
   | { kind: 'signin' }
   | { kind: 'console' };
-
-type Tab = 'overview' | 'offers' | 'issue' | 'scan' | 'coupons';
-const TABS: Array<[Tab, string]> = [
-  ['overview', '현황'], ['offers', '쿠폰 종류'], ['issue', '발급'], ['scan', '스캔'], ['coupons', '쿠폰 목록'],
-];
 
 const STAGE_TEXT: Record<CeremonyStage, string> = {
   preparing: '요청을 만드는 중…',
@@ -45,6 +35,9 @@ export default function BoothManager() {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  // Kept here rather than in the console, so signing in again lands where the manager was.
+  const [tab, setTab] = useState<BoothTab>('overview');
+  const client = useMemo(() => managerClient(token), [token]);
 
   const load = useCallback(async () => {
     try {
@@ -99,7 +92,8 @@ export default function BoothManager() {
   }
   if (phase.kind === 'console') {
     return <>
-      <BoothConsole token={token} onLost={lost} onNotice={setNotice} onError={setError} />
+      <BoothConsole client={client} tabs={MANAGER_TABS} tab={tab} onTab={setTab}
+        onLost={lost} onNotice={setNotice} onError={setError} />
       {toast}
     </>;
   }
@@ -199,59 +193,6 @@ function BoothSignIn({ token, invite, claim, onSignedIn, onError, onNotice, onLo
             {stage ? STAGE_TEXT[stage] : '패스키로 로그인'}
           </button>
         </>)}
-      </div>
-    </section>
-  );
-}
-
-/** The signed-in console: one booth, five screens. */
-function BoothConsole({ token, onLost, onNotice, onError }: {
-  token: string; onLost: (err: ApiError) => void;
-  onNotice: (text: string) => void; onError: (text: string) => void;
-}) {
-  const [tab, setTab] = useState<Tab>('overview');
-  const [dashboard, setDashboard] = useState<BoothDashboard | null>(null);
-
-  const fail = useCallback((err: unknown) => {
-    if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.status === 410)) {
-      onLost(err);
-      return;
-    }
-    onError(err instanceof Error && err.message ? err.message : '요청을 처리하지 못했어요. 다시 시도해 주세요.');
-  }, [onLost, onError]);
-
-  const refresh = useCallback(async () => {
-    try { setDashboard(await fetchDashboard(token)); }
-    catch (err) { fail(err); }
-  }, [token, fail]);
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  const notify = useCallback((text: string) => { onError(''); onNotice(text); }, [onError, onNotice]);
-
-  if (!dashboard) {
-    return <section className="page-section page-tight"><p className="hint-text center">불러오는 중…</p></section>;
-  }
-  const props = { token, dashboard, refresh, fail, notify };
-  return (
-    <section className="page-section booth-manager bm-console">
-      <header className="bm-head">
-        <p className="eyebrow"><span></span> {dashboard.event.name}</p>
-        <h2>{dashboard.booth.name}</h2>
-        {dashboard.booth.note && <p className="muted bm-sub">{dashboard.booth.note}</p>}
-      </header>
-      <nav className="bm-tabs" role="tablist" aria-label="부스 관리">
-        {TABS.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key}
-            className={tab === key ? 'on' : ''} onClick={() => setTab(key)}>{label}</button>
-        ))}
-      </nav>
-      {/* Only the open tab is mounted: leaving 스캔 is what turns the camera off. */}
-      <div className="bm-panel" role="tabpanel">
-        {tab === 'overview' && <BoothOverview {...props} onGo={setTab} />}
-        {tab === 'offers' && <BoothOffers {...props} />}
-        {tab === 'issue' && <BoothIssue {...props} />}
-        {tab === 'scan' && <BoothScan {...props} />}
-        {tab === 'coupons' && <BoothCoupons {...props} />}
       </div>
     </section>
   );

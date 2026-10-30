@@ -1,8 +1,9 @@
-import type { BoothDashboard, CouponStatus } from '../../booth/api';
+import type { BoothClient, BoothDashboard, CouponStatus } from '../../booth/api';
 
-/** What every tab of a booth manager's console is handed. */
+/** What every tab of a booth console is handed, on a manager's phone or the booth's terminal. */
 export interface BoothTabProps {
-  token: string;
+  /** The manager's link or the booth's terminal: the tabs do not need to know which. */
+  client: BoothClient;
   dashboard: BoothDashboard;
   /** Reads the dashboard again, after something changed what it counts. */
   refresh: () => Promise<void>;

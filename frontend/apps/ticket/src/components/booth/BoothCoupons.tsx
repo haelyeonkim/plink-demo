@@ -19,7 +19,7 @@ function usedWhere(row: BoothCoupon): string {
  * Every coupon this booth has handed out, to find one and take it back or give it back.
  * Voiding keeps the row: it says the coupon no longer counts, not that it never existed.
  */
-export default function BoothCoupons({ token, refresh, fail, notify }: BoothTabProps) {
+export default function BoothCoupons({ client, refresh, fail, notify }: BoothTabProps) {
   const [filter, setFilter] = useState<Filter>('ALL');
   const [query, setQuery] = useState('');
   const search = useDebounced(query.trim());
@@ -39,12 +39,12 @@ export default function BoothCoupons({ token, refresh, fail, notify }: BoothTabP
   const load = useCallback(async () => {
     const mine = ++latest.current;
     try {
-      const next = await fetchCoupons(token, { status: filter, q: search, page: pageNo });
+      const next = await fetchCoupons(client, { status: filter, q: search, page: pageNo });
       if (mine !== latest.current) return;
       setPage(next);
       if (next.counts) setCounts(next.counts);
     } catch (err) { if (mine === latest.current) fail(err); }
-  }, [token, filter, search, pageNo, fail]);
+  }, [client, filter, search, pageNo, fail]);
   useEffect(() => { void load(); }, [load, revision]);
 
   const rows = page.items.filter(row => picked.has(row.couponId));
@@ -56,7 +56,7 @@ export default function BoothCoupons({ token, refresh, fail, notify }: BoothTabP
     if (ids.length === 0) return;
     setBusy(true);
     try {
-      await setCouponStatus(token, ids, status);
+      await setCouponStatus(client, ids, status);
       notify(status === 'VOID'
         ? `쿠폰 ${ids.length}장을 무효화했어요. 관람객 화면에서 바로 사라져요.`
         : `쿠폰 ${ids.length}장을 되돌렸어요. 다시 쓸 수 있어요.`);

@@ -843,19 +843,20 @@ body:has(.gate-screen) .header-plain { display: none; }
 }
 
 /* ---- The holder's ticket: tabs along the bottom, and the room's chat and board ---- */
-.ticket-tabs {
+/* A booth console's bar is the same bar with five tabs: see .booth-tabs further down. */
+.ticket-tabs, .booth-tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   background: white; border-top: 1px solid var(--line);
   padding: 4px max(8px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));
 }
-.ticket-tabs button {
+.ticket-tabs button, .booth-tabs button {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
   min-height: 52px; border: 0; background: none; font: inherit; font-size: 11px; font-weight: 600;
   color: var(--muted); cursor: pointer;
 }
-.ticket-tabs button.on { color: var(--blue); font-weight: 800; }
-.ticket-tabs button:disabled { color: #9aa1b3; cursor: default; }
+.ticket-tabs button.on, .booth-tabs button.on { color: var(--blue); font-weight: 800; }
+.ticket-tabs button:disabled, .booth-tabs button:disabled { color: #9aa1b3; cursor: default; }
 .ticket-tabs em {
   position: absolute; top: 2px; left: calc(50% + 6px); font-style: normal; font-size: 10px; font-weight: 800;
   color: white; background: var(--blue); border-radius: 999px; padding: 0 5px; line-height: 16px;
@@ -1487,15 +1488,25 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .bm-console { max-width: 560px; padding-left: 16px; padding-right: 16px; }
 .bm-head h2 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.5px; }
 .bm-head .bm-sub { margin: 0; }
-.bm-tabs {
-  position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px; margin: 14px 0; padding: 4px; background: #f2f4f8; border-radius: 12px;
-}
-.bm-tabs button {
-  border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: #3d4663;
-  padding: 9px 2px; border-radius: 9px; cursor: pointer; white-space: nowrap; min-width: 0;
-}
-.bm-tabs button.on { background: white; color: var(--ink); font-weight: 800; box-shadow: 0 1px 3px rgba(18, 33, 69, 0.12); }
+.bm-head { margin-bottom: 14px; }
+/* The console's tabs along the bottom, as on the holder's ticket. The bar is fixed, so the
+   page keeps its height clear and the last button is never under it. */
+.booth-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.booth-tabs button span { white-space: nowrap; }
+.booth-manager.bm-console { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body:has(.booth-tabs) .footer { padding-bottom: 90px; }
+/* An answer to a tap shows above the bar, not over the tabs. */
+body:has(.booth-tabs) .toast-stack { bottom: calc(84px + env(safe-area-inset-bottom)); }
+/* Over the terminal's camera the bar goes dark with the screen, and the picture stops
+   above it. */
+.booth-tabs-dark { background: #0c1222; border-top-color: rgba(255, 255, 255, 0.1); }
+.booth-tabs-dark button { color: rgba(255, 255, 255, 0.55); }
+.booth-tabs-dark button.on { color: #fff; }
+.booth-tabs-dark button:disabled { color: rgba(255, 255, 255, 0.25); }
+.gate-screen.gate-tabbed { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+/* The terminal's console tabs are still a kiosk: no site header or footer around them. */
+body:has(.gate-console) .header-plain, body:has(.gate-console) .footer { display: none; }
+.gate-console.bm-console { padding-top: 20px; }
 .bm-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .bm-stack .console-card .field:last-child { margin-bottom: 0; }
 .bm-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

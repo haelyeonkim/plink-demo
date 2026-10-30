@@ -18,7 +18,7 @@ const HOLD_MS = 2600;
  * <p>The camera runs only while this tab is open. A read is sent once; the same code
  * held in front of the lens is not sent again, and nothing is read while an answer is up.
  */
-export default function BoothScan({ token, dashboard, refresh, fail }: BoothTabProps) {
+export default function BoothScan({ client, dashboard, refresh, fail }: BoothTabProps) {
   const offers = dashboard.offers.filter(offer => offer.active);
   const [action, setAction] = useState<ScanAction>('REDEEM');
   const [offerId, setOfferId] = useState<number | null>(offers[0]?.offerId ?? null);
@@ -60,7 +60,7 @@ export default function BoothScan({ token, dashboard, refresh, fail }: BoothTabP
     if (giving && !offer) return;
     inFlight.current = true;
     try {
-      const result = await scanCode(token, code, action, giving ? offer!.offerId : undefined);
+      const result = await scanCode(client, code, action, giving ? offer!.offerId : undefined);
       const shown = giving ? grantVerdict({ title: offer!.title, ...result }) : couponVerdict(result);
       announce({
         ...shown,
@@ -82,7 +82,7 @@ export default function BoothScan({ token, dashboard, refresh, fail }: BoothTabP
       // Held briefly so the same hand is not read twice while the answer appears.
       window.setTimeout(() => { inFlight.current = false; }, 800);
     }
-  }, [token, action, giving, offer, announce, refresh, fail]);
+  }, [client, action, giving, offer, announce, refresh, fail]);
 
   const { error, running } = useQrReader({ active: on && canRead, facing, video, canvas, onCode });
 

@@ -190,7 +190,8 @@ export function gateDeviceId(): string {
   return id;
 }
 
-function gateHeaders(gateToken: string, json = false): Record<string, string> {
+/** What every terminal request carries instead of a session: no cookie, so no CSRF token either. */
+export function gateHeaders(gateToken: string, json = false): Record<string, string> {
   const headers: Record<string, string> = {
     'X-Gate-Token': gateToken,
     'X-Gate-Device': gateDeviceId(),

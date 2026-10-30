@@ -10,7 +10,7 @@ import type { BoothTabProps } from './shared';
  * or the tickets picked from the guest list. The quantity is how many each ticket should
  * end up holding, so sending it twice does not double anybody's coupons.
  */
-export default function BoothIssue({ token, dashboard, refresh, fail, notify }: BoothTabProps) {
+export default function BoothIssue({ client, dashboard, refresh, fail, notify }: BoothTabProps) {
   const offers = dashboard.offers.filter(offer => offer.active);
   const [offerId, setOfferId] = useState<number | null>(offers[0]?.offerId ?? null);
   const [target, setTarget] = useState<IssueTarget>('ALL');
@@ -38,11 +38,11 @@ export default function BoothIssue({ token, dashboard, refresh, fail, notify }: 
     if (target !== 'PICKED') return;
     const mine = ++latest.current;
     setLoading(true);
-    fetchTickets(token, { q: search, page: pageNo, inside: insideOnly, offerId })
+    fetchTickets(client, { q: search, page: pageNo, inside: insideOnly, offerId })
       .then(next => { if (mine === latest.current) setPage(next); })
       .catch(err => { if (mine === latest.current) fail(err); })
       .finally(() => { if (mine === latest.current) setLoading(false); });
-  }, [token, target, search, pageNo, insideOnly, offerId, fail]);
+  }, [client, target, search, pageNo, insideOnly, offerId, fail]);
 
   const offer = offers.find(row => row.offerId === offerId) ?? null;
   const reach = target === 'ALL' ? dashboard.liveTickets : target === 'INSIDE' ? dashboard.inside : picked.size;
@@ -69,7 +69,7 @@ export default function BoothIssue({ token, dashboard, refresh, fail, notify }: 
     if (!offer) return;
     setBusy(true);
     try {
-      const result = await issueCoupons(token, {
+      const result = await issueCoupons(client, {
         offerId: offer.offerId, target, quantity,
         ...(target === 'PICKED' ? { ticketIds: [...picked.keys()] } : {}),
       });
