@@ -75,9 +75,9 @@ export default function BoothIssue({ token, dashboard, refresh, fail, notify }: 
       });
       const each = quantity > 1 ? ` (1인당 ${quantity}장까지)` : '';
       notify(result.given > 0
-        ? `${result.title} 쿠폰을 입장권 ${result.tickets.toLocaleString()}장에 모두 ${result.given.toLocaleString()}장 발급했어요${each}`
+        ? `'${result.title}' 쿠폰을 입장권 ${result.tickets.toLocaleString()}장에 모두 ${result.given.toLocaleString()}장 발급했어요${each}`
           + (result.already > 0 ? ` · 이미 다 가진 ${result.already.toLocaleString()}명은 그대로예요.` : '.')
-        : `모두 이미 ${result.title} 쿠폰을 ${quantity}장 이상 가지고 있어 새로 발급하지 않았어요.`);
+        : `모두 이미 '${result.title}' 쿠폰을 ${quantity}장 이상 가지고 있어 새로 발급하지 않았어요.`);
       setPicked(new Map());
       setConfirming(false);
       await refresh();
@@ -179,7 +179,8 @@ export default function BoothIssue({ token, dashboard, refresh, fail, notify }: 
 
       <ConfirmDialog
         open={confirming}
-        title={`${offer?.title ?? '쿠폰'}을 발급할까요?`}
+        title={offer ? `'${offer.title}' 쿠폰을 발급할까요?` : '쿠폰을 발급할까요?'}
+        tone="primary"
         message={`입장권 ${reach.toLocaleString()}장이 이 쿠폰을 받아요. 받은 사람의 입장권에 바로 보여요.`}
         details={[
           ['쿠폰', offer?.title ?? ''],
