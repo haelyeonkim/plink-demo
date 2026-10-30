@@ -60,7 +60,9 @@ export default function Login() {
         ) : (
           <>
             {params.has('error') && (
-              <p className="error-text" role="alert">Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.</p>
+              <p className="error-text" role="alert">{params.get('error') === 'google-denied'
+                ? '이 Google 계정은 로그인이 허용되지 않았어요. 관리자에게 허용 목록 추가를 요청하거나 관리자 계정으로 로그인해 주세요.'
+                : 'Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.'}</p>
             )}
             {loginError && <p className="error-text" role="alert">{loginError}</p>}
 

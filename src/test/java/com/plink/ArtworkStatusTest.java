@@ -2,6 +2,7 @@ package com.plink;
 
 import com.plink.repository.*;
 import com.plink.service.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +32,8 @@ class ArtworkStatusTest {
     @Autowired ArtworkStatusEvents events;
     @Autowired ContentImageService images;
     @Autowired JdbcTemplate jdbc;
+
+    @BeforeEach void admins() { AdminArtworkTest.ensureAdmins(jdbc); }
     private final ObjectMapper mapper = new ObjectMapper();
 
     private long source(String owner) throws Exception {

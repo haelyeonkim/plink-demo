@@ -68,13 +68,16 @@ public class AuthController {
 
     @PostMapping("/password")
     public Map<String, Object> changePassword(@RequestBody Map<String, String> body,
-            Authentication authentication) {
+            Authentication authentication, HttpServletRequest request, HttpServletResponse response) {
         Object principal = authentication == null ? null : authentication.getPrincipal();
         if (!(principal instanceof AdminPrincipal admin)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                 "비밀번호는 로컬 관리자 계정만 변경할 수 있어요.");
         }
         accounts.changePassword(admin.id, body.get("currentPassword"), body.get("newPassword"));
+        // A new password ends every session that proved the old one - except this one,
+        // which has just proved both.
+        accounts.refresh(admin.id, request, response);
         return Map.of("changed", true);
     }
 }

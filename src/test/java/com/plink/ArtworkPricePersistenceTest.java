@@ -2,6 +2,7 @@ package com.plink;
 
 import com.plink.repository.ArtworkRepository;
 import com.plink.repository.ContentRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ArtworkPricePersistenceTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+
+    @BeforeEach void admins() { AdminArtworkTest.ensureAdmins(jdbc); }
     @Autowired ArtworkRepository artworks;
     @Autowired ContentRepository contents;
     private final ObjectMapper mapper = new ObjectMapper();

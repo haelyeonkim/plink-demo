@@ -8,6 +8,7 @@ import com.plink.repository.LinkRepository;
 import com.plink.repository.LinkViewRepository;
 import com.plink.ticket.service.EmailSender;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -25,13 +26,15 @@ public class LinkService {
     private final LinkViewRepository linkViewRepository;
     private final LinkRecipientRepository recipients;
     private final EmailSender mail;
+    private final PasswordEncoder encoder;
 
     public LinkService(LinkRepository linkRepository, LinkViewRepository linkViewRepository,
-            LinkRecipientRepository recipients, EmailSender mail) {
+            LinkRecipientRepository recipients, EmailSender mail, PasswordEncoder encoder) {
         this.linkRepository = linkRepository;
         this.linkViewRepository = linkViewRepository;
         this.recipients = recipients;
         this.mail = mail;
+        this.encoder = encoder;
     }
 
     public List<ProtectedLink> getAllLinks(String ownerSub) {
@@ -94,7 +97,20 @@ public class LinkService {
     }
 
     public boolean passwordMatches(ProtectedLink link, String password) {
-        return !link.hasPassword() || (password != null && checkPassword(password, link.getPasswordHash()));
+        if (!link.hasPassword()) return true;
+        if (password == null) return false;
+        String stored = link.getPasswordHash();
+        if (BCRYPT.matcher(stored).matches()) return encoder.matches(password, stored);
+        // Links made before BCrypt kept String.hashCode(), which is trivially reversible
+        // and collides on purpose-built inputs. It is still honoured once, so nobody has
+        // to resend a password, and replaced by a real hash the moment it is proven.
+        if (!java.security.MessageDigest.isEqual(
+                stored.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                String.valueOf(password.hashCode()).getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            return false;
+        }
+        linkRepository.updatePassword(link.getId(), hashPassword(password));
+        return true;
     }
 
     public List<LinkView> getViews(Long linkId) {
@@ -213,11 +229,11 @@ public class LinkService {
         return sb.toString();
     }
 
-    private String hashPassword(String password) {
-        return String.valueOf(password.hashCode());
-    }
+    /** What BCryptPasswordEncoder writes; anything else on a link is the legacy hashCode. */
+    private static final java.util.regex.Pattern BCRYPT =
+        java.util.regex.Pattern.compile("\\$2[aby]?\\$\\d\\d\\$[./0-9A-Za-z]{53}");
 
-    private boolean checkPassword(String raw, String hash) {
-        return hash.equals(String.valueOf(raw.hashCode()));
+    private String hashPassword(String password) {
+        return encoder.encode(password);
     }
 }

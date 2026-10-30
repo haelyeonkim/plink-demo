@@ -67,10 +67,16 @@ public class LinkRecipientRepository {
         return keys.getKey().longValue();
     }
 
-    /** Attaches the person who registered, the way a ticket points at its holder. */
-    public void bind(long id, long holderId) {
-        jdbc.update("UPDATE link_recipient SET holder_id = ?, status = 'BOUND', "
-            + "claimed_at = CURRENT_TIMESTAMP WHERE id = ?", holderId, id);
+    /**
+     * Attaches the person who registered, the way a ticket points at its holder - only
+     * while nobody holds it yet. Two phones finishing at once both read the address as
+     * free; the condition is what lets exactly one of them have it.
+     *
+     * @return 1 when this call bound it, 0 when somebody already had
+     */
+    public int bindIfUnclaimed(long id, long holderId) {
+        return jdbc.update("UPDATE link_recipient SET holder_id = ?, status = 'BOUND', "
+            + "claimed_at = CURRENT_TIMESTAMP WHERE id = ? AND holder_id IS NULL", holderId, id);
     }
 
     public void updateStatus(long id, String status) {

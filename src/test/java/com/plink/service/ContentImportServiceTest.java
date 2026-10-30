@@ -47,6 +47,32 @@ class ContentImportServiceTest {
     }
 
     @Test
+    void blocksCarrierGradeNatAndAddressesThatCarryAPrivateOne() throws Exception {
+        assertThatThrownBy(() -> importer.fromUrl("http://100.64.0.1/"))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        for (String address : List.of("100.64.0.1", "100.127.255.254", "0.1.2.3", "198.18.0.1", "240.0.0.1",
+                "::1", "fd00::1", "64:ff9b::a00:1", "2002:a00:1::", "::a00:1", "169.254.169.254")) {
+            assertThat(ContentImportService.isPublic(java.net.InetAddress.getByName(address)))
+                .as(address).isFalse();
+        }
+        for (String address : List.of("8.8.8.8", "100.128.0.1", "2001:4860:4860::8888", "64:ff9b::808:808")) {
+            assertThat(ContentImportService.isPublic(java.net.InetAddress.getByName(address)))
+                .as(address).isTrue();
+        }
+    }
+
+    @Test
+    void stopsReadingABodyAtTheCap() throws Exception {
+        byte[] page = new byte[1025];
+        assertThatThrownBy(() -> ContentImportService.readCapped(new java.io.ByteArrayInputStream(page), 1024))
+            .isInstanceOfSatisfying(ResponseStatusException.class,
+                error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
+        assertThat(ContentImportService.readCapped(new java.io.ByteArrayInputStream(new byte[1024]), 1024))
+            .hasSize(1024);
+    }
+
+    @Test
     void parsesArtlogicEmbeddedCatalogue() {
         String html = """
             <html><head><title>Private View</title></head><body><script>

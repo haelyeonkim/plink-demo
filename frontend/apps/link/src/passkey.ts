@@ -35,6 +35,36 @@ export class PasskeyCeremonyError extends Error {
   }
 }
 
+/**
+ * The recipient's address has no passkey yet, so the server mailed a code to it before
+ * it will let one be made. Not a failure: the page asks for the code and tries again.
+ */
+export class EmailCodeRequired extends Error {
+  readonly sentTo: string;
+  readonly sent: boolean;
+
+  constructor(sentTo: string, sent: boolean) {
+    super('이메일로 받은 인증번호를 입력해 주세요.');
+    this.name = 'EmailCodeRequired';
+    this.sentTo = sentTo;
+    this.sent = sent;
+  }
+}
+
+function passkeyBase(code: string, slug?: string) {
+  return slug
+    ? `/api/links/s/${encodeURIComponent(slug)}/${encodeURIComponent(code)}/passkey`
+    : `/api/links/s/${encodeURIComponent(code)}/passkey`;
+}
+
+/** Hands back the code that was mailed; the next openWithPasskey can then register. */
+export async function verifyEmailCode(code: string, otp: string, slug?: string): Promise<void> {
+  await readResponse(await mutate(`${passkeyBase(code, slug)}/verify`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: otp.trim() }),
+  }));
+}
+
 export function supportsPasskeys() {
   return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
 }
@@ -49,13 +79,12 @@ export interface Opened {
 
 export async function openWithPasskey(code: string, password: string, slug?: string,
     contact?: string): Promise<Opened> {
-  const base = slug
-    ? `/api/links/s/${encodeURIComponent(slug)}/${encodeURIComponent(code)}/passkey`
-    : `/api/links/s/${encodeURIComponent(code)}/passkey`;
-  const { mode, options } = await readResponse(await mutate(`${base}/options`, {
+  const base = passkeyBase(code, slug);
+  const { mode, options, sentTo, sent } = await readResponse(await mutate(`${base}/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password, contact }),
   }));
+  if (mode === 'verify') throw new EmailCodeRequired(sentTo, sent !== false);
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);
   let credential: PublicKeyCredential | null;

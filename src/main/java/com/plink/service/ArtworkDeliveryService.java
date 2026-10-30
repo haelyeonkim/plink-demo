@@ -6,7 +6,8 @@ import com.plink.repository.ArtworkRepository;
 import com.plink.repository.ContentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,19 +28,35 @@ public class ArtworkDeliveryService {
     private final LinkAddresses addresses;
     private final ContentImageService images;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final TransactionTemplate transaction;
 
     public ArtworkDeliveryService(ArtworkRepository artworks, ContentRepository contents,
-            LinkService links, LinkAddresses addresses, ContentImageService images) {
+            LinkService links, LinkAddresses addresses, ContentImageService images,
+            PlatformTransactionManager transactions) {
         this.artworks = artworks;
         this.contents = contents;
         this.links = links;
         this.addresses = addresses;
         this.images = images;
+        this.transaction = new TransactionTemplate(transactions);
     }
 
-    @Transactional
+    /**
+     * Writes the snapshot, the link and its recipient in one transaction, then mails.
+     * Mailing inside it would hold the transaction open on a slow relay, and a rollback
+     * after the send would leave somebody holding an address that no longer exists.
+     */
     public Delivery create(String ownerSub, List<Long> requestedIds, String email, String label,
             String requestedTitle, String password, Timestamp expiresAt, int maxViews, boolean notify) {
+        Delivery stored = transaction.execute(status -> store(ownerSub, requestedIds, email, label,
+            requestedTitle, password, expiresAt, maxViews));
+        if (stored.recipient() == null || !notify) return stored;
+        boolean delivered = links.notifyRecipient(stored.link(), stored.recipient(), stored.url());
+        return new Delivery(stored.link(), stored.recipient(), stored.url(), delivered);
+    }
+
+    private Delivery store(String ownerSub, List<Long> requestedIds, String email, String label,
+            String requestedTitle, String password, Timestamp expiresAt, int maxViews) {
         List<Long> ids = requestedIds == null ? List.of()
             : new LinkedHashSet<>(requestedIds).stream().toList();
         if (ids.isEmpty()) {
@@ -71,8 +88,6 @@ public class ArtworkDeliveryService {
             return new Delivery(link, null, null, false);
         }
         LinkRecipient recipient = links.issue(link.getId(), email, label);
-        String url = addresses.url(link, recipient);
-        boolean delivered = notify && links.notifyRecipient(link, recipient, url);
-        return new Delivery(link, recipient, url, delivered);
+        return new Delivery(link, recipient, addresses.url(link, recipient), false);
     }
 }
