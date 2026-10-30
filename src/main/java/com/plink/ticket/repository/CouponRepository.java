@@ -106,8 +106,21 @@ public class CouponRepository {
                     rs.getString("title"), rs.getString("detail"), rs.getString("status"),
                     rs.getLong("ticket_id"), rs.getString("ticket_ref"), rs.getString("seat"),
                     rs.getString("issued_to_email"), rs.getTimestamp("issued_at"), rs.getTimestamp("redeemed_at"),
-                    rs.getString("gate_label") != null ? rs.getString("gate_label") : rs.getString("redeemed_gate"));
+                    usedAt(rs.getString("gate_label"), rs.getString("redeemed_gate")));
             }, args.toArray());
+    }
+
+    /** What the console says a coupon was used at, when it was used. */
+    public static final String MANAGER_LABEL = "부스 관리자";
+
+    /**
+     * The terminal's name when a terminal handed it over. A booth manager's phone is not
+     * a terminal and has no name in the gate table, so it reads as the manager it was.
+     */
+    private static String usedAt(String gateLabel, String redeemedGate) {
+        if (gateLabel != null) return gateLabel;
+        if (redeemedGate != null && redeemedGate.startsWith("mgr:")) return MANAGER_LABEL;
+        return redeemedGate;
     }
 
     /** A coupon as the console's table shows it: with its ticket and its booth's name. */
