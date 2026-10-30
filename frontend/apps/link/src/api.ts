@@ -144,6 +144,16 @@ export async function fetchArtworks(): Promise<ArtworkRecord[]> {
   return res.json();
 }
 
+/**
+ * A deadline input's wall-clock value as an instant. The input speaks the operator's own
+ * zone and the server is not in it, so the offset has to travel with the time.
+ */
+export function deadlineInstant(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export async function createArtworkDelivery(request: ArtworkDeliveryRequest): Promise<ArtworkDelivery> {
   const res = await mutate('/api/links/artworks', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),

@@ -1,7 +1,7 @@
 import Icon from '@shared/components/Icon';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createArtworkDelivery, createLink, fetchArtworks, fetchContents } from '../api';
+import { createArtworkDelivery, createLink, deadlineInstant, fetchArtworks, fetchContents } from '../api';
 import { mutate } from '@shared/auth';
 import { validateRecipients } from '../recipientValidation';
 import type { ImportResult } from '@shared/components/BulkImport';
@@ -55,7 +55,7 @@ export default function LinkCreate() {
       if (target === 'content' && !contentId) throw new Error('연결할 컨텐츠를 선택해 주세요.');
       const options = {
         title: String(data.get('title') || '') || undefined,
-        expiresAt: expiresAt ? `${expiresAt.replace('T', ' ')}:00` : undefined,
+        expiresAt: deadlineInstant(expiresAt) ?? undefined,
         maxViews: Number(data.get('maxViews') || 0) || undefined,
       };
       const link = target === 'artworks'

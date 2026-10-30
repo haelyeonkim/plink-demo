@@ -1,5 +1,5 @@
 import Icon from '@shared/components/Icon';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '@shared/auth';
 import BulkImport from '@shared/components/BulkImport';
@@ -8,7 +8,7 @@ import LinkTable, { shortDate } from './LinkTable';
 import LinkNav, { type LinkTab } from './LinkNav';
 import LinkOverview from './LinkOverview';
 import {
-  deleteLink, deleteRecipient, fetchContents, fetchLink, fetchLinks, issueRecipient,
+  deadlineInstant, deleteLink, deleteRecipient, fetchContents, fetchLink, fetchLinks, issueRecipient,
   setRecipientRevoked,
 } from '../api';
 import type { ContentSummary, LinkDetail, LinkRecipient, ProtectedLink } from '../types';
@@ -58,7 +58,7 @@ function localInput(value: string | null): string {
  * ticket.
  */
 export default function LinkAdmin() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const { linkId } = useParams<{ linkId: string }>();
   const navigate = useNavigate();
   const [links, setLinks] = useState<ProtectedLink[]>([]);
@@ -89,9 +89,18 @@ export default function LinkAdmin() {
     finally { setLinksLoaded(true); }
   }, []);
 
+  // Which link the screen is on, and which detail request is the newest. A slow answer
+  // for the link just left, or overtaken by a later reload, must not land on this one.
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const detailRequest = useRef(0);
   const loadDetail = useCallback(async (id: number) => {
-    try { setDetail(await fetchLink(id)); }
-    catch { setError('링크 정보를 불러오지 못했어요.'); }
+    const request = ++detailRequest.current;
+    const current = () => request === detailRequest.current && selectedRef.current === id;
+    try {
+      const data = await fetchLink(id);
+      if (current()) setDetail(data);
+    } catch { if (current()) setError('링크 정보를 불러오지 못했어요.'); }
   }, []);
 
   useEffect(() => { void loadLinks(); }, [loadLinks]);
@@ -104,20 +113,11 @@ export default function LinkAdmin() {
   // The form opens on whichever destination the link already has.
   useEffect(() => { setTarget(detail?.contentId ? 'content' : 'url'); }, [detail?.id, detail?.contentId]);
   useEffect(() => {
-    if (selected === null) { setDetail(null); return; }
+    // Nothing of the previous link stays on screen while the next one loads.
+    setDetail(null); setIssued(null);
+    if (selected === null) return;
     void loadDetail(selected);
   }, [selected, loadDetail]);
-
-  function show(next: Partial<{ tab: Tab; link: number | null }>) {
-    const tabValue = next.tab ?? tab;
-    const linkValue = next.link === undefined ? selected : next.link;
-    setIssued(null);
-    if (next.link !== undefined && next.link !== selected) {
-      navigate(linkValue ? `/links/${linkValue}?tab=${tabValue}` : '/links');
-      return;
-    }
-    setParams({ tab: tabValue });
-  }
 
   async function act(action: () => Promise<void>) {
     setError(''); setNotice(''); setBusy(true);
@@ -175,7 +175,7 @@ export default function LinkAdmin() {
     const clear = data.get('clearPassword') === 'on';
     const body: Record<string, unknown> = {
       title: data.get('title'),
-      expiresAt: deadline ? `${deadline.replace('T', ' ')}:00` : null,
+      expiresAt: deadlineInstant(deadline),
       maxViews: Number(data.get('maxViews') || 0),
     };
     // Absent means "leave it"; empty means "remove it".
@@ -205,10 +205,18 @@ export default function LinkAdmin() {
     navigate('/links');
   });
 
-  function copy(recipient: LinkRecipient) {
-    void navigator.clipboard.writeText(recipient.url);
-    setCopied(recipient.id);
-    window.setTimeout(() => setCopied(null), 1500);
+  async function copy(recipient: LinkRecipient) {
+    // Only claim it was copied once the browser says so: it refuses without a secure
+    // context or permission, and a "copied" that was not leaves the operator pasting
+    // whatever was on the clipboard before.
+    try {
+      await navigator.clipboard.writeText(recipient.url);
+      setCopied(recipient.id);
+      window.setTimeout(() => setCopied(current => current === recipient.id ? null : current), 1500);
+    } catch {
+      setCopied(null);
+      setError('주소를 복사하지 못했어요. 주소를 직접 선택해 복사해 주세요.');
+    }
   }
 
   const expired = detail?.expiresAt ? new Date(detail.expiresAt).getTime() < Date.now() : false;

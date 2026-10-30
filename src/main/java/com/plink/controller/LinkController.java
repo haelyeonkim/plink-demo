@@ -7,6 +7,8 @@ import com.plink.service.LinkAddresses;
 import com.plink.service.LinkService;
 import com.plink.service.ArtworkDeliveryService;
 import com.plink.account.CurrentUser;
+import com.plink.service.ContentSource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -14,6 +16,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @RestController
@@ -23,13 +29,71 @@ public class LinkController {
     private final LinkAddresses addresses;
     private final com.plink.repository.ContentRepository contents;
     private final ArtworkDeliveryService artworkDeliveries;
+    private final ZoneId venueZone;
 
     public LinkController(LinkService linkService, LinkAddresses addresses,
-            com.plink.repository.ContentRepository contents, ArtworkDeliveryService artworkDeliveries) {
+            com.plink.repository.ContentRepository contents, ArtworkDeliveryService artworkDeliveries,
+            @Value("${plink.ticket.venue-zone:Asia/Seoul}") String venueZone) {
         this.linkService = linkService;
         this.addresses = addresses;
         this.contents = contents;
         this.artworkDeliveries = artworkDeliveries;
+        this.venueZone = ZoneId.of(venueZone);
+    }
+
+    private static final int MAX_TITLE = 50;
+    private static final int MAX_RECIPIENT_NAMES = 500;
+    private static final int MAX_URL = 2048;
+
+    /**
+     * A deadline as the console sends it. An instant with its offset is taken as it
+     * is; a bare wall-clock time ("2026-05-01 18:00:00", what older pages send) is read
+     * in the venue's zone, which is the one the operator typed it in - not the server's,
+     * which runs on UTC and would move every deadline nine hours later.
+     */
+    Timestamp deadline(Object raw) {
+        if (raw == null || raw.toString().isBlank()) return null;
+        String value = raw.toString().trim();
+        try {
+            return Timestamp.from(OffsetDateTime.parse(value).toInstant());
+        } catch (DateTimeParseException notAnInstant) {
+            try {
+                return Timestamp.from(LocalDateTime.parse(value.replace(' ', 'T'))
+                    .atZone(venueZone).toInstant());
+            } catch (DateTimeParseException invalid) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "만료 일시를 확인해 주세요.");
+            }
+        }
+    }
+
+    /** A view cap: none, or a whole number. Below zero means no cap, as zero does. */
+    private static int maxViews(Object raw) {
+        if (raw == null || raw.toString().isBlank()) return 0;
+        try {
+            long value = raw instanceof Number number ? number.longValue() : Long.parseLong(raw.toString().trim());
+            return (int) Math.max(0, Math.min(value, Integer.MAX_VALUE));
+        } catch (NumberFormatException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "최대 열람 횟수는 숫자로 입력해 주세요.");
+        }
+    }
+
+    private static String title(Object raw) {
+        String title = raw == null ? null : raw.toString();
+        if (title != null && title.trim().length() > MAX_TITLE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "링크 제목은 50자 이내로 입력해 주세요.");
+        }
+        return title;
+    }
+
+    /** Where a link may send its recipients: a web address and nothing else. */
+    private static String destination(Object raw) {
+        String url = raw == null ? null : raw.toString().trim();
+        if (url == null || url.isEmpty()) return null;
+        if (url.length() > MAX_URL || !ContentSource.isWebAddress(url)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "http 또는 https로 시작하는 웹 주소를 입력해 주세요.");
+        }
+        return url;
     }
     private String owner(Authentication user) {
         return CurrentUser.of(user)
@@ -75,30 +139,21 @@ public class LinkController {
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> createLink(@RequestBody Map<String, Object> req, Authentication user) {
-        String originalUrl = (String) req.get("originalUrl");
         // A link points at one destination: a URL somewhere else, or a document here.
         Long contentId = contentOwned(req.get("contentId"), user);
-        if (contentId != null) originalUrl = null;
-        if (contentId == null && (originalUrl == null || originalUrl.isEmpty())) {
+        String originalUrl = contentId != null ? null : destination(req.get("originalUrl"));
+        if (contentId == null && originalUrl == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
         }
-        String title = (String) req.get("title");
-        if (title != null && title.length() > 50) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "링크 제목은 50자 이내로 입력해 주세요.");
+        String title = title(req.get("title"));
+        String password = text(req.get("password"));
+        String recipientNames = text(req.get("recipientNames"));
+        if (recipientNames != null && recipientNames.length() > MAX_RECIPIENT_NAMES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "수신자 이름은 500자 이내로 입력해 주세요.");
         }
-        String password = (String) req.get("password");
-        String recipientNames = (String) req.get("recipientNames");
-
-        Timestamp expiresAt = null;
-        if (req.get("expiresAt") != null) {
-            expiresAt = Timestamp.valueOf((String) req.get("expiresAt"));
-        }
-
-        int maxViews = 0;
-        if (req.get("maxViews") != null) {
-            maxViews = ((Number) req.get("maxViews")).intValue();
-        }
+        Timestamp expiresAt = deadline(req.get("expiresAt"));
+        int maxViews = maxViews(req.get("maxViews"));
 
         ProtectedLink link = linkService.createLink(originalUrl, contentId, title, password, expiresAt,
             recipientNames, maxViews, owner(user));
@@ -119,14 +174,8 @@ public class LinkController {
         } catch (RuntimeException invalid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "선택한 작품을 다시 확인해 주세요.");
         }
-        Timestamp expiresAt = null;
-        if (req.get("expiresAt") != null && !req.get("expiresAt").toString().isBlank()) {
-            try { expiresAt = Timestamp.valueOf(req.get("expiresAt").toString()); }
-            catch (IllegalArgumentException invalid) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "만료 일시를 확인해 주세요.");
-            }
-        }
-        int maxViews = req.get("maxViews") instanceof Number number ? number.intValue() : 0;
+        Timestamp expiresAt = deadline(req.get("expiresAt"));
+        int maxViews = maxViews(req.get("maxViews"));
         ArtworkDeliveryService.Delivery delivery = artworkDeliveries.create(owner(user), ids,
             text(req.get("email")), text(req.get("label")), text(req.get("title")),
             text(req.get("password")), expiresAt, maxViews, Boolean.TRUE.equals(req.get("notify")));
@@ -141,32 +190,30 @@ public class LinkController {
 
     private static String text(Object value) { return value == null ? null : value.toString(); }
 
-    /** Edits the document's own settings: title, deadline, view cap, password. */
+    /**
+     * Edits the document's own settings: title, deadline, view cap, password.
+     *
+     * <p>Only the fields the request names change. A field left out is left alone; a
+     * field sent as null or empty is cleared. Treating "not mentioned" as "clear" would
+     * let a client that only meant to rename a link quietly lift its deadline.
+     */
     @PutMapping("/{id}")
     public Map<String, Object> updateLink(@PathVariable Long id, @RequestBody Map<String, Object> req,
             Authentication user) {
-        owned(id, user);
-        Timestamp expiresAt = null;
-        Object deadline = req.get("expiresAt");
-        if (deadline != null && !deadline.toString().isBlank()) {
-            try { expiresAt = Timestamp.valueOf(deadline.toString()); }
-            catch (IllegalArgumentException badFormat) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "만료 일시를 확인해 주세요.");
-            }
-        }
-        int maxViews = req.get("maxViews") instanceof Number views ? views.intValue() : 0;
+        ProtectedLink current = owned(id, user);
+        String title = req.containsKey("title") ? title(req.get("title")) : current.getTitle();
+        Timestamp expiresAt = req.containsKey("expiresAt") ? deadline(req.get("expiresAt")) : current.getExpiresAt();
+        int maxViews = req.containsKey("maxViews") ? maxViews(req.get("maxViews")) : current.getMaxViews();
         // Absent means "leave the password as it is"; present and empty means "remove it".
         String password = req.containsKey("password")
             ? (req.get("password") == null ? "" : req.get("password").toString()) : null;
-        ProtectedLink updated = linkService.updateSettings(id,
-            req.get("title") == null ? null : req.get("title").toString(), expiresAt, maxViews, password);
+        ProtectedLink updated = linkService.updateSettings(id, title, expiresAt, maxViews, password);
         // The destination can move: a URL becomes a document written here, or the other
         // way round. Recipients keep their own addresses either way.
         if (req.containsKey("originalUrl") || req.containsKey("contentId")) {
             Long contentId = contentOwned(req.get("contentId"), user);
-            String url = req.get("originalUrl") == null ? null : req.get("originalUrl").toString().trim();
-            if (contentId != null) url = null;
-            if (contentId == null && (url == null || url.isEmpty())) {
+            String url = contentId != null ? null : destination(req.get("originalUrl"));
+            if (contentId == null && url == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
             }
