@@ -287,12 +287,12 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
                 {(message.likes > 0 || message.dislikes > 0) && (
                   <span className="cr-reacts">
                     {message.likes > 0 && (
-                      <button type="button" className={message.liked ? 'on' : ''} disabled={message.mine}
+                      <button type="button" className={message.liked ? 'on' : ''} disabled={message.mine || me.banned}
                         aria-label={`좋아요 ${message.likes}${message.liked ? ', 누름' : ''}`} onClick={() => void like(message)}>
                         <ThumbUp filled={message.liked} size={12} /> {message.likes}</button>
                     )}
                     {message.dislikes > 0 && (
-                      <button type="button" className={message.disliked ? 'on down' : 'down'} disabled={message.mine}
+                      <button type="button" className={message.disliked ? 'on down' : 'down'} disabled={message.mine || me.banned}
                         aria-label={`싫어요 ${message.dislikes}${message.disliked ? ', 누름' : ''}`} onClick={() => void dislike(message)}>
                         <ThumbDown filled={message.disliked} size={12} /> {message.dislikes}</button>
                     )}
@@ -335,6 +335,11 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
               </button>
             )}
           </div>
+        ) : me.banned ? (
+          <p className="cr-blocked banned" role="status">
+            <b>{me.blocked ?? '운영자가 이 입장권의 채팅을 차단했어요.'}</b>
+            <small>채팅은 읽을 수 있지만 쓰거나 누를 수 없고, 내 메시지는 다른 관람객에게 보이지 않아요.</small>
+          </p>
         ) : (
           <p className="cr-blocked">{me.blocked}</p>
         )}
@@ -345,7 +350,7 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
           <section className="cr-sheet" role="dialog" aria-modal="true" aria-label="메시지 메뉴" onClick={e => e.stopPropagation()}>
             <span className="sheet-grip" aria-hidden="true" />
             <p className="cr-sheet-quote"><b>{current.mine ? '내 메시지' : current.author}</b> {current.body}</p>
-            {!current.mine && (
+            {!current.mine && !me.banned && (
               <div className="cr-sheet-reacts">
                 <button type="button" className={current.liked ? 'on' : ''} aria-pressed={current.liked}
                   onClick={() => void like(current)}><ThumbUp filled={current.liked} size={20} /> 좋아요{current.likes > 0 ? ` ${current.likes}` : ''}</button>
@@ -356,7 +361,7 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
             <div className="cr-sheet-actions">
               {me.canWrite && <button type="button" onClick={() => { setReplyTo(current); setMenuFor(null); }}>답장하기</button>}
               <button type="button" onClick={() => { void navigator.clipboard?.writeText(current.body); setMenuFor(null); }}>복사</button>
-              {!current.mine && !current.staff && (
+              {!current.mine && !current.staff && !me.banned && (
                 <button type="button" className="danger" onClick={() => void report(current)}>신고하기</button>
               )}
             </div>

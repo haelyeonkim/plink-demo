@@ -33,8 +33,9 @@ import java.util.Set;
  * booth and organiser notices.
  *
  * <p>Both open only to a holder who has proved the ticket is theirs on this browser and
- * has been through a gate. Writing to the chat further needs them inside now, not muted,
- * and not to have written in the last cooldown. Holders appear under a name made from
+ * has been through a gate. Writing to the chat further needs them inside now, not muted
+ * or banned, and not to have written in the last cooldown. A banned ticket's lines are
+ * also kept from every other holder until the ban is lifted. Holders appear under a name made from
  * their ticket ("초록 여우"), never their seat or address; the console sees the ticket.
  */
 @Service
@@ -70,7 +71,7 @@ public class CommunityService {
     // ---- Who may read and write ----
 
     /** A holder let into the room's channels, and whether they may write to the chat now. */
-    public record Member(Ticket ticket, boolean canWrite, String writeBlocked) {}
+    public record Member(Ticket ticket, boolean canWrite, String writeBlocked, boolean banned) {}
 
     /** The holder themselves, on a browser that has proved it: who an organiser's alert reaches. */
     private boolean viewer(TicketService.Resolved resolved, HttpSession session) {
@@ -97,11 +98,15 @@ public class CommunityService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "입장한 뒤에 볼 수 있어요.");
         }
         CommunityRepository.Settings settings = repo.settings(ticket.sessionId);
-        String blocked = !settings.enabled() ? "지금은 채팅이 닫혀 있어요."
+        // A ban is told first: it outlasts a closed chat or a step outside, and the holder
+        // should know that coming back in will not change it.
+        boolean banned = repo.banned(ticket.sessionId, ticket.id);
+        String blocked = banned ? "운영자가 이 입장권의 채팅을 차단했어요."
+            : !settings.enabled() ? "지금은 채팅이 닫혀 있어요."
             : !presence.inside() ? "퇴장한 뒤에는 읽기만 할 수 있어요."
             : repo.muted(ticket.sessionId, ticket.id) ? "운영팀이 이 입장권의 채팅 쓰기를 막았어요."
             : null;
-        return new Member(ticket, blocked == null, blocked);
+        return new Member(ticket, blocked == null, blocked, banned);
     }
 
     /**
@@ -148,6 +153,7 @@ public class CommunityService {
         me.put("nickname", nickname(sessionId, member.ticket().id));
         me.put("canWrite", member.canWrite());
         me.put("blocked", member.writeBlocked());
+        me.put("banned", member.banned());
         me.put("nextAt", nextAt(member.ticket().id, settings).map(Instant::toString).orElse(null));
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -188,7 +194,8 @@ public class CommunityService {
             reply.put("id", m.replyTo());
             reply.put("author", m.replyStaff() ? "운영팀"
                 : m.replyTicketId() == null ? "알 수 없음" : nickname(m.sessionId(), m.replyTicketId()));
-            reply.put("body", m.replyHidden() ? "가려진 메시지예요." : m.replyBody());
+            // A banned writer's line is gone from the room, so a quote of it is too.
+            reply.put("body", m.replyHidden() || m.replyBanned() ? "가려진 메시지예요." : m.replyBody());
             row.put("reply", reply);
         }
         return row;
@@ -220,7 +227,7 @@ public class CommunityService {
         }
         if (replyTo != null) {
             CommunityRepository.Message target = repo.findMessage(replyTo)
-                .filter(m -> m.sessionId() == sessionId && !m.hidden())
+                .filter(m -> m.sessionId() == sessionId && !m.hidden() && !m.banned())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "답장할 메시지를 찾을 수 없어요."));
             replyTo = target.id();
         }
@@ -312,7 +319,7 @@ public class CommunityService {
 
     private CommunityRepository.Message visibleMessage(Member member, long messageId) {
         return repo.findMessage(messageId)
-            .filter(m -> m.sessionId() == member.ticket().sessionId && !m.hidden())
+            .filter(m -> m.sessionId() == member.ticket().sessionId && !m.hidden() && !m.banned())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "메시지를 찾을 수 없어요."));
     }
 
@@ -419,6 +426,7 @@ public class CommunityService {
         tickets.requireSession(sessionId);
         Timestamp now = Timestamp.from(Instant.now());
         Set<Long> muted = repo.mutedTickets(sessionId);
+        Set<Long> banned = repo.bannedTickets(sessionId);
         String which = filter == null ? "ALL" : filter.toUpperCase(java.util.Locale.ROOT);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (CommunityRepository.Message m : repo.feed(sessionId, which, 200, now)) {
@@ -437,6 +445,7 @@ public class CommunityService {
             row.put("pinned", m.pinnedUntil() != null && m.pinnedUntil().after(now));
             row.put("pinnedUntil", m.pinnedUntil() == null ? null : m.pinnedUntil().toInstant().toString());
             row.put("muted", m.ticketId() != null && muted.contains(m.ticketId()));
+            row.put("banned", m.ticketId() != null && banned.contains(m.ticketId()));
             row.put("alert", m.alertUntil() != null && m.alertUntil().after(now));
             row.put("createdAt", m.createdAt().toInstant().toString());
             rows.add(row);
@@ -504,6 +513,65 @@ public class CommunityService {
         Ticket ticket = ticketRows.findById(ticketId).filter(t -> t.sessionId == sessionId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         repo.setMuted(sessionId, ticket.id, muted);
+    }
+
+    /**
+     * Puts a ticket out of the chat, or lets it back. A ban stops everything a mute does
+     * and also keeps every line the ticket wrote from the other holders; it changes no
+     * line, so lifting it brings them back as they were.
+     */
+    @Transactional
+    public Map<String, Object> setBanned(long sessionId, long ticketId, boolean banned) {
+        tickets.requireSession(sessionId);
+        Ticket ticket = ticketRows.findById(ticketId).filter(t -> t.sessionId == sessionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (repo.setBanned(sessionId, ticket.id, banned)) {
+            // Lines leave or come back anywhere in the room, so phones read it again
+            // rather than patch one line. The banned phone learns it the same way.
+            live.publish(sessionId, banned ? "CHAT_HIDE" : "CHAT",
+                banned ? Map.of("ticketId", ticket.id) : Map.of("lastId", repo.latestId(sessionId)));
+        }
+        return Map.of("ticketId", ticket.id, "banned", banned);
+    }
+
+    /**
+     * The people of the event's chat for the console, a page at a time, found by ticket
+     * number, the name holders see or email. The emails help find someone; they are not
+     * sent back.
+     */
+    public Map<String, Object> chatPeople(long sessionId, String rawQuery, int page, int size) {
+        tickets.requireSession(sessionId);
+        int perPage = Math.max(1, Math.min(size, 100));
+        int at = Math.max(0, page);
+        String q = rawQuery == null ? "" : rawQuery.strip().toLowerCase(java.util.Locale.ROOT);
+        List<Map<String, Object>> found = new ArrayList<>();
+        for (CommunityRepository.Person p : repo.people(sessionId)) {
+            String alias = nickname(sessionId, p.ticketId());
+            if (!q.isEmpty() && !contains(p.ticketRef(), q) && !contains(alias, q) && !contains(p.issuedTo(), q)
+                    && !contains(p.holder(), q)) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("ticketId", p.ticketId());
+            row.put("ticketRef", p.ticketRef());
+            row.put("author", alias);
+            row.put("messages", p.messages());
+            row.put("lastAt", p.lastAt() == null ? null : p.lastAt().toInstant().toString());
+            row.put("muted", p.muted());
+            row.put("banned", p.banned());
+            found.add(row);
+        }
+        int from = (int) Math.min(found.size(), (long) at * perPage);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", found.subList(from, Math.min(found.size(), from + perPage)));
+        result.put("total", found.size());
+        result.put("page", at);
+        result.put("size", perPage);
+        return result;
+    }
+
+    private static boolean contains(String value, String q) {
+        return value != null && value.toLowerCase(java.util.Locale.ROOT).contains(q);
     }
 
     private CommunityRepository.Message consoleMessage(long sessionId, long messageId) {

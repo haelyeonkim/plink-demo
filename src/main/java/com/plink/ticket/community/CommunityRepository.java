@@ -27,11 +27,21 @@ public class CommunityRepository {
     public record Message(long id, long sessionId, Long ticketId, boolean staff, boolean notice, String body,
             Long replyTo, int likes, int dislikes, int reports, boolean hidden, Timestamp pinnedUntil, Timestamp createdAt,
             Long replyTicketId, boolean replyStaff, String replyBody, boolean replyHidden, String ticketRef,
-            Timestamp alertUntil) {}
+            Timestamp alertUntil, boolean banned, boolean replyBanned) {}
+
+    /** Whether the writer of line {@code alias} is banned from that line's event. */
+    private static String bannedWriter(String alias) {
+        return "EXISTS (SELECT 1 FROM chat_ban b WHERE b.session_id = " + alias + ".session_id AND b.ticket_id = "
+            + alias + ".ticket_id)";
+    }
+
+    /** What holders may see of a line beyond its own flag: nothing from a banned ticket. */
+    private static final String SHOWN = " AND m.hidden = FALSE AND NOT " + bannedWriter("m");
 
     private static final String MESSAGE_SELECT =
         "SELECT m.*, r.ticket_id AS r_ticket, r.staff AS r_staff, r.body AS r_body, r.hidden AS r_hidden, "
-        + "t.ticket_ref AS t_ref FROM chat_message m "
+        + "t.ticket_ref AS t_ref, " + bannedWriter("m") + " AS m_banned, " + bannedWriter("r") + " AS r_banned "
+        + "FROM chat_message m "
         + "LEFT JOIN chat_message r ON r.id = m.reply_to "
         + "LEFT JOIN ticket t ON t.id = m.ticket_id ";
 
@@ -42,7 +52,8 @@ public class CommunityRepository {
         rs.getInt("report_count"),
         rs.getBoolean("hidden"), rs.getTimestamp("pinned_until"), rs.getTimestamp("created_at"),
         (Long) rs.getObject("r_ticket", Long.class), rs.getBoolean("r_staff"), rs.getString("r_body"),
-        rs.getBoolean("r_hidden"), rs.getString("t_ref"), rs.getTimestamp("alert_until"));
+        rs.getBoolean("r_hidden"), rs.getString("t_ref"), rs.getTimestamp("alert_until"),
+        rs.getBoolean("m_banned"), rs.getBoolean("r_banned"));
 
     public long insertMessage(long sessionId, Long ticketId, boolean staff, boolean notice, String body,
             Long replyTo, Timestamp pinnedUntil, Timestamp alertUntil, Timestamp createdAt) {
@@ -75,7 +86,7 @@ public class CommunityRepository {
      * between {@code afterId} and them.
      */
     public List<Message> recent(long sessionId, long afterId, int limit, boolean withHidden) {
-        String where = "WHERE m.session_id = ? AND m.id > ?" + (withHidden ? "" : " AND m.hidden = FALSE");
+        String where = "WHERE m.session_id = ? AND m.id > ?" + (withHidden ? "" : SHOWN);
         if (afterId > 0) {
             return jdbc.query(MESSAGE_SELECT + where + " ORDER BY m.id ASC LIMIT ?", MESSAGE, sessionId, afterId, limit);
         }
@@ -131,13 +142,13 @@ public class CommunityRepository {
     }
 
     public Optional<Message> pinnedHot(long sessionId, Timestamp now) {
-        return jdbc.query(MESSAGE_SELECT + "WHERE m.session_id = ? AND m.notice = FALSE AND m.hidden = FALSE "
-            + "AND m.pinned_until > ? ORDER BY m.like_count DESC, m.id DESC LIMIT 1",
+        return jdbc.query(MESSAGE_SELECT + "WHERE m.session_id = ? AND m.notice = FALSE "
+            + "AND m.pinned_until > ?" + SHOWN + " ORDER BY m.like_count DESC, m.id DESC LIMIT 1",
             MESSAGE, sessionId, now).stream().findFirst();
     }
 
     public long latestId(long sessionId) {
-        Long id = jdbc.queryForObject("SELECT MAX(id) FROM chat_message WHERE session_id = ? AND hidden = FALSE",
+        Long id = jdbc.queryForObject("SELECT MAX(m.id) FROM chat_message m WHERE m.session_id = ?" + SHOWN,
             Long.class, sessionId);
         return id == null ? 0 : id;
     }
@@ -259,6 +270,50 @@ public class CommunityRepository {
     public void setMuted(long sessionId, long ticketId, boolean muted) {
         jdbc.update("DELETE FROM chat_mute WHERE session_id = ? AND ticket_id = ?", sessionId, ticketId);
         if (muted) jdbc.update("INSERT INTO chat_mute (session_id, ticket_id) VALUES (?, ?)", sessionId, ticketId);
+    }
+
+    public boolean banned(long sessionId, long ticketId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM chat_ban WHERE session_id = ? AND ticket_id = ?",
+            Integer.class, sessionId, ticketId);
+        return n != null && n > 0;
+    }
+
+    /** Bans or lifts the ban, and says whether anything changed. */
+    public boolean setBanned(long sessionId, long ticketId, boolean banned) {
+        if (!banned) return jdbc.update("DELETE FROM chat_ban WHERE session_id = ? AND ticket_id = ?", sessionId, ticketId) > 0;
+        return jdbc.update("INSERT INTO chat_ban (session_id, ticket_id) SELECT CAST(? AS BIGINT), CAST(? AS BIGINT) "
+            + "WHERE NOT EXISTS (SELECT 1 FROM chat_ban WHERE session_id = ? AND ticket_id = ?)",
+            sessionId, ticketId, sessionId, ticketId) > 0;
+    }
+
+    /** A ticket as the console's list of chat people sees it. The emails are for searching only. */
+    public record Person(long ticketId, String ticketRef, String issuedTo, String holder, int messages,
+            Timestamp lastAt, boolean muted, boolean banned) {}
+
+    /**
+     * Everyone who has written in the event's chat, or has been muted or banned before
+     * writing, latest writer first. All of them: the name holders see is made in Java, so
+     * searching by it cannot happen in the query, and one event's writers are few enough.
+     */
+    public List<Person> people(long sessionId) {
+        return jdbc.query("SELECT t.id, t.ticket_ref, t.issued_to_email, t.holder_email, c.n, c.last_at, "
+            + "EXISTS (SELECT 1 FROM chat_mute u WHERE u.session_id = t.session_id AND u.ticket_id = t.id) AS muted, "
+            + "EXISTS (SELECT 1 FROM chat_ban b WHERE b.session_id = t.session_id AND b.ticket_id = t.id) AS banned "
+            + "FROM ticket t LEFT JOIN (SELECT ticket_id, COUNT(*) AS n, MAX(created_at) AS last_at FROM chat_message "
+            + "WHERE session_id = ? AND ticket_id IS NOT NULL GROUP BY ticket_id) c ON c.ticket_id = t.id "
+            + "WHERE t.session_id = ? AND (c.ticket_id IS NOT NULL "
+            + "OR EXISTS (SELECT 1 FROM chat_mute u WHERE u.session_id = t.session_id AND u.ticket_id = t.id) "
+            + "OR EXISTS (SELECT 1 FROM chat_ban b WHERE b.session_id = t.session_id AND b.ticket_id = t.id)) "
+            + "ORDER BY c.last_at DESC NULLS LAST, t.id DESC",
+            (rs, row) -> new Person(rs.getLong("id"), rs.getString("ticket_ref"), rs.getString("issued_to_email"),
+                rs.getString("holder_email"), rs.getInt("n"), rs.getTimestamp("last_at"), rs.getBoolean("muted"),
+                rs.getBoolean("banned")),
+            sessionId, sessionId);
+    }
+
+    public Set<Long> bannedTickets(long sessionId) {
+        return new HashSet<>(jdbc.queryForList("SELECT ticket_id FROM chat_ban WHERE session_id = ?",
+            Long.class, sessionId));
     }
 
     /** The chat's rules; an event that never set them gets the defaults. */

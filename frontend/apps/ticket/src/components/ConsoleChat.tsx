@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
+import ConfirmDialog from '@shared/components/ConfirmDialog';
 import { read, shortTime } from '../console/model';
 import { openLive } from '../ticket/live';
 import { chatCounts, useCoalesced } from '../ticket/coalesce';
+import ConsoleChatPeople, { type BanTarget, type ChatPerson } from './ConsoleChatPeople';
 
 interface FeedRow {
   id: number; author: string; ticketId: number | null; ticketRef: string | null; staff: boolean; notice: boolean;
   body: string; likes: number; dislikes: number; reports: number; hidden: boolean; pinned: boolean; pinnedUntil: string | null;
-  muted: boolean; createdAt: string; alert: boolean;
+  muted: boolean; banned: boolean; createdAt: string; alert: boolean;
 }
 interface ChatSettings { enabled: boolean; cooldownSeconds: number; maxLength: number; hotLikes: number; hotMinutes: number; reportHide: number }
 interface ConsoleChatView { settings: ChatSettings; messages: FeedRow[]; reported: number; hiddenCount: number }
 
 type Filter = 'ALL' | 'REPORTED' | 'HIDDEN' | 'PINNED';
+/** The feed's two faces: what is said, and who is saying it. */
+type Pane = 'MESSAGES' | 'PEOPLE';
 
 const post = (url: string, body: unknown, method = 'POST') => mutate(url, {
   method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -20,7 +24,7 @@ const post = (url: string, body: unknown, method = 'POST') => mutate(url, {
 
 /**
  * The organiser's side of the room's chat: send a notice, watch what is said, hide what
- * should not be there, stop a ticket writing, and set the rules.
+ * should not be there, stop a ticket writing or put it out of the chat, and set the rules.
  */
 export default function ConsoleChat({ sessionId, onNotice, onError }: {
   /** Ignored: the chat listens to the event's channel itself, and tells a like from a new line. */
@@ -33,6 +37,10 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
   const [pin, setPin] = useState(true);
   const [alsoAd, setAlsoAd] = useState(false);
   const [alert, setAlert] = useState(false);
+  const [pane, setPane] = useState<Pane>('MESSAGES');
+  const [peopleRevision, setPeopleRevision] = useState(0);
+  const [banTarget, setBanTarget] = useState<BanTarget | null>(null);
+  const [banBusy, setBanBusy] = useState(false);
   const base = `/api/admin/sessions/${sessionId}/chat`;
 
   // Only the latest read may fill the feed: a slow answer to an older filter is dropped.
@@ -50,7 +58,10 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
 
   // A busy room says something several times a second; the feed reads again once per
   // burst, and a like only moves that line's counts.
-  const nudge = useCoalesced(useCallback(() => { void load(); }, [load]), 600);
+  const nudge = useCoalesced(useCallback(() => {
+    void load();
+    setPeopleRevision(value => value + 1);
+  }, [load]), 600);
   useEffect(() => {
     const live = openLive(`/ws/admin/sessions/${sessionId}`, message => {
       if (message.type === 'CHAT_LIKE') {
@@ -70,8 +81,23 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
   }, [sessionId, nudge]);
 
   const act = async (work: () => Promise<unknown>, done: string) => {
-    try { await work(); onNotice(done); await load(); }
+    try { await work(); onNotice(done); await load(); setPeopleRevision(value => value + 1); }
     catch (err) { onError(err instanceof Error ? err.message : '요청을 처리하지 못했어요.'); }
+  };
+
+  const mute = (ticketId: number, author: string, muted: boolean) => void act(
+    () => post(`${base}/mute`, { ticketId, muted: !muted }),
+    muted ? `${author}의 채팅 쓰기를 다시 열었어요.` : `${author}의 채팅 쓰기를 막았어요. 읽기는 계속돼요.`);
+
+  const confirmBan = async () => {
+    if (!banTarget) return;
+    setBanBusy(true);
+    await act(() => post(`${base}/ban`, { ticketId: banTarget.ticketId, banned: banTarget.banned }),
+      banTarget.banned
+        ? `${banTarget.author}을(를) 채팅에서 차단했어요. 메시지가 관람객에게서 사라졌어요.`
+        : `${banTarget.author}의 차단을 풀었어요. 메시지가 다시 보여요.`);
+    setBanBusy(false);
+    setBanTarget(null);
   };
 
   const sendNotice = (event: React.FormEvent) => {
@@ -119,8 +145,18 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
 
         <section className="console-card" aria-labelledby="chat-feed">
           <div className="console-card-head">
-            <h3 id="chat-feed">메시지</h3>
+            <h3 id="chat-feed">{pane === 'MESSAGES' ? '메시지' : '참여자'}</h3>
           </div>
+          <div className="inner-tabs" role="tablist" aria-label="채팅 보기">
+            {([['MESSAGES', '메시지'], ['PEOPLE', '참여자']] as Array<[Pane, string]>).map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={pane === key}
+                className={pane === key ? 'active' : ''} onClick={() => setPane(key)}>{label}</button>
+            ))}
+          </div>
+          {pane === 'PEOPLE' ? (
+            <ConsoleChatPeople base={base} revision={peopleRevision} onError={onError} onBan={setBanTarget}
+              onMute={(person: ChatPerson) => mute(person.ticketId, person.author, person.muted)} />
+          ) : (<>
           <div className="chip-row" role="group" aria-label="보기">
             {filters.map(([key, label]) => (
               <button key={key} type="button" className={filter === key ? 'on' : ''} aria-pressed={filter === key}
@@ -132,7 +168,7 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
               <thead><tr><th>보낸 사람</th><th>메시지</th><th className="num">반응</th><th>상태</th><th aria-label="작업" /></tr></thead>
               <tbody>
                 {view.messages.map(row => (
-                  <tr key={row.id} className={row.hidden ? 'is-off' : row.reports > 0 ? 'is-flag' : ''}>
+                  <tr key={row.id} className={row.hidden || row.banned ? 'is-off' : row.reports > 0 ? 'is-flag' : ''}>
                     <td><b>{row.author}</b>
                       <small className="cell-note">{shortTime(row.createdAt)}{row.ticketRef ? ` · ${row.ticketRef}` : ''}</small></td>
                     <td className="chat-feed-body">{row.body}</td>
@@ -144,6 +180,7 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
                       <span className={`pill pill-${row.hidden ? 'wait' : row.reports > 0 ? 'off' : row.pinned ? 'in' : row.staff ? 'out' : 'ok'}`}>
                         {row.hidden ? '가려짐' : row.reports > 0 ? `신고 ${row.reports}` : row.pinned ? (row.notice ? '공지 고정' : '인기 고정') : row.staff ? '운영' : '보임'}
                       </span>
+                      {row.banned && <span className="pill pill-off" title="관람객에게는 보이지 않아요">차단됨</span>}
                       {row.muted && <small className="cell-note">채팅 제한됨</small>}
                       {row.alert && <small className="cell-note">입장권에 알리는 중</small>}
                     </td>
@@ -165,10 +202,15 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
                           {row.alert ? '알림 내리기' : '입장권에 알림'}</button>
                       )}
                       {row.ticketId !== null && (
-                        <button className="btn-tiny btn-tiny-danger" type="button" onClick={() => void act(
-                          () => post(`${base}/mute`, { ticketId: row.ticketId, muted: !row.muted }),
-                          row.muted ? `${row.author}의 채팅 쓰기를 다시 열었어요.` : `${row.author}의 채팅 쓰기를 막았어요. 읽기는 계속돼요.`)}>
+                        <button className="btn-tiny btn-tiny-danger" type="button"
+                          onClick={() => mute(row.ticketId!, row.author, row.muted)}>
                           {row.muted ? '제한 풀기' : '채팅 제한'}</button>
+                      )}
+                      {row.ticketId !== null && (
+                        <button className={`btn-tiny${row.banned ? '' : ' btn-tiny-danger'}`} type="button"
+                          onClick={() => setBanTarget({ ticketId: row.ticketId!, author: row.author, ticketRef: row.ticketRef,
+                            banned: !row.banned })}>
+                          {row.banned ? '차단 해제' : '차단'}</button>
                       )}
                     </td>
                   </tr>
@@ -179,7 +221,8 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
               </tbody>
             </table>
           </div>
-          <p className="console-foot">관람객에게는 자동 별명만 보이고, 여기서만 입장권 번호를 함께 봅니다. 채팅 제한은 그 입장권의 쓰기만 막아요.</p>
+          </>)}
+          <p className="console-foot">관람객에게는 자동 별명만 보이고, 여기서만 입장권 번호를 함께 봅니다. 채팅 제한은 그 입장권의 쓰기만 막고, 차단은 쓰기를 막으면서 그 사람의 메시지를 모두 관람객에게서 가려요.</p>
         </section>
       </div>
 
@@ -222,6 +265,20 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
           )}
         </section>
       </aside>
+
+      <ConfirmDialog
+        open={banTarget !== null}
+        title={banTarget?.banned ? `${banTarget.author}을(를) 채팅에서 차단할까요?` : `${banTarget?.author ?? ''}의 차단을 풀까요?`}
+        message={banTarget?.banned
+          ? '이 입장권으로는 채팅을 쓰거나 누를 수 없고, 지금까지 쓴 메시지도 모두 관람객에게서 사라져요. 메시지는 지워지지 않아서 차단을 풀면 다시 보여요.'
+          : '다시 채팅에 참여할 수 있고, 가려졌던 메시지가 관람객에게 다시 보여요. 따로 가린 메시지는 그대로예요.'}
+        details={banTarget?.ticketRef ? [['입장권', banTarget.ticketRef]] : undefined}
+        confirmLabel={banTarget?.banned ? '차단' : '차단 해제'}
+        tone={banTarget?.banned ? 'danger' : 'primary'}
+        busy={banBusy}
+        onConfirm={() => void confirmBan()}
+        onCancel={() => setBanTarget(null)}
+      />
     </div>
   );
 }

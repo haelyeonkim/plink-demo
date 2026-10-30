@@ -268,7 +268,8 @@ export interface ChatMessage {
 }
 
 export interface ChatView {
-  me: { nickname: string; canWrite: boolean; blocked: string | null; nextAt: string | null };
+  /** {@code banned}: the organiser put this ticket out of the chat; it reads but cannot write or press. */
+  me: { nickname: string; canWrite: boolean; blocked: string | null; banned?: boolean; nextAt: string | null };
   cooldownSeconds: number; maxLength: number; hotLikes: number; inside: number;
   notice: ChatMessage | null; hot: ChatMessage | null;
   messages: ChatMessage[];
