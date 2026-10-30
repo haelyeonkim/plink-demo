@@ -1593,3 +1593,19 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
   .coupon-table td.coupon-used-col .cell-note { display: inline; margin-left: 4px; }
   .coupon-table td.console-none { flex-basis: 100%; }
 }
+
+/* Choosing which terminal a tablet becomes, and naming one. */
+.gate-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gate-summary-row .console-summary { margin: 0; }
+.gate-summary-row .btn-secondary { width: auto; margin: 0; }
+.gate-pick, .gate-name { max-width: 460px; width: calc(100% - 32px); }
+.gate-pick-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; max-height: 50vh; overflow-y: auto; }
+.gate-pick-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; cursor: pointer; min-height: 44px;
+}
+.gate-pick-row.on { border-color: var(--blue); background: var(--accent-soft); }
+.gate-pick-row.is-held { cursor: default; opacity: .65; }
+.gate-pick-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gate-pick-name b { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gate-pick-name small { font-size: 12px; color: var(--muted); }

@@ -933,6 +933,28 @@ public class TicketAdminController {
     }
 
     /**
+     * Renames a gate or booth terminal - the name staff tell tablets apart by, and the one
+     * the coupon and admission records show. Place and direction stay as they are unless sent.
+     */
+    @PutMapping("/gates/{gateId}")
+    public Map<String, Object> renameGate(@PathVariable String gateId, @RequestBody Map<String, String> body) {
+        Gate gate = gates.findById(gateId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
+        String label = body.get("label") == null ? "" : body.get("label").trim();
+        if (label.isEmpty() || label.length() > 40) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이름은 1자부터 40자까지 정해 주세요.");
+        }
+        String zone = body.get("zone") == null || body.get("zone").isBlank() ? gate.zone : body.get("zone").trim();
+        String direction = body.get("direction") == null || body.get("direction").isBlank() ? gate.direction
+            : body.get("direction").trim().toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("IN", "OUT", "BIDIRECTIONAL").contains(direction)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "방향은 IN, OUT, BIDIRECTIONAL 중 하나여야 해요.");
+        }
+        gates.updateDetails(gateId, label, zone, direction);
+        return Map.of("gateId", gateId, "label", label, "zone", zone == null ? "" : zone, "direction", direction);
+    }
+
+    /**
      * Deletes a gate or booth terminal for good. A tablet still holding its token is
      * refused from its next request, which brings it back to the setup screen.
      */

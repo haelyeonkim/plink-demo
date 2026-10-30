@@ -328,4 +328,17 @@ class BoothTerminalConsoleTest {
         mvc.perform(as(t, delete("/api/admin/gates/" + t.id())).with(csrf())).andExpect(status().isUnauthorized());
         assertTrue(gates.findById(t.id()).isPresent());
     }
+
+    @Test void anOrganiserRenamesATerminalAndItsPlaceAndDirectionStay() throws Exception {
+        Terminal t = terminal("BOOTH", boothId);
+        json(put("/api/admin/gates/" + t.id()).with(organiser()).with(csrf()), "{\"label\":\"계산대 2\"}")
+            .andExpect(status().isOk()).andExpect(jsonPath("$.label").value("계산대 2"));
+        com.plink.ticket.model.Gate renamed = gates.findById(t.id()).orElseThrow();
+        assertEquals("계산대 2", renamed.label);
+        assertEquals("메인홀", renamed.zone);
+        assertEquals("BIDIRECTIONAL", renamed.direction);
+        json(put("/api/admin/gates/" + t.id()).with(organiser()).with(csrf()), "{\"label\":\"  \"}")
+            .andExpect(status().isBadRequest());
+        json(put("/api/admin/gates/" + t.id()).with(csrf()), "{\"label\":\"x\"}").andExpect(status().isUnauthorized());
+    }
 }
