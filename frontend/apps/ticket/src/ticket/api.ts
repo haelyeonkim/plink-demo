@@ -249,6 +249,8 @@ export async function gateGrantConfirm(gateId: string, gateToken: string, pick: 
 
 export interface CommunitySummary {
   entered: boolean;
+  /** Entered and inside now: the chat is the room's, and closes when they step out. */
+  chatOpen?: boolean;
   latestChatId?: number;
   inside?: number;
   notice?: string | null;

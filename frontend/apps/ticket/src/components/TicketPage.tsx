@@ -562,8 +562,9 @@ export default function TicketPage() {
 
   const tabs = ticket.claimed;
   const entered = community?.entered === true;
+  const chatOpen = entered && community?.chatOpen === true;
   const liveCoupons = ticket.coupons?.filter(row => row.status !== 'REDEEMED' && row.status !== 'VOID').length ?? 0;
-  const newChat = entered && (community?.latestChatId ?? 0) > seen.chat;
+  const newChat = chatOpen && (community?.latestChatId ?? 0) > seen.chat;
   const newAds = entered && (community?.latestAdId ?? 0) > seen.ads;
 
   const alert = community?.alert && community.alert.id > seen.alert ? community.alert : null;
@@ -586,7 +587,7 @@ export default function TicketPage() {
         ['ticket', '입장권', 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z', null, false],
         ['coupons', '쿠폰', 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z',
           liveCoupons > 0 ? String(liveCoupons) : null, false],
-        ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !entered],
+        ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !chatOpen],
         ['ads', '알림판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
       ] as Array<[View, string, string, string | null, boolean]>).map(([key, label, icon, badge, locked]) => (
         <button key={key} type="button" aria-current={view === key ? 'page' : undefined}
@@ -612,9 +613,9 @@ export default function TicketPage() {
             <CouponWallet coupons={ticket.coupons} busy={busy} onCode={openCouponCode}
               onNews={entered ? () => go('ads') : null} />
           )}
-          {view === 'chat' && (entered
+          {view === 'chat' && (chatOpen
             ? <TicketChat sessionId={sessionId} token={token} tick={chatTick} counts={counts} onSeen={markChat} />
-            : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
+            : <p className="console-none">{entered ? '장외에서는 채팅을 볼 수 없어요. 다시 입장하면 열려요.' : '입장한 뒤에 볼 수 있어요.'}</p>)}
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
@@ -696,13 +697,21 @@ export default function TicketPage() {
             <section className="room-tiles" aria-labelledby="room-title">
               <h3 id="room-title">장내 소식</h3>
               {entered ? (<>
-                <button type="button" className="room-tile" onClick={() => go('chat')}>
-                  <b>장내 채팅{newChat && <em>새</em>}</b>
-                  {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
-                  <small>{community?.lastMessage
-                    ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
-                    : '아직 메시지가 없어요'}</small>
-                </button>
+                {chatOpen ? (
+                  <button type="button" className="room-tile" onClick={() => go('chat')}>
+                    <b>장내 채팅{newChat && <em>새</em>}</b>
+                    {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
+                    <small>{community?.lastMessage
+                      ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
+                      : '아직 메시지가 없어요'}</small>
+                  </button>
+                ) : (
+                  /* Stepped out: the room's talk stays in the room until they come back. */
+                  <div className="room-tile is-closed" aria-disabled="true">
+                    <b>장내 채팅</b>
+                    <small>장외에서는 닫혀 있어요. 다시 입장하면 열려요.</small>
+                  </div>
+                )}
                 <button type="button" className="room-tile" onClick={() => go('ads')}>
                   <b>알림판{newAds && <em>새</em>}</b>
                   <small>{community?.topAd
