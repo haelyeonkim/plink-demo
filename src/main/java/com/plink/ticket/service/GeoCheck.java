@@ -25,9 +25,14 @@ public final class GeoCheck {
 
     private GeoCheck() {}
 
+    /** Whether a reading would be looked at at all: a mode other than OFF, and a venue to measure from. */
+    public static boolean active(EventSession session) {
+        return session.geoMode != null && !"OFF".equals(session.geoMode)
+            && session.venueLat != null && session.venueLon != null;
+    }
+
     public static Result evaluate(EventSession session, Double lat, Double lon, Double accuracy) {
-        if (session.geoMode == null || "OFF".equals(session.geoMode)
-                || session.venueLat == null || session.venueLon == null) {
+        if (!active(session)) {
             return new Result(null, null, null);
         }
         if (lat == null || lon == null) {

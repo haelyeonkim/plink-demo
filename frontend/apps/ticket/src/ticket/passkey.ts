@@ -76,6 +76,8 @@ export async function runCeremony(
      * step that says "your device is about to ask you" is the one on screen.
      */
     onStage?: (stage: CeremonyStage) => void | Promise<void>;
+    /** The event checks where a code is opened: ask the phone for its position. */
+    geoCheck?: boolean;
   } = {},
 ): Promise<
   | { mode: 'register'; claimed: true; viaTransfer: boolean }
@@ -87,9 +89,12 @@ export async function runCeremony(
   const base = ticketBase(sessionId, token);
   const stage = async (step: CeremonyStage) => { await options_.onStage?.(step); };
   await stage('preparing');
-  // Only opening a code asks where the phone is; proving the ticket is yours does not.
-  const position = options_.intent === 'TRANSFER' || options_.intent === 'VIEW' ? {} : await coarsePosition();
-  const { mode, intent, result } = await passkeyCeremony(base, { ...options_, ...position }, stage);
+  // Only opening a code asks where the phone is, and only for an event that checks it;
+  // proving the ticket is yours does not.
+  const position = !options_.geoCheck || options_.intent === 'TRANSFER' || options_.intent === 'VIEW'
+    ? {} : await coarsePosition();
+  const { geoCheck: _asked, ...sent } = options_;
+  const { mode, intent, result } = await passkeyCeremony(base, { ...sent, ...position }, stage);
   if (mode === 'register') {
     return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
   }

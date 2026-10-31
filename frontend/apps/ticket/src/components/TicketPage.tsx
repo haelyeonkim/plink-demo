@@ -347,7 +347,7 @@ export default function TicketPage() {
 
   const claim = () => guard(async () => {
     const result = await sealed('claim', onStage =>
-      runCeremony(sessionId, token, { email: email.trim(), onStage }));
+      runCeremony(sessionId, token, { email: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
     const viaTransfer = result.mode === 'register' ? result.viaTransfer
       : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
     setNotice(viaTransfer
@@ -362,7 +362,8 @@ export default function TicketPage() {
    * and the code follows straight after.
    */
   const present = (direction: Direction) => guard(async () => {
-    const open = async () => presentTicket(sessionId, token, direction, await coarsePosition());
+    const open = async () => presentTicket(sessionId, token, direction,
+      ticket?.event.geoCheck ? await coarsePosition() : {});
     try {
       setGrant(await open());
     } catch (err) {

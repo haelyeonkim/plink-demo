@@ -43,6 +43,8 @@ export interface TicketView {
     reentryMode: string;
     /** When false, opening the link is the whole claim: no verification code is sent. */
     claimRequiresOtp: boolean;
+    /** Opening a code is checked against the venue: only then is the phone's position asked for. */
+    geoCheck: boolean;
   };
   presence: {
     inside: boolean;

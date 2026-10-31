@@ -545,6 +545,8 @@ public class TicketService {
         event.put("exitScanRequired", session.exitScanRequired);
         event.put("reentryMode", session.reentryMode);
         event.put("claimRequiresOtp", session.claimRequiresOtp);
+        // The phone asks for its position only when the event will look at it.
+        event.put("geoCheck", GeoCheck.active(session));
         result.put("event", event);
 
         Map<String, Object> state = new LinkedHashMap<>();

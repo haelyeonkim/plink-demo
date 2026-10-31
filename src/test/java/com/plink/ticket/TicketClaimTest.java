@@ -281,6 +281,19 @@ class TicketClaimTest {
             .andExpect(jsonPath("$.event.claimRequiresOtp").value(true));
     }
 
+    @Test void thePhoneIsAskedWhereItIsOnlyWhenTheEventChecks() throws Exception {
+        mvc.perform(get(path()).header("User-Agent", PHONE))
+            .andExpect(jsonPath("$.event.geoCheck").value(false));
+        // A mode with no venue to measure from checks nothing either.
+        sessions.updateGeoPolicy(sessionId, null, null, 300, "ENFORCE");
+        mvc.perform(get(path()).header("User-Agent", PHONE))
+            .andExpect(jsonPath("$.event.geoCheck").value(false));
+        sessions.updateGeoPolicy(sessionId, 37.5, 127.0, 300, "ADVISE");
+        mvc.perform(get(path()).header("User-Agent", PHONE))
+            .andExpect(jsonPath("$.event.geoCheck").value(true));
+        sessions.updateGeoPolicy(sessionId, null, null, 300, "OFF");
+    }
+
     @Test void turningTheClaimPolicyOffLetsTheLinkStandAlone() throws Exception {
         sessions.updateClaimPolicy(sessionId, false);
         // No code has been verified in this session, yet the ceremony is issued once the
