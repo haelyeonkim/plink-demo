@@ -12,6 +12,10 @@ public class Ticket {
     public String attributes;
     public Timestamp boundAt, claimExpiresAt, createdAt, deliveredAt;
     public int transferCount, reissueCount;
+    /** The ticket whose holder invited this one; null once that ticket is deleted. */
+    public Long invitedBy;
+    /** Issued on a holder's invitation: it never invites in turn, even once unlinked. */
+    public boolean invitee;
 
     public boolean bound() { return "BOUND".equals(status); }
 

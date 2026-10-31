@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  ApiError, cancelTransfer, fetchCommunity, presentCoupon, fetchFaceStatus, fetchTicket, presentTicket, reissueTicket, requestOtp, verifyOtp,
-  type CommunitySummary, type TicketCoupon, type TicketView,
+  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, presentTicket, reissueTicket, requestOtp, verifyOtp,
+  type CommunitySummary, type InviteView, type TicketCoupon, type TicketView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
@@ -20,10 +20,15 @@ import { clockText, reducedMotion } from '../motion';
 import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
 import TicketChat from './TicketChat';
 import TicketAds from './TicketAds';
+import TicketGroup, { groupRelevant, groupSummary } from './TicketGroup';
 
-/** The ticket's own screens, along the bottom once it is registered and open. */
-type View = 'ticket' | 'coupons' | 'chat' | 'ads';
-const VIEWS: View[] = ['ticket', 'coupons', 'chat', 'ads'];
+/**
+ * The ticket's own screens, along the bottom once it is registered and open. The group is
+ * opened from its tile on the ticket rather than a tab: most tickets have none, and the
+ * bar keeps four buttons that fit a phone.
+ */
+type View = 'ticket' | 'coupons' | 'chat' | 'ads' | 'group';
+const VIEWS: View[] = ['ticket', 'coupons', 'chat', 'ads', 'group'];
 
 /** What this phone has already read, so the tabs can say when there is more. */
 interface Seen { chat: number; ads: number; alert: number }
@@ -225,6 +230,28 @@ export default function TicketPage() {
       .then(next => { if (seq === summarySeq.current) setCommunity(next); })
       .catch(() => { if (seq === summarySeq.current) setCommunity(null); });
   }, [sessionId, token, showing, roomTick, presenceKey]);
+
+  // Invites and the group: read with every read of the ticket - a scan, a return to the
+  // screen - and every half minute while the group is open, since the others' movements
+  // are not sent to this phone.
+  const [invites, setInvites] = useState<InviteView | null>(null);
+  const inviteSeq = useRef(0);
+  const loadInvites = useCallback(async () => {
+    const seq = ++inviteSeq.current;
+    try {
+      const next = await fetchInvites(sessionId, token);
+      if (seq === inviteSeq.current) setInvites(next);
+    } catch {
+      if (seq === inviteSeq.current) setInvites(null);
+    }
+  }, [sessionId, token]);
+  useEffect(() => { if (showing) void loadInvites(); }, [showing, ticket, loadInvites]);
+  const groupOpen = showing && view === 'group';
+  useEffect(() => {
+    if (!groupOpen) return;
+    const timer = window.setInterval(() => { void loadInvites(); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [groupOpen, loadInvites]);
 
   // An organiser alert that arrives while the page is open buzzes the phone once; one that
   // was already there when the page opened only shows.
@@ -620,6 +647,9 @@ export default function TicketPage() {
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
+          {view === 'group' && (invites
+            ? <TicketGroup sessionId={sessionId} token={token} view={invites} onChange={loadInvites} />
+            : <p className="loading" role="status">일행 정보를 불러오고 있어요.</p>)}
         </section>
         {tabBar}
       </>
@@ -723,6 +753,17 @@ export default function TicketPage() {
                 <p className="room-locked">입장하면 장내 채팅과 알림판이 열려요.</p>
               )}
             </section>
+
+            {/* Only for a ticket that can invite, was invited, or has a group to show. */}
+            {invites && groupRelevant(invites) && (
+              <section className="room-tiles" aria-labelledby="group-tile-title">
+                <h3 id="group-tile-title">일행</h3>
+                <button type="button" className="room-tile" onClick={() => go('group')}>
+                  <b>{invites.quota > 0 ? (invites.group ? '초대 · 입장 현황' : '초대') : '입장 현황'}</b>
+                  <small>{groupSummary(invites)}</small>
+                </button>
+              </section>
+            )}
 
             {/* Folded by default: the door comes first, and the rest is housekeeping. */}
             <button className="manage-toggle" aria-expanded={manage}

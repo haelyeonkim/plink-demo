@@ -123,13 +123,42 @@ public class TicketService {
      */
     public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
             String rawPhone, boolean notify, Map<String, String> values) {
-        Issued issued = transactions.execute(status -> create(sessionId, email, seat, tier, rawPhone, values));
+        return issue(sessionId, email, seat, tier, rawPhone, notify, values, null);
+    }
+
+    /**
+     * A ticket a holder asks for on somebody else's behalf: issued and mailed like the
+     * console's, under their name.
+     *
+     * @param admit run inside the issuing transaction before the ticket is created: where
+     *     the caller locks the inviter and checks they still have an invite to give, so the
+     *     check and the ticket it allows commit together or not at all
+     */
+    public record Invitation(long inviterId, String inviterMasked, Runnable admit) {}
+
+    public Map<String, Object> issueInvite(long sessionId, String email, Invitation invitation) {
+        return issue(sessionId, email, null, null, null, true, Map.of(), invitation);
+    }
+
+    private Map<String, Object> issue(long sessionId, String email, String seat, String tier,
+            String rawPhone, boolean notify, Map<String, String> values, Invitation invitation) {
+        Issued issued = transactions.execute(status -> {
+            if (invitation != null) invitation.admit().run();
+            Issued created = create(sessionId, email, seat, tier, rawPhone, values);
+            if (invitation != null) tickets.markInvited(created.id, invitation.inviterId());
+            return created;
+        });
         // Committed: the link exists whatever happens to the messages below.
-        String delivered = notify ? deliver(issued.session, issued.recipient, issued.phone, issued.url,
-            "[" + issued.session.name + "] 입장권이 발급되었어요",
-            "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + issued.url
-            + "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
-            + "\n링크를 다른 사람에게 전달하지 마세요.") : "LINK";
+        String claimNote = "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
+            + "\n링크를 다른 사람에게 전달하지 마세요.";
+        String delivered = !notify ? "LINK" : invitation == null
+            ? deliver(issued.session, issued.recipient, issued.phone, issued.url,
+                "[" + issued.session.name + "] 입장권이 발급되었어요",
+                "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + issued.url + claimNote)
+            : deliver(issued.session, issued.recipient, issued.phone, issued.url,
+                "[" + issued.session.name + "] 초대 입장권이 도착했어요",
+                invitation.inviterMasked() + "님이 초대했어요.\n\n"
+                + "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + issued.url + claimNote);
         tickets.recordDelivery(issued.id, delivered);
 
         Map<String, Object> result = new LinkedHashMap<>();

@@ -53,6 +53,7 @@ public class EventSessionRepository {
         s.testEvent = rs.getBoolean("test_event");
         s.dayCloseExit = rs.getBoolean("day_close_exit");
         s.dayCloseHour = rs.getInt("day_close_hour");
+        s.inviteStatus = rs.getString("invite_status");
         return s;
     };
 
@@ -117,6 +118,10 @@ public class EventSessionRepository {
 
     public void updateClaimPolicy(long id, boolean requiresOtp) {
         jdbc.update("UPDATE event_session SET claim_requires_otp = ? WHERE id = ?", requiresOtp, id);
+    }
+
+    public void updateInviteStatus(long id, String status) {
+        jdbc.update("UPDATE event_session SET invite_status = ? WHERE id = ?", status, id);
     }
 
     public void updateCrowdLevels(long id, int busyPercent, int steadyPercent) {

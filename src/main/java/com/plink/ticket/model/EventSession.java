@@ -35,6 +35,8 @@ public class EventSession {
     public boolean dayCloseExit;
     /** The hour (0-23, venue time) at which one day becomes the next. */
     public int dayCloseHour;
+    /** Who sees a group's entry status: OFF, INVITER (their invitees') or GROUP (everyone in it). */
+    public String inviteStatus;
 
     public boolean reentryAllowed() { return !"DISABLED".equals(reentryMode); }
     public boolean reentryLimited() { return "LIMITED".equals(reentryMode); }

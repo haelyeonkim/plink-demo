@@ -3,6 +3,7 @@ package com.plink.ticket.service;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.TicketField;
 import com.plink.ticket.repository.EventSessionRepository;
+import com.plink.ticket.repository.InviteQuotaRepository;
 import com.plink.ticket.repository.TicketFieldRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * An event's rules - re-entry, transfer, crowding, the day's turn, location and face -
+ * An event's rules - re-entry, transfer, crowding, the day's turn, location, face and invites -
  * as the console saves them.
  *
  * <p>The settings screen sends them in one save, so they are taken in one piece: every
@@ -26,17 +27,21 @@ import java.util.Map;
 public class SessionPolicyService {
     private final EventSessionRepository sessions;
     private final TicketFieldRepository fields;
+    private final InviteQuotaRepository inviteQuotas;
 
-    public SessionPolicyService(EventSessionRepository sessions, TicketFieldRepository fields) {
+    public SessionPolicyService(EventSessionRepository sessions, TicketFieldRepository fields,
+            InviteQuotaRepository inviteQuotas) {
         this.sessions = sessions;
         this.fields = fields;
+        this.inviteQuotas = inviteQuotas;
     }
 
     /** What a save asked to change, already checked. A null part was not sent. */
     private record Plan(String reentryMode, int reentryMax, int graceMinutes, int cooldownSeconds,
             boolean exitScanRequired, String unmatchedExit,
             Transfer transfer, Crowd crowd, DayClose dayClose, Boolean claimRequiresOtp, Geo geo, Face face,
-            boolean seatsSent, String seats, boolean tiersSent, String tiers) {}
+            boolean seatsSent, String seats, boolean tiersSent, String tiers,
+            String inviteStatus, Map<String, Integer> inviteQuotas) {}
     private record Transfer(int max, int closesMinutesBefore, boolean afterFirstEntry) {}
     private record Crowd(int busy, int steady) {}
     private record DayClose(boolean exit, int hour) {}
@@ -72,6 +77,8 @@ public class SessionPolicyService {
             sessions.updateFacePolicy(id, plan.face.required, plan.face.reentryRequiresFace,
                 plan.face.liveness, plan.face.challengeOn, plan.face.retentionDays);
         }
+        if (plan.inviteStatus != null) sessions.updateInviteStatus(id, plan.inviteStatus);
+        if (plan.inviteQuotas != null) inviteQuotas.replace(id, plan.inviteQuotas);
         sessions.updatePolicy(id, plan.reentryMode, plan.reentryMax, plan.graceMinutes, plan.cooldownSeconds,
             plan.exitScanRequired, plan.unmatchedExit);
         return plan.crowd != null;
@@ -149,10 +156,36 @@ public class SessionPolicyService {
                 within(number(body.get("faceRetentionDays"), current.faceRetentionDays), 0, 365,
                     "얼굴 정보 보관 기간은 0일에서 365일 사이여야 해요."));
         }
+        String inviteStatus = null;
+        if (body.get("inviteStatus") != null) {
+            inviteStatus = body.get("inviteStatus").toString().trim().toUpperCase(Locale.ROOT);
+            if (!InviteService.STATUSES.contains(inviteStatus)) {
+                throw bad("일행 입장 현황 공개는 OFF, INVITER, GROUP 중 하나여야 해요.");
+            }
+        }
         return new Plan(mode, reentryMax, grace, cooldown, exitScanRequired, unmatched,
             transfer, crowd, dayClose, claimRequiresOtp, geo, face,
             body.containsKey("seats"), catalogue(body.get("seats"), null),
-            body.containsKey("tiers"), catalogue(body.get("tiers"), null));
+            body.containsKey("tiers"), catalogue(body.get("tiers"), null),
+            inviteStatus, inviteQuotas(body.get("inviteQuotas")));
+    }
+
+    /**
+     * Invites per tier, keyed by the tier as tickets carry it and '' for tickets without
+     * one. Null when the save did not send them; what it sends replaces what was there.
+     */
+    private static Map<String, Integer> inviteQuotas(Object value) {
+        if (value == null) return null;
+        if (!(value instanceof Map<?, ?> sent)) throw bad("초대 인원 형식을 확인해 주세요.");
+        if (sent.size() > 2000) throw bad("초대 인원을 정할 등급이 너무 많아요.");
+        Map<String, Integer> quotas = new java.util.TreeMap<>();
+        for (Map.Entry<?, ?> entry : sent.entrySet()) {
+            String tier = entry.getKey() == null ? "" : entry.getKey().toString().trim();
+            if (tier.length() > 200) throw bad("등급 이름이 너무 길어요.");
+            quotas.put(tier, within(number(entry.getValue(), 0), 0, InviteService.MAX_QUOTA,
+                "초대 인원은 0에서 " + InviteService.MAX_QUOTA + "명 사이여야 해요."));
+        }
+        return quotas;
     }
 
     /** Keeps the seat or tier field's list in step with what the settings screen sent. */

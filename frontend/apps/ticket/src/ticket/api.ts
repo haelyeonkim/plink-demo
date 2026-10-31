@@ -334,3 +334,44 @@ export function adImageUrl(sessionId: string, token: string, ad: AdPost): string
 
 /** What a board notice is about, as the page says it. */
 export const AD_CATEGORY: Record<string, string> = { SALE: '할인·혜택', PROGRAM: '체험·프로그램', NOTICE: '운영 공지' };
+
+// ---- Invites, and the group they make ----
+
+/** One ticket this holder invited. The address is masked; nothing else about it is said. */
+export interface InviteRow { ticketId: number; email: string; registered: boolean; revoked: boolean }
+
+/** Someone in the inviter's group, where they are now. {@code since}: inside since, or out since. */
+export interface GroupMember {
+  email: string;
+  role: 'INVITER' | 'GUEST';
+  me: boolean;
+  state: 'NOT_ENTERED' | 'INSIDE' | 'OUTSIDE';
+  since: string | null;
+}
+
+export interface InviteView {
+  quota: number; used: number; remaining: number; canInvite: boolean;
+  /** Who in a group sees the others come in, as the event has it. */
+  status: 'OFF' | 'INVITER' | 'GROUP';
+  /** Set on an invitee's ticket: who invited them, masked. */
+  invitedBy: string | null;
+  invites: InviteRow[];
+  /** Null when this holder is not shown the group, or there is nobody else in it. */
+  group: GroupMember[] | null;
+}
+
+const inviteBase = (sessionId: string, token: string) => `${ticketBase(sessionId, token)}/invites`;
+
+export async function fetchInvites(sessionId: string, token: string): Promise<InviteView> {
+  return read(await fetch(inviteBase(sessionId, token))) as Promise<InviteView>;
+}
+
+export async function sendInvite(sessionId: string, token: string, email: string): Promise<InviteRow> {
+  return read(await mutate(inviteBase(sessionId, token), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+  })) as Promise<InviteRow>;
+}
+
+export async function cancelInvite(sessionId: string, token: string, ticketId: number) {
+  return read(await mutate(`${inviteBase(sessionId, token)}/${ticketId}`, { method: 'DELETE' }));
+}

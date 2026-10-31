@@ -20,25 +20,37 @@ import ConsoleCoupons from './ConsoleCoupons';
 import BoothManagers from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, GateRow, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
-const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', policy: '재입장·퇴장', crowd: '혼잡도' };
+const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', policy: '재입장·퇴장', crowd: '혼잡도', invite: '초대' };
 
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
   gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
 };
 /** Settings is one page of sections; these are its sections, in order. */
-type SettingsTab = 'event' | 'policy' | 'crowd' | 'fields';
+type SettingsTab = 'event' | 'policy' | 'crowd' | 'invite' | 'fields';
 /** The settings forms that wait for the save bar, in the order they are saved. */
-type SettingsKey = 'details' | 'policy' | 'crowd';
-const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'crowd'];
+type SettingsKey = 'details' | 'policy' | 'crowd' | 'invite';
+const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'crowd', 'invite'];
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
-  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['fields', '발급 항목'],
+  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['invite', '초대'], ['fields', '발급 항목'],
 ];
+/** What each choice of who sees a group's entry status means, in one line. */
+const INVITE_STATUS_HINT: Record<InviteStatus, string> = {
+  OFF: '초대는 그대로 되지만, 누가 입장했는지는 아무도 볼 수 없어요.',
+  INVITER: '초대한 사람만 초대받은 사람들의 입장 상태를 봐요.',
+  GROUP: '초대한 사람과 초대받은 사람 모두 서로의 입장 상태를 봐요.',
+};
+
+/** One line beside a ticket's address: who invited it, or how many it has invited. */
+function inviteNote(row: TicketRow): string | null {
+  if (row.invitee) return row.invitedBy ? `초대: ${row.invitedBy.email}` : '초대';
+  return row.invitesUsed ? `초대 ${row.invitesUsed}명` : null;
+}
 
 
 export default function TicketAdmin() {
@@ -73,18 +85,23 @@ export default function TicketAdmin() {
   // The settings page saves once, from a bar that shows while anything is changed.
   const settingsForms = {
     details: useRef<HTMLFormElement>(null), policy: useRef<HTMLFormElement>(null), crowd: useRef<HTMLFormElement>(null),
+    invite: useRef<HTMLFormElement>(null),
   };
   const [settingsDirty, setSettingsDirty] = useState<Set<SettingsKey>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
+  // The 초대 section's hint follows its select before the save; null means as saved.
+  const [inviteStatusHint, setInviteStatusHint] = useState<InviteStatus | null>(null);
+  useEffect(() => { setInviteStatusHint(null); }, [selected]);
   // Counts edits per form, so a change typed while its save is on the way is not
   // marked saved along with it.
-  const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0 });
+  const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0, invite: 0 });
   const markSettingsDirty = (key: SettingsKey) => {
     settingsEdits.current[key] += 1;
     setSettingsDirty(current => (current.has(key) ? current : new Set(current).add(key)));
   };
   const revertSettings = () => {
     settingsDirty.forEach(key => settingsForms[key].current?.reset());
+    setInviteStatusHint(null);
     setSettingsDirty(new Set());
   };
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
@@ -758,13 +775,27 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
+  /** Who sees a group's entry status, and how many each tier may invite: all of it, every save. */
+  const saveInvites = (data: FormData) => act(async () => {
+    const inviteQuotas: Record<string, number> = {};
+    for (const [key, value] of data.entries()) {
+      if (key.startsWith('quota:')) inviteQuotas[key.slice(6)] = Number(value || 0);
+    }
+    await read(await mutate(`/api/admin/sessions/${selected}/policy`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteStatus: data.get('inviteStatus'), inviteQuotas }),
+    }));
+    setNotice('초대 설정을 저장했어요.');
+    await loadSessions();
+  });
+
   /**
    * The save bar: every changed form, checked first and then saved one at a time. A form
    * is marked saved only once the server has taken it, so a refusal leaves both the bar
    * and the operator's values where they were, and the first refusal stops the rest.
    */
   const settingsSavers: Record<SettingsKey, (data: FormData) => Promise<boolean>> = {
-    details: submitDetails, policy: savePolicy, crowd: saveCrowding,
+    details: submitDetails, policy: savePolicy, crowd: saveCrowding, invite: saveInvites,
   };
   const saveSettings = async () => {
     if (savingSettings) return;
@@ -793,6 +824,10 @@ export default function TicketAdmin() {
   // A seat is spoken for as soon as a ticket carries it; the database enforces the same.
   const takenSeats = new Set(summary?.seats ?? []);
   const usedTiers = new Set(summary?.tiers ?? []);
+  // Every tier a quota can be set for: the catalogue, what tickets already carry, and any
+  // tier that still has a quota. '' - no tier - comes last.
+  const inviteTiers = [...new Set([...(session?.tiers ?? []), ...usedTiers,
+    ...Object.keys(session?.inviteQuotas ?? {}).filter(Boolean)])].concat('');
   const counts = summary?.counts ?? { all: 0, unclaimed: 0, bound: 0, inside: 0, revoked: 0, live: 0 };
   const fieldList = session?.fields ?? [];
 
@@ -1049,7 +1084,8 @@ export default function TicketAdmin() {
                           <span className={`pill pill-${presence.tone}`}>
                             {presence.label}{presence.since ? ` · ${clock(presence.since)}` : ''}</span>
                         </td>
-                        <td className="muted email-col">{row.holderEmail ?? row.issuedToEmail}</td>
+                        <td className="muted email-col">{row.holderEmail ?? row.issuedToEmail}
+                          {inviteNote(row) && <small className="cell-note invite-note">{inviteNote(row)}</small>}</td>
                         <td className="muted delivery-col">{DELIVERY[row.deliveredVia ?? ''] ?? row.deliveredVia ?? '–'}</td>
                         <td className="row-actions link-col">
                           <button type="button" className="btn-tiny" onClick={() => { setOpenTicket(row); void showLink(row.ticketId); }}>
@@ -1092,6 +1128,13 @@ export default function TicketAdmin() {
                   <div><dt>전달</dt><dd>{DELIVERY[open.deliveredVia ?? ''] ?? open.deliveredVia ?? '–'}
                     {open.reissueCount > 0 ? ` · 재발급 ${open.reissueCount}회` : ''}</dd></div>
                   {open.phone && <div><dt>휴대폰</dt><dd>{open.phone}</dd></div>}
+                  {open.invitee && (
+                    <div><dt>초대한 사람</dt><dd>{open.invitedBy
+                      ? `${open.invitedBy.email} · ${open.invitedBy.ticketRef}` : '삭제된 입장권'}</dd></div>
+                  )}
+                  {!open.invitee && (open.invitesUsed ?? 0) > 0 && (
+                    <div><dt>초대</dt><dd>{open.invitesUsed}명 초대함</dd></div>
+                  )}
                   <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
                 </dl>
 
@@ -1594,6 +1637,41 @@ export default function TicketAdmin() {
                 정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.
               </p>
 
+            </form>
+              </div>
+            </section>
+            <section id="settings-invite" className="settings-section" aria-labelledby="settings-invite-title">
+              <div className="settings-side">
+                <h3 id="settings-invite-title">초대</h3>
+                <p>입장권을 등록한 사람이 등급별로 정한 인원만큼 다른 사람을 초대할 수 있어요. 초대받은 사람은 자기 입장권을 메일로 받고, 다시 초대할 수는 없어요.</p>
+              </div>
+              <div className="settings-body">
+            <form key={`invite-${session.id}`} className="settings-form" ref={settingsForms.invite}
+              onChange={() => markSettingsDirty('invite')}
+              onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
+              <div className="field">
+                <label htmlFor="invite-status">일행 입장 현황 공개</label>
+                <select id="invite-status" name="inviteStatus" defaultValue={session.inviteStatus ?? 'GROUP'}
+                  onChange={e => setInviteStatusHint(e.target.value as InviteStatus)}>
+                  {(Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]).map(value => (
+                    <option key={value} value={value}>{INVITE_STATUS_LABEL[value]}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
+              <div className="zone-capacity">
+                {inviteTiers.map(tier => (
+                  <div className="field" key={tier || '(none)'}>
+                    <label htmlFor={`quota-${tier || 'none'}`}>{tier || '등급 없음'} 초대 인원</label>
+                    <input id={`quota-${tier || 'none'}`} name={`quota:${tier}`} type="number" min={0} max={100}
+                      defaultValue={session.inviteQuotas?.[tier] ?? 0} />
+                  </div>
+                ))}
+              </div>
+              <p className="hint-text">
+                0명이면 그 등급은 초대할 수 없어요. 초대받은 사람이 등록하기 전에는 초대한 사람이 취소할 수 있고,
+                취소하면 그 자리가 다시 비어요.
+              </p>
             </form>
               </div>
             </section>

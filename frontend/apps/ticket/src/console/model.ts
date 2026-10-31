@@ -17,7 +17,13 @@ export interface SessionRow {
   fields: TicketFieldRow[];
   /** Place to capacity, for the places the organiser has measured. */
   zoneCapacity: Record<string, number>;
+  /** Who sees a group's entry status: nobody, the inviter, or everyone in the group. */
+  inviteStatus: InviteStatus;
+  /** Invites per tier; '' is the tickets with no tier. A tier left out invites nobody. */
+  inviteQuotas: Record<string, number>;
 }
+export type InviteStatus = 'OFF' | 'INVITER' | 'GROUP';
+export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = { OFF: '끔', INVITER: '초대자만', GROUP: '일행 모두' };
 export interface TicketFieldRow { id: number; label: string; kind: 'SEAT' | 'TIER' | 'CUSTOM'; values: string[] }
 
 export interface TicketRow {
@@ -28,6 +34,11 @@ export interface TicketRow {
   lastEventAt: string | null; lastExitAt: string | null; insideSince: string | null;
   phone: string | null; deliveredVia: string | null;
   attributes: Record<string, string>;
+  /** Issued on a holder's invitation; invitedBy is gone once the inviter's ticket is deleted. */
+  invitee?: boolean;
+  invitedBy?: { ticketId: number; ticketRef: string; email: string } | null;
+  /** How many this ticket has invited, whatever became of them. */
+  invitesUsed?: number;
 }
 
 /** Whether an event is still ahead, is today, or has been, by the calendar day. */

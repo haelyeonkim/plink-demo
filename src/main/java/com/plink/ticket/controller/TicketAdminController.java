@@ -58,6 +58,7 @@ public class TicketAdminController {
     private final com.plink.ticket.community.AdImageService adImages;
     private final com.plink.ticket.service.SessionPolicyService policies;
     private final com.plink.ticket.service.BoothManagerService boothManagers;
+    private final com.plink.ticket.repository.InviteQuotaRepository inviteQuotas;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -69,7 +70,9 @@ public class TicketAdminController {
             com.plink.ticket.service.CouponService coupons,
             com.plink.ticket.community.AdImageService adImages,
             com.plink.ticket.service.SessionPolicyService policies,
-            com.plink.ticket.service.BoothManagerService boothManagers) {
+            com.plink.ticket.service.BoothManagerService boothManagers,
+            com.plink.ticket.repository.InviteQuotaRepository inviteQuotas) {
+        this.inviteQuotas = inviteQuotas;
         this.boothManagers = boothManagers;
         this.adImages = adImages;
         this.policies = policies;
@@ -558,9 +561,28 @@ public class TicketAdminController {
         TicketRepository.Filter narrowed = ticketFilter(filter);
         String query = blankToNull(q);
         List<Ticket> found = tickets.search(id, narrowed, query, limit, offset);
-        Map<Long, Presence> presence = admissions.findAll(found.stream().map(ticket -> ticket.id).toList());
+        List<Long> ids = found.stream().map(ticket -> ticket.id).toList();
+        Map<Long, Presence> presence = admissions.findAll(ids);
+        // Who invited the invitees on this page, and how many each inviter has used: two
+        // more queries for the page, not two per row.
+        Map<Long, Integer> invitesUsed = tickets.inviteCounts(ids);
+        Map<Long, Ticket> inviters = new java.util.HashMap<>();
+        for (Ticket inviter : tickets.findAllById(found.stream()
+                .map(ticket -> ticket.invitedBy).filter(java.util.Objects::nonNull).toList())) {
+            inviters.put(inviter.id, inviter);
+        }
         List<Map<String, Object>> items = new ArrayList<>();
-        for (Ticket ticket : found) items.add(ticketRow(ticket, presence.get(ticket.id), plain));
+        for (Ticket ticket : found) {
+            Map<String, Object> row = ticketRow(ticket, presence.get(ticket.id), plain);
+            Ticket inviter = ticket.invitedBy == null ? null : inviters.get(ticket.invitedBy);
+            row.put("invitee", ticket.invitee);
+            row.put("invitedBy", inviter == null ? null : Map.of(
+                "ticketId", inviter.id,
+                "ticketRef", inviter.ticketRef,
+                "email", email(inviter.holderEmail != null ? inviter.holderEmail : inviter.issuedToEmail, plain)));
+            row.put("invitesUsed", invitesUsed.getOrDefault(ticket.id, 0));
+            items.add(row);
+        }
         return paged(items, tickets.count(id, narrowed, query), page, limit);
     }
 
@@ -1077,6 +1099,8 @@ public class TicketAdminController {
         row.put("venueLat", session.venueLat);
         row.put("venueLon", session.venueLon);
         row.put("geoRadiusMeters", session.geoRadiusMeters);
+        row.put("inviteStatus", session.inviteStatus);
+        row.put("inviteQuotas", inviteQuotas.findBySession(session.id));
         List<TicketField> configured = fields.findBySession(session.id);
         row.put("fields", configured.stream().map(this::describeField).toList());
         row.put("seats", configured.stream().filter(TicketField::seat)

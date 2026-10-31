@@ -41,6 +41,9 @@ public class TicketRepository {
         t.deliveredAt = rs.getTimestamp("delivered_at");
         t.tokenCipher = rs.getString("token_cipher");
         t.attributes = rs.getString("attributes");
+        long invitedBy = rs.getLong("invited_by");
+        t.invitedBy = rs.wasNull() ? null : invitedBy;
+        t.invitee = rs.getBoolean("invitee");
         return t;
     };
 
@@ -67,6 +70,40 @@ public class TicketRepository {
             return ps;
         }, keys);
         return keys.getKey().longValue();
+    }
+
+    /** Marks a ticket just inserted as issued on a holder's invitation. */
+    public void markInvited(long id, long invitedBy) {
+        jdbc.update("UPDATE ticket SET invited_by = ?, invitee = TRUE WHERE id = ?", invitedBy, id);
+    }
+
+    /** The tickets a holder has invited, whatever became of them, oldest first. */
+    public List<Ticket> findInvitedBy(long inviterId) {
+        return jdbc.query("SELECT * FROM ticket WHERE invited_by = ? ORDER BY id", MAPPER, inviterId);
+    }
+
+    /** How many each of these tickets has invited: what the console's list shows beside an inviter. */
+    public Map<Long, Integer> inviteCounts(java.util.Collection<Long> inviterIds) {
+        Map<Long, Integer> counts = new java.util.HashMap<>();
+        List<Long> ids = new ArrayList<>(inviterIds);
+        for (int from = 0; from < ids.size(); from += 500) {
+            List<Long> chunk = ids.subList(from, Math.min(ids.size(), from + 500));
+            jdbc.query("SELECT invited_by, COUNT(*) AS n FROM ticket WHERE invited_by IN ("
+                + String.join(",", java.util.Collections.nCopies(chunk.size(), "?")) + ") GROUP BY invited_by",
+                rs -> { counts.put(rs.getLong("invited_by"), rs.getInt("n")); }, chunk.toArray());
+        }
+        return counts;
+    }
+
+    public List<Ticket> findAllById(java.util.Collection<Long> ids) {
+        List<Ticket> found = new ArrayList<>();
+        List<Long> wanted = new ArrayList<>(new java.util.TreeSet<>(ids));
+        for (int from = 0; from < wanted.size(); from += 500) {
+            List<Long> chunk = wanted.subList(from, Math.min(wanted.size(), from + 500));
+            found.addAll(jdbc.query("SELECT * FROM ticket WHERE id IN ("
+                + String.join(",", java.util.Collections.nCopies(chunk.size(), "?")) + ")", MAPPER, chunk.toArray()));
+        }
+        return found;
     }
 
     /**
