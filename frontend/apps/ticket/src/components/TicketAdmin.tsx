@@ -1375,7 +1375,7 @@ export default function TicketAdmin() {
                     </div>
                   </div>
                   {mine.length > 0
-                    ? <div className="gate-grid">{mine.map(card)}</div>
+                    ? <div className="gate-grid booth-terminals">{mine.map(card)}</div>
                     : <p className="console-none">아직 단말이 없어요. <b>단말 추가</b>를 누르고 태블릿에서 설정 링크를 열어 주세요.</p>}
                   {setupPanel && mine.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
                   <BoothManagers boothId={booth.boothId} boothName={booth.name}
@@ -1393,7 +1393,7 @@ export default function TicketAdmin() {
                     <p className="muted">더 이상 쿠폰을 주지 않아요. 연결을 해제하거나 토큰을 폐기하세요.</p>
                   </div>
                 </div>
-                <div className="gate-grid">{orphans.map(card)}</div>
+                <div className="gate-grid booth-terminals">{orphans.map(card)}</div>
               </section>
             )}
             {booths.length === 0 && (

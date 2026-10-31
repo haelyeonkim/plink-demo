@@ -1592,3 +1592,27 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
 .reactions .reaction { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-variant-numeric: tabular-nums; }
 .reactions .reaction:first-child { margin-left: 0; }
 .reactions .reaction.none { color: #9aa1b3; }
+
+/* A booth's terminals on a phone: two to a row, so a booth with several fits on a screen.
+   The card loses the words it can spare; the menu still has everything. */
+@media (max-width: 560px) {
+  .gate-grid.booth-terminals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .booth-terminals .gate-card { padding: 10px; gap: 8px; border-radius: 12px; min-width: 0; }
+  .booth-terminals .gate-card-head { gap: 4px; }
+  .booth-terminals .gate-card-head > div:first-child { min-width: 0; }
+  .booth-terminals .gate-card-head h3 { font-size: 15px; margin-bottom: 4px; overflow-wrap: anywhere; }
+  .booth-terminals .gate-card-tags { font-size: 12px; gap: 4px; }
+  .booth-terminals .gate-card-tags .pill { display: none; }
+  .booth-terminals .gate-status { padding: 6px 8px; font-size: 13px; gap: 6px; }
+  .booth-terminals .gate-status .muted { display: none; }
+  .booth-terminals .gate-facts { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .booth-terminals .gate-facts dd { font-size: 13px; }
+  .booth-terminals .gate-card-actions { flex-direction: column; gap: 6px; padding-top: 8px; margin-top: auto; }
+  .booth-terminals .gate-card-actions .btn-primary,
+  .booth-terminals .gate-card-actions .btn-secondary { width: 100%; padding: 8px 6px; font-size: 12px; }
+}
+@media (max-width: 560px) {
+  .booth-terminals .gate-card-tags { display: none; }
+  .booth-terminals .gate-facts dd.setup-code { flex-direction: row; align-items: center; gap: 6px; }
+  .booth-terminals .setup-code .btn-tiny { padding: 2px 8px; font-size: 12px; }
+}
