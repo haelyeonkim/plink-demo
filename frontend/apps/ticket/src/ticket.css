@@ -1422,6 +1422,11 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .booth-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .booth-card .console-none { margin: 0; }
 
+/* A booth terminal's managers on its card: whole addresses, broken anywhere rather than cut. */
+.gate-facts .gate-fact-wide { grid-column: 1 / -1; min-width: 0; }
+.gate-manager { overflow-wrap: anywhere; font-size: 13px; }
+.gate-manager small { display: inline; }
+
 /* The booth's managers, under its terminals: who may run it from their own phone. */
 .booth-managers { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .booth-managers h4 { margin: 0; font-size: 14px; }
@@ -1435,6 +1440,10 @@ body:has(.chat-room .sheet-scrim) .ticket-tabs { display: none; }
 .booth-manager-who b { font-size: 14px; overflow-wrap: anywhere; }
 .booth-manager-list small { font-size: 12px; }
 .booth-manager-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Which terminal the person answers for, changed in place: a small select, not a dialog. */
+.booth-manager-terminal { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
+.booth-manager-terminal select { height: 30px; padding: 0 8px; font-size: 12.5px; max-width: 220px; min-width: 0; }
+.booth-manager-terminal b { color: inherit; font-size: 12.5px; }
 .booth-manager-link { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .booth-manager-link .hint-text { margin: 0; }
 .booth-manager-link code { font-size: 12px; overflow-wrap: anywhere; word-break: break-all; user-select: all; }
@@ -1481,6 +1490,10 @@ body:has(.gate-console) .header-plain, body:has(.gate-console) .footer { display
 .bm-kpis .kpi { padding: 12px 14px; }
 .bm-kpis .kpi-num { font-size: 24px; }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* The manager's own terminal, above the numbers: the one thing on this tab to act on once. */
+.bm-terminal .bm-terminal-name { margin: 0 0 6px; font-size: 16px; overflow-wrap: anywhere; }
+.bm-terminal .hint-text { margin: 0 0 12px; }
+.bm-terminal .btn-secondary { width: 100%; margin: 0; }
 .bm-actions > button { flex: 1 1 140px; width: auto; margin: 0; }
 .bm-list { list-style: none; margin: 0; padding: 0; }
 .bm-list li { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-bottom: 1px solid #eef0f5; min-width: 0; }

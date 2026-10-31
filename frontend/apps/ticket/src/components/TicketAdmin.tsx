@@ -1219,6 +1219,15 @@ export default function TicketAdmin() {
                         <small>{valid.label.replace('유효기간 ', '')}</small></dd></div>
                       <div><dt>쿠폰</dt><dd>{(gate.grants ?? []).length === 0 ? '없음'
                         : `${gate.grants.length}종${gate.grants.some(grant => grant.auto) ? ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}` : ''}`}</dd></div>
+                      {gate.role === 'BOOTH' && (
+                        /* Who answers for it: their phone records as this terminal, and can become it. */
+                        <div className="gate-fact-wide"><dt>담당</dt><dd>{(gate.managers ?? []).length === 0 ? '없음' : (
+                          gate.managers!.map(manager => (
+                            <span key={manager.managerId} className="gate-manager" title={manager.email}>
+                              {manager.email}{manager.status === 'INVITED' ? <small> 초대됨</small> : null}
+                            </span>
+                          )))}</dd></div>
+                      )}
                       {!gate.boundDevice && gate.setupCode && (
                         <div><dt>인증번호</dt><dd className="mono setup-code">
                           {/* Hidden until asked for: with the link, this number makes a tablet a gate,
@@ -1369,7 +1378,9 @@ export default function TicketAdmin() {
                     ? <div className="gate-grid">{mine.map(card)}</div>
                     : <p className="console-none">아직 단말이 없어요. <b>단말 추가</b>를 누르고 태블릿에서 설정 링크를 열어 주세요.</p>}
                   {setupPanel && mine.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
-                  <BoothManagers boothId={booth.boothId} boothName={booth.name} busy={busy} act={act}
+                  <BoothManagers boothId={booth.boothId} boothName={booth.name}
+                    terminals={terminals.filter(gate => gate.boothId === booth.boothId)}
+                    newTerminalName={nextTerminalName(booth)} busy={busy} act={act}
                     onNotice={setNotice} onError={setError} onChanged={() => loadSession(selected!)} />
                 </section>
               );

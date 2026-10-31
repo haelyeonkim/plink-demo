@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { clock } from '../../console/model';
 import { COUPON_STATE, type BoothTabProps } from './shared';
+import BoothTerminal from './BoothTerminal';
 
 /** The booth at a glance: who is around, and how far each of its coupons has gone. */
-export default function BoothOverview({ dashboard, refresh, onGo }: BoothTabProps & {
+export default function BoothOverview({ client, dashboard, refresh, fail, onGo }: BoothTabProps & {
   onGo: (tab: 'offers' | 'issue' | 'scan') => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -18,6 +19,8 @@ export default function BoothOverview({ dashboard, refresh, onGo }: BoothTabProp
 
   return (
     <div className="bm-stack">
+      {/* Only a manager who answers for a terminal has one; a terminal is already itself. */}
+      {dashboard.terminal && <BoothTerminal client={client} terminal={dashboard.terminal} fail={fail} />}
       <div className="bm-kpis">
         <div className="kpi"><span className="kpi-label">입장권</span><span className="kpi-num">{dashboard.liveTickets.toLocaleString()}</span></div>
         <div className="kpi"><span className="kpi-label">지금 장내</span><span className="kpi-num">{dashboard.inside.toLocaleString()}</span></div>

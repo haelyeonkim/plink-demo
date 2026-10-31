@@ -75,6 +75,8 @@ export interface GateRow {
   tokenExpiresAt: string | null; tokenExpired: boolean;
   /** Offers this terminal may give, and whether it gives them by itself on entry. */
   grants: { offerId: number; auto: boolean }[];
+  /** A booth terminal's managers, invited or signed in. */
+  managers?: { managerId: number; email: string; status: 'INVITED' | 'ACTIVE' }[];
 }
 
 /** Whether a terminal admits anybody, which is what giving on entry hangs on. */

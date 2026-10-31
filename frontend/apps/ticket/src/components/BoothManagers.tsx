@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { mutate } from '@shared/auth';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
-import { read, shortTime } from '../console/model';
+import { read, shortTime, type GateRow } from '../console/model';
 import type { BoothManagerRow, ManagerInvited } from '../booth/api';
 
 const STATE: Record<BoothManagerRow['status'], [string, string]> = {
   INVITED: ['초대됨', 'wait'], ACTIVE: ['사용 중', 'ok'], REVOKED: ['해지', 'off'],
 };
 
-const post = (url: string, body: unknown) => mutate(url, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+const send = (method: string) => (url: string, body: unknown) => mutate(url, {
+  method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 }).then(read);
+const post = send('POST');
+const put = send('PUT');
+
+/** The select's value for "make a new terminal", which no gate id can be. */
+const NEW_TERMINAL = ' new';
+
+const terminalName = (gate: GateRow) =>
+  `${gate.label || gate.gateId} · ${gate.boundDevice ? '연결됨' : '연결 안 됨'}`;
 
 /**
  * The people who run one booth from their own phones: who was asked, who has signed in,
@@ -18,10 +26,17 @@ const post = (url: string, body: unknown) => mutate(url, {
  *
  * <p>A link is only shown right after it was made: the server keeps a hash of it, so a
  * lost link is replaced with a new one rather than shown again.
+ *
+ * <p>Each person answers for one of the booth's terminals, chosen here or made here: what
+ * they hand over is recorded under that terminal's name, and their own phone can become it.
  */
-export default function BoothManagers({ boothId, boothName, busy, act, onNotice, onError, onChanged }: {
+export default function BoothManagers({ boothId, boothName, terminals, newTerminalName, busy, act, onNotice, onError, onChanged }: {
   boothId: number;
   boothName: string;
+  /** This booth's terminals, to choose from. */
+  terminals: GateRow[];
+  /** What a terminal made from the invite form is called unless the organiser says otherwise. */
+  newTerminalName: string;
   busy: boolean;
   act: (action: () => Promise<void>) => Promise<boolean>;
   onNotice: (text: string) => void;
@@ -32,6 +47,8 @@ export default function BoothManagers({ boothId, boothName, busy, act, onNotice,
   const [rows, setRows] = useState<BoothManagerRow[] | null>(null);
   const [email, setEmail] = useState('');
   const [notify, setNotify] = useState(true);
+  const [terminal, setTerminal] = useState('');
+  const [newName, setNewName] = useState('');
   const [shown, setShown] = useState<{ managerId: number; email: string; link: string; mailed: boolean } | null>(null);
   const [confirm, setConfirm] = useState<{ row: BoothManagerRow; action: 'reissue' | 'revoke' } | null>(null);
 
@@ -39,14 +56,36 @@ export default function BoothManagers({ boothId, boothName, busy, act, onNotice,
     try { setRows(await read(await fetch(`/api/admin/booths/${boothId}/managers`))); }
     catch (err) { onError(err instanceof Error ? err.message : '부스 관리자를 불러오지 못했어요.'); }
   }, [boothId, onError]);
-  useEffect(() => { void load(); }, [load]);
+  // A terminal renamed or deleted from its card changes what the rows say, so they are read again.
+  const terminalKey = terminals.map(gate => `${gate.gateId}:${gate.label ?? ''}`).join('|');
+  useEffect(() => { void load(); }, [load, terminalKey]);
+  // A chosen terminal that has gone (deleted from its card) is no choice at all.
+  useEffect(() => {
+    if (terminal && terminal !== NEW_TERMINAL && !terminals.some(gate => gate.gateId === terminal)) setTerminal('');
+  }, [terminal, terminals]);
+
+  function chooseTerminal(value: string) {
+    setTerminal(value);
+    if (value === NEW_TERMINAL && !newName.trim()) setNewName(newTerminalName);
+  }
 
   const invite = () => act(async () => {
     const address = email.trim();
-    const result = await post(`/api/admin/booths/${boothId}/managers`, { email: address, notify }) as ManagerInvited;
+    const where = terminal === NEW_TERMINAL ? { newTerminal: { label: newName.trim() } } : { gateId: terminal };
+    const result = await post(`/api/admin/booths/${boothId}/managers`, { email: address, notify, ...where }) as ManagerInvited;
     setShown({ managerId: result.managerId, email: result.email || address, link: result.link, mailed: notify });
     setEmail('');
+    setTerminal('');
+    setNewName('');
     onNotice(notify ? `${address} 로 초대 메일을 보냈어요.` : `${address} 의 초대 링크를 만들었어요. 아래에서 복사해 전해 주세요.`);
+    await Promise.all([load(), onChanged()]);
+  });
+
+  const assign = (row: BoothManagerRow, gateId: string) => act(async () => {
+    await put(`/api/admin/booth-managers/${row.managerId}`, { gateId: gateId || null });
+    const gate = terminals.find(item => item.gateId === gateId);
+    onNotice(gate ? `${row.email} 의 담당 단말을 '${gate.label || gate.gateId}'(으)로 바꿨어요.`
+      : `${row.email} 의 담당 단말을 비웠어요.`);
     await Promise.all([load(), onChanged()]);
   });
 
@@ -93,6 +132,20 @@ export default function BoothManagers({ boothId, boothName, busy, act, onNotice,
                     <b>{row.email}</b>
                     <span className={`pill pill-${tone}`}>{label}</span>
                   </span>
+                  <label className="booth-manager-terminal">
+                    <span>담당 단말</span>
+                    {row.status === 'REVOKED' ? <b>{row.gateLabel || '없음'}</b> : (
+                      <select value={row.gateId ?? ''} disabled={busy}
+                        aria-label={`${row.email} 의 담당 단말`}
+                        onChange={e => void assign(row, e.target.value)}>
+                        <option value="">없음 · 본인 이름으로 기록</option>
+                        {row.gateId && !terminals.some(gate => gate.gateId === row.gateId) && (
+                          <option value={row.gateId}>{row.gateLabel || row.gateId}</option>
+                        )}
+                        {terminals.map(gate => <option key={gate.gateId} value={gate.gateId}>{terminalName(gate)}</option>)}
+                      </select>
+                    )}
+                  </label>
                   <small className="muted">
                     {row.lastSeenAt ? `최근 접속 ${shortTime(row.lastSeenAt)}`
                       : row.status === 'INVITED' ? `초대 ${shortTime(row.invitedAt)} · 아직 열지 않음` : '접속 기록 없음'}
@@ -130,10 +183,24 @@ export default function BoothManagers({ boothId, boothName, busy, act, onNotice,
           <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
             placeholder="staff@example.com" aria-label={`${boothName} 관리자로 초대할 이메일`} />
         </label>
+        <label className="grow">담당 단말
+          <select required value={terminal} onChange={e => chooseTerminal(e.target.value)}
+            aria-label={`${boothName} 관리자가 맡을 단말`}>
+            <option value="" disabled>단말을 골라 주세요</option>
+            {terminals.map(gate => <option key={gate.gateId} value={gate.gateId}>{terminalName(gate)}</option>)}
+            <option value={NEW_TERMINAL}>새 단말 만들기</option>
+          </select>
+        </label>
+        {terminal === NEW_TERMINAL && (
+          <label className="grow">새 단말 이름
+            <input required maxLength={40} value={newName} onChange={e => setNewName(e.target.value)}
+              placeholder={newTerminalName} />
+          </label>
+        )}
         <label className="booth-manager-notify">
           <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} /> 메일로 보내기
         </label>
-        <button className="btn-secondary" type="submit" disabled={busy || !email.trim()}>초대</button>
+        <button className="btn-secondary" type="submit" disabled={busy || !email.trim() || !terminal || (terminal === NEW_TERMINAL && !newName.trim())}>초대</button>
       </form>
 
       <ConfirmDialog

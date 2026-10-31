@@ -45,6 +45,8 @@ export interface BoothDashboard {
   inside: number;
   offers: BoothOffer[];
   recent: { couponId: number; title: string; ticketRef: string; status: CouponStatus; at: string | null }[];
+  /** The terminal a manager answers for; only a manager's link has one, and only when assigned. */
+  terminal?: { gateId: string; label: string | null; connected: boolean };
 }
 
 export interface BoothTicket {
@@ -161,6 +163,10 @@ export async function boothPasskey(token: string, onStage?: (stage: CeremonyStag
 
 export const fetchDashboard = (client: BoothClient) => client.get<BoothDashboard>('/dashboard');
 
+/** Makes this device the manager's terminal: the same credentials a setup code would hand over. */
+export const claimTerminal = (client: BoothClient, deviceId: string) =>
+  client.send<{ gateId: string; gateToken: string; label: string | null }>('/terminal', 'POST', { deviceId });
+
 export const createOffer = (client: BoothClient, title: string, detail: string) =>
   client.send<BoothOffer>('/offers', 'POST', { title, detail });
 export const updateOffer = (client: BoothClient, offerId: number, title: string, detail: string) =>
@@ -261,7 +267,10 @@ export interface BoothManagerRow {
   invitedAt: string | null;
   claimedAt: string | null;
   lastSeenAt: string | null;
+  /** The booth terminal this person answers for and records as; null for none. */
+  gateId: string | null;
+  gateLabel: string | null;
 }
 
 /** Answered once, when a link is made: only a hash of it is kept. */
-export interface ManagerInvited { managerId: number; email: string; status: string; link: string }
+export interface ManagerInvited { managerId: number; email: string; status: string; link: string; gateId: string | null }
