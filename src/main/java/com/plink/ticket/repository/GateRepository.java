@@ -78,6 +78,18 @@ public class GateRepository {
     }
 
     /**
+     * Claims the gate for one terminal unless another already holds it, in the statement
+     * that checks: two devices asking at once cannot both come away with it.
+     *
+     * @return false when a different device holds the gate
+     */
+    public boolean bindDeviceIfFree(String id, String deviceId) {
+        return jdbc.update("UPDATE gate SET bound_device = ?, bound_at = CURRENT_TIMESTAMP, "
+            + "last_seen_at = CURRENT_TIMESTAMP WHERE id = ? AND (bound_device IS NULL OR bound_device = ?)",
+            deviceId, id, deviceId) == 1;
+    }
+
+    /**
      * Removes the gate. Its coupon grants go with it; what it recorded - admissions,
      * refusals, coupons it handed over - keeps the gate's id, so the history stays whole.
      */

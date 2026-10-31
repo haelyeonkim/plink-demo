@@ -31,6 +31,7 @@ public class BoothManagerRepository {
         long holder = rs.getLong("holder_id");
         m.holderId = rs.wasNull() ? null : holder;
         m.status = rs.getString("status");
+        m.gateId = rs.getString("gate_id");
         m.invitedAt = rs.getTimestamp("invited_at");
         m.claimedAt = rs.getTimestamp("claimed_at");
         m.lastSeenAt = rs.getTimestamp("last_seen_at");
@@ -97,6 +98,26 @@ public class BoothManagerRepository {
     public void reopen(long id, String tokenHash, Timestamp at) {
         jdbc.update("UPDATE booth_manager SET token_hash = ?, holder_id = NULL, status = 'INVITED', "
             + "invited_at = ?, claimed_at = NULL WHERE id = ?", tokenHash, at, id);
+    }
+
+    /** Which booth terminal the manager answers for; null takes it away. */
+    public void setGate(long id, String gateId) {
+        jdbc.update("UPDATE booth_manager SET gate_id = ? WHERE id = ?", gateId, id);
+    }
+
+    /** A manager as a terminal card lists them. */
+    public record Assigned(long managerId, String email, String status) {}
+
+    /** Who answers for each terminal of an event, leaving out those who were shut out. */
+    public Map<String, List<Assigned>> assignedBySession(long sessionId) {
+        Map<String, List<Assigned>> result = new HashMap<>();
+        jdbc.query("SELECT id, email, status, gate_id FROM booth_manager WHERE session_id = ? "
+            + "AND gate_id IS NOT NULL AND status <> 'REVOKED' ORDER BY id",
+            rs -> {
+                result.computeIfAbsent(rs.getString("gate_id"), key -> new ArrayList<>())
+                    .add(new Assigned(rs.getLong("id"), rs.getString("email"), rs.getString("status")));
+            }, sessionId);
+        return result;
     }
 
     public boolean revoke(long id) {

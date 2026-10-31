@@ -514,6 +514,203 @@ class BoothManagerTest {
         mvc.perform(get(base(fresh))).andExpect(status().isNotFound());
     }
 
+    // ---- The terminal a manager answers for -----------------------------------------------------
+
+    /** A booth terminal made from the console, as 단말 추가 does. */
+    private String terminal(long booth, String label) throws Exception {
+        String body = json(post("/api/admin/sessions/" + sessionId + "/gates").with(admin(true)),
+                "{\"label\":\"" + label + "\",\"zone\":\"부스\",\"role\":\"BOOTH\",\"boothId\":\"" + booth + "\"}")
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.gateId");
+    }
+
+    private Invite inviteAt(long booth, String email, String terminal) throws Exception {
+        String body = json(post("/api/admin/booths/" + booth + "/managers").with(admin(true)),
+                "{\"email\":\"" + email + "\",\"gateId\":\"" + terminal + "\"}")
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.gateId").value(terminal))
+            .andReturn().getResponse().getContentAsString();
+        String link = JsonPath.read(body, "$.link");
+        return new Invite(((Number) JsonPath.read(body, "$.managerId")).longValue(),
+            link.substring(link.lastIndexOf('/') + 1));
+    }
+
+    @Test void anInvitationNamesOneOfTheBoothsTerminalsOrMakesOne() throws Exception {
+        String counter = terminal(boothId, "커피 카운터");
+        String theirs = terminal(otherBoothId, "굿즈 카운터");
+        String door = JsonPath.read(json(post("/api/admin/sessions/" + sessionId + "/gates").with(admin(true)),
+                "{\"label\":\"정문\",\"zone\":\"로비\",\"direction\":\"IN\"}")
+            .andReturn().getResponse().getContentAsString(), "$.gateId");
+
+        String first = email();
+        Invite a = inviteAt(boothId, first, counter);
+
+        String second = email();
+        String made = json(post("/api/admin/booths/" + boothId + "/managers").with(admin(true)),
+                "{\"email\":\"" + second + "\",\"newTerminal\":{\"label\":\"커피 스탠드 2\"}}")
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String fresh = JsonPath.read(made, "$.gateId");
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM gate WHERE id = ? AND role = 'BOOTH' "
+            + "AND booth_id = ? AND label = '커피 스탠드 2' AND zone = '입구 옆'", Integer.class, fresh, boothId));
+
+        // Another booth's terminal, a door, or no terminal at all is refused, and nobody is invited.
+        String third = email();
+        for (String wrong : new String[] { theirs, door, "g-missing" }) {
+            json(post("/api/admin/booths/" + boothId + "/managers").with(admin(true)),
+                    "{\"email\":\"" + third + "\",\"gateId\":\"" + wrong + "\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("이 부스의 단말을 골라 주세요."));
+        }
+        json(post("/api/admin/booths/" + boothId + "/managers").with(admin(true)),
+                "{\"email\":\"" + third + "\",\"newTerminal\":{\"label\":\"  \"}}")
+            .andExpect(status().isBadRequest());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM booth_manager WHERE email = ?", Integer.class, third));
+        // A duplicate address leaves no new terminal behind.
+        int before = jdbc.queryForObject("SELECT COUNT(*) FROM gate WHERE session_id = ?", Integer.class, sessionId);
+        json(post("/api/admin/booths/" + boothId + "/managers").with(admin(true)),
+                "{\"email\":\"" + first + "\",\"newTerminal\":{\"label\":\"남는 단말\"}}")
+            .andExpect(status().isConflict());
+        assertEquals(before, jdbc.queryForObject("SELECT COUNT(*) FROM gate WHERE session_id = ?", Integer.class, sessionId));
+
+        mvc.perform(get("/api/admin/booths/" + boothId + "/managers").with(admin(true)))
+            .andExpect(jsonPath("$[0].gateId").value(counter))
+            .andExpect(jsonPath("$[0].gateLabel").value("커피 카운터"))
+            .andExpect(jsonPath("$[1].gateId").value(fresh))
+            .andExpect(jsonPath("$[1].gateLabel").value("커피 스탠드 2"));
+
+        // Moved to the new terminal, then refused another booth's, then left with none.
+        json(put("/api/admin/booth-managers/" + a.managerId()).with(admin(true)), "{\"gateId\":\"" + fresh + "\"}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gateId").value(fresh))
+            .andExpect(jsonPath("$.gateLabel").value("커피 스탠드 2"));
+        json(put("/api/admin/booth-managers/" + a.managerId()).with(admin(true)), "{\"gateId\":\"" + theirs + "\"}")
+            .andExpect(status().isBadRequest());
+
+        // The terminal cards say who answers for them; a door has no such list.
+        String listPath = "/api/admin/sessions/" + sessionId + "/gates";
+        mvc.perform(get(listPath).with(admin(true)))
+            .andExpect(jsonPath("$[?(@.gateId == '" + fresh + "')].managers.length()").value(2))
+            .andExpect(jsonPath("$[?(@.gateId == '" + counter + "')].managers.length()").value(0))
+            .andExpect(jsonPath("$[?(@.gateId == '" + fresh + "')].managers[0].email").value(first))
+            .andExpect(jsonPath("$[?(@.gateId == '" + fresh + "')].managers[0].status").value("INVITED"))
+            .andExpect(jsonPath("$[?(@.gateId == '" + door + "')].managers").isEmpty());
+
+        json(put("/api/admin/booth-managers/" + a.managerId()).with(admin(true)), "{\"gateId\":null}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gateId").isEmpty());
+        // A revoked manager drops off the card.
+        long secondId = ((Number) JsonPath.read(made, "$.managerId")).longValue();
+        mvc.perform(delete("/api/admin/booth-managers/" + secondId).with(admin(true)).with(csrf()))
+            .andExpect(status().isOk());
+        mvc.perform(get(listPath).with(admin(true)))
+            .andExpect(jsonPath("$[?(@.gateId == '" + fresh + "')].managers.length()").value(0));
+        json(put("/api/admin/booth-managers/" + secondId).with(admin(true)), "{\"gateId\":\"" + counter + "\"}")
+            .andExpect(status().isConflict());
+        json(put("/api/admin/booth-managers/" + a.managerId()).with(admin(false)), "{\"gateId\":null}")
+            .andExpect(status().isForbidden());
+    }
+
+    @Test void aManagerWithATerminalRecordsAsThatTerminal() throws Exception {
+        String counter = terminal(boothId, "커피 카운터");
+        String email = email();
+        Invite invite = inviteAt(boothId, email, counter);
+        MockHttpSession browser = signedIn(invite.token(), email, new FakePasskey(ORIGIN));
+        String token = invite.token();
+        long coffee = offer(boothId, "아메리카노");
+        Ticket holder = boundTicket(email());
+
+        // The phone still gives what the booth has switched on, not the terminal's own list
+        // (which is empty here), and the read and its answer meet at the same counter.
+        String asked = json(post(base(token) + "/scan").session(browser),
+                "{\"code\":\"" + ticketCode(holder) + "\",\"action\":\"GIVE\"}")
+            .andExpect(jsonPath("$.outcome").value("CHOOSE"))
+            .andExpect(jsonPath("$.choices.length()").value(1))
+            .andReturn().getResponse().getContentAsString();
+        json(post(base(token) + "/scan/confirm").session(browser),
+                "{\"pick\":\"" + JsonPath.read(asked, "$.pick") + "\",\"items\":[{\"offerId\":" + coffee + ",\"count\":2}]}")
+            .andExpect(jsonPath("$.outcome").value("GRANTED"));
+
+        List<Coupon> held = couponRows.findByTicket(holder.id);
+        json(post(base(token) + "/scan").session(browser),
+                "{\"code\":\"" + couponCode(holder, held.get(0).id) + "\",\"action\":\"REDEEM\"}")
+            .andExpect(jsonPath("$.outcome").value("REDEEMED"));
+        assertEquals(counter, couponRows.findById(held.get(0).id).orElseThrow().redeemedGate);
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/coupons").param("status", "REDEEMED").with(admin(true)))
+            .andExpect(jsonPath("$.items[0].redeemedAtGate").value("커피 카운터"));
+        mvc.perform(get(base(token) + "/coupons").param("status", "REDEEMED").session(browser))
+            .andExpect(jsonPath("$.items[0].redeemedBy").value("커피 카운터"));
+        mvc.perform(get(base(token) + "/dashboard").session(browser))
+            .andExpect(jsonPath("$.terminal.gateId").value(counter))
+            .andExpect(jsonPath("$.terminal.label").value("커피 카운터"))
+            .andExpect(jsonPath("$.terminal.connected").value(false));
+
+        // Taken off the terminal, the manager records as themselves again.
+        json(put("/api/admin/booth-managers/" + invite.managerId()).with(admin(true)), "{\"gateId\":null}")
+            .andExpect(status().isOk());
+        json(post(base(token) + "/scan").session(browser),
+                "{\"code\":\"" + couponCode(holder, held.get(1).id) + "\",\"action\":\"REDEEM\"}")
+            .andExpect(jsonPath("$.outcome").value("REDEEMED"));
+        assertEquals("mgr:" + invite.managerId(), couponRows.findById(held.get(1).id).orElseThrow().redeemedGate);
+        mvc.perform(get(base(token) + "/dashboard").session(browser))
+            .andExpect(jsonPath("$.terminal").doesNotExist());
+    }
+
+    @Test void aSignedInManagerMakesTheirDeviceTheirTerminal() throws Exception {
+        String counter = terminal(boothId, "커피 카운터");
+        String email = email();
+        Invite invite = inviteAt(boothId, email, counter);
+        String path = base(invite.token()) + "/terminal";
+
+        // Not signed in: the link alone opens nothing.
+        json(post(path).session(new MockHttpSession()), "{\"deviceId\":\"phone-1\"}")
+            .andExpect(status().isUnauthorized());
+
+        MockHttpSession browser = signedIn(invite.token(), email, new FakePasskey(ORIGIN));
+        json(post(path).session(browser), "{\"deviceId\":\" \"}").andExpect(status().isBadRequest());
+        String body = json(post(path).session(browser), "{\"deviceId\":\"phone-1\"}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gateId").value(counter))
+            .andExpect(jsonPath("$.label").value("커피 카운터"))
+            .andReturn().getResponse().getContentAsString();
+        String gateToken = JsonPath.read(body, "$.gateToken");
+        assertEquals("phone-1", jdbc.queryForObject("SELECT bound_device FROM gate WHERE id = ?", String.class, counter));
+
+        // The token is the terminal's own: it opens the terminal's routes from that device.
+        mvc.perform(get("/api/gates/" + counter + "/booth/dashboard")
+                .header("X-Gate-Token", gateToken).header("X-Gate-Device", "phone-1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.booth.name").value("커피 스탠드"));
+        // Asking again from the same device is fine; another device is refused.
+        json(post(path).session(browser), "{\"deviceId\":\"phone-1\"}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.gateToken").value(gateToken));
+        json(post(path).session(browser), "{\"deviceId\":\"tablet-2\"}")
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("이 단말은 다른 기기에서 사용 중이에요. 주최 측에 연결 해제를 요청해 주세요."));
+        assertEquals("phone-1", jdbc.queryForObject("SELECT bound_device FROM gate WHERE id = ?", String.class, counter));
+
+        // Released from the console, the other device may have it.
+        mvc.perform(post("/api/admin/gates/" + counter + "/release").with(admin(true)).with(csrf()))
+            .andExpect(status().isOk());
+        json(post(path).session(browser), "{\"deviceId\":\"tablet-2\"}").andExpect(status().isOk());
+
+        // Unassigned: nothing to connect.
+        json(put("/api/admin/booth-managers/" + invite.managerId()).with(admin(true)), "{\"gateId\":null}")
+            .andExpect(status().isOk());
+        json(post(path).session(browser), "{\"deviceId\":\"tablet-2\"}")
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("담당 단말이 정해지지 않았어요. 주최 측에 문의해 주세요."));
+
+        // Revoked: gone, whatever the browser remembers.
+        json(put("/api/admin/booth-managers/" + invite.managerId()).with(admin(true)), "{\"gateId\":\"" + counter + "\"}")
+            .andExpect(status().isOk());
+        mvc.perform(delete("/api/admin/booth-managers/" + invite.managerId()).with(admin(true)).with(csrf()))
+            .andExpect(status().isOk());
+        json(post(path).session(browser), "{\"deviceId\":\"tablet-2\"}").andExpect(status().isGone());
+    }
+
     @Test void onlyTheTicketConsoleCanManageManagers() throws Exception {
         String invitePath = "/api/admin/booths/" + boothId + "/managers";
         mvc.perform(get(invitePath)).andExpect(status().isUnauthorized());

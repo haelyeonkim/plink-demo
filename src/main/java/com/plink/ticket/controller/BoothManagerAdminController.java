@@ -27,8 +27,23 @@ public class BoothManagerAdminController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> invite(@PathVariable long boothId, @RequestBody Map<String, Object> body) {
         Object email = body.get("email");
+        // The terminal they answer for: one of the booth's, or {label} for a new one.
+        String newTerminal = null;
+        if (body.get("newTerminal") instanceof Map<?, ?> fresh) {
+            newTerminal = fresh.get("label") == null ? "" : String.valueOf(fresh.get("label"));
+        }
         return managers.invite(boothId, email == null ? null : String.valueOf(email),
-            Boolean.TRUE.equals(body.get("notify")));
+            Boolean.TRUE.equals(body.get("notify")), string(body.get("gateId")), newTerminal);
+    }
+
+    /** Which terminal a manager answers for; a null gateId leaves them with none. */
+    @PutMapping("/booth-managers/{managerId}")
+    public Map<String, Object> assign(@PathVariable long managerId, @RequestBody Map<String, Object> body) {
+        return managers.assign(managerId, string(body.get("gateId")));
+    }
+
+    private static String string(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     @PostMapping("/booth-managers/{managerId}/reissue")

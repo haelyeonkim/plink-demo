@@ -810,20 +810,16 @@ public class TicketAdminController {
     public Map<String, Object> createGate(@PathVariable long id, @RequestBody Map<String, String> body) {
         ticketService.requireSession(id);
         // An ID is a name for the log, not something an organiser should have to invent:
-        // left blank, one is made.
+        // left blank, the registration makes one.
         String gateId = blankToNull(body.get("gateId"));
-        if (gateId == null) {
-            do { gateId = "g-" + Secrets.randomAlnum(8).toLowerCase(java.util.Locale.ROOT); }
-            while (gates.findById(gateId).isPresent());
-        } else if (!gateId.matches("[A-Za-z0-9_-]{1,32}")) {
+        if (gateId != null && !gateId.matches("[A-Za-z0-9_-]{1,32}")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "게이트 ID는 영문·숫자 32자 이내여야 해요.");
-        } else if (gates.findById(gateId).isPresent()) {
+        } else if (gateId != null && gates.findById(gateId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록된 게이트 ID예요.");
         }
         // A booth hands things over; it has no way in or out, so it takes both.
         String direction = "BOOTH".equalsIgnoreCase(body.get("role"))
             ? "BIDIRECTIONAL" : GateAuthService.direction(body.get("direction"));
-        String token = Secrets.randomToken(24);
         // A terminal without a place cannot answer "how busy is the main hall?".
         String zone = required(body.get("zone"), "게이트가 있는 장소를 입력해 주세요.");
         boolean booth = "BOOTH".equalsIgnoreCase(body.get("role"));
@@ -834,12 +830,9 @@ public class TicketAdminController {
             }
             boothId = coupons.requireBooth(id, Long.parseLong(body.get("boothId"))).id;
         }
-        gates.insert(gateId, id, body.get("label"), zone, direction,
-            gateAuth.hash(token), cipher.seal(token), gateAuth.tokenExpiry(),
-            booth ? "BOOTH" : "ADMISSION", boothId);
-
         // The terminal is enrolled from a link and a code; nobody types the token.
-        Map<String, Object> result = new LinkedHashMap<>(gateSetup.open(gateId));
+        Map<String, Object> result = new LinkedHashMap<>(gateSetup.register(id, gateId, body.get("label"), zone,
+            direction, booth ? "BOOTH" : "ADMISSION", boothId));
         result.put("direction", direction);
         return result;
     }
@@ -973,6 +966,7 @@ public class TicketAdminController {
         Map<String, List<com.plink.ticket.repository.CouponOfferRepository.GateOffer>> grants = new java.util.HashMap<>();
         coupons.grantsBySession(id)
             .forEach(grant -> grants.computeIfAbsent(grant.gateId(), key -> new ArrayList<>()).add(grant));
+        Map<String, List<Map<String, Object>>> managers = boothManagers.byTerminal(id);
         gates.findBySession(id).forEach(gate -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("gateId", gate.id);
@@ -993,6 +987,8 @@ public class TicketAdminController {
             row.put("role", gate.booth() ? "BOOTH" : "ADMISSION");
             row.put("boothId", gate.boothId);
             row.put("grants", grantRows(grants.getOrDefault(gate.id, List.of())));
+            // Who answers for a booth terminal, so its card can say whose it is.
+            if (gate.booth()) row.put("managers", managers.getOrDefault(gate.id, List.of()));
             result.add(row);
         });
         return result;

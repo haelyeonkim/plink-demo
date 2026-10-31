@@ -115,9 +115,22 @@ public class GateSetupService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "인증번호가 일치하지 않아요.");
         }
         gates.refundSetupAttempt(gate.id);
+        return handTo(gate, deviceId,
+            "이 게이트는 다른 단말에서 사용 중이에요. 관리 화면에서 연결을 해제한 뒤 다시 시도해 주세요.");
+    }
+
+    /**
+     * Gives a device the terminal's token and claims the gate for it - what a correct setup
+     * code ends in, and what a booth manager's own device gets for their terminal. The
+     * caller has already decided this device may have the gate; this only refuses one
+     * that another device holds, in the caller's words.
+     */
+    Map<String, Object> handTo(Gate gate, String deviceId, String busyMessage) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "단말 정보를 확인할 수 없어요.");
+        }
         if (gate.boundDevice != null && !gate.boundDevice.equals(deviceId)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "이 게이트는 다른 단말에서 사용 중이에요. 관리 화면에서 연결을 해제한 뒤 다시 시도해 주세요.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, busyMessage);
         }
         String terminalToken = cipher.open(gate.tokenCipher);
         if (terminalToken == null) {
@@ -127,7 +140,10 @@ public class GateSetupService {
             gates.rotateToken(gate.id, auth.hash(terminalToken), cipher.seal(terminalToken),
                 auth.tokenExpiry());
         }
-        gates.bindDevice(gate.id, deviceId);
+        // Checked again where it counts: of two devices asking at once, only one gets the gate.
+        if (!gates.bindDeviceIfFree(gate.id, deviceId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, busyMessage);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("gateId", gate.id);
@@ -135,6 +151,24 @@ public class GateSetupService {
         result.put("label", gate.label);
         result.put("direction", gate.direction);
         return result;
+    }
+
+    /**
+     * Registers a terminal and opens its setup at once, so it can be enrolled from the
+     * answer. A blank id is made up: it is a name for the log, not something to invent.
+     */
+    @Transactional
+    public Map<String, Object> register(long sessionId, String gateId, String label, String zone,
+            String direction, String role, Long boothId) {
+        String id = gateId;
+        if (id == null) {
+            do { id = "g-" + Secrets.randomAlnum(8).toLowerCase(java.util.Locale.ROOT); }
+            while (gates.findById(id).isPresent());
+        }
+        String token = Secrets.randomToken(24);
+        gates.insert(id, sessionId, label, zone, direction, auth.hash(token), cipher.seal(token),
+            auth.tokenExpiry(), role, boothId);
+        return open(id);
     }
 
     private Gate require(String token) {

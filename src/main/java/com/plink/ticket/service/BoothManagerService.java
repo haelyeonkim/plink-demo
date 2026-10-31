@@ -9,6 +9,7 @@ import com.plink.ticket.model.Gate;
 import com.plink.ticket.repository.BoothManagerRepository;
 import com.plink.ticket.repository.BoothRepository;
 import com.plink.ticket.repository.CouponRepository;
+import com.plink.ticket.repository.GateRepository;
 import com.plink.ticket.repository.TicketRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -51,13 +52,18 @@ public class BoothManagerService {
     private final TicketRepository tickets;
     private final TicketService ticketService;
     private final EmailSender mail;
+    private final GateRepository gates;
+    private final GateSetupService gateSetup;
     private final TicketProperties properties;
     private final String baseUrl;
 
     public BoothManagerService(BoothManagerRepository managers, BoothRepository booths, CouponService coupons,
             CouponRepository couponRows, TicketRepository tickets, TicketService ticketService, EmailSender mail,
+            GateRepository gates, GateSetupService gateSetup,
             TicketProperties properties, @Value("${plink.auth.base-url}") String baseUrl) {
         this.managers = managers;
+        this.gates = gates;
+        this.gateSetup = gateSetup;
         this.booths = booths;
         this.coupons = coupons;
         this.couponRows = couponRows;
@@ -118,9 +124,30 @@ public class BoothManagerService {
     // ---- The organiser's side -----------------------------------------------------------
 
     public List<Map<String, Object>> list(long boothId) {
-        requireBooth(boothId);
+        Booth booth = requireBooth(boothId);
+        Map<String, Gate> terminals = new LinkedHashMap<>();
+        gates.findBySession(booth.sessionId).forEach(gate -> terminals.put(gate.id, gate));
         List<Map<String, Object>> result = new ArrayList<>();
-        for (BoothManager manager : managers.findByBooth(boothId)) result.add(row(manager));
+        for (BoothManager manager : managers.findByBooth(boothId)) {
+            result.add(row(manager, manager.gateId == null ? null : terminals.get(manager.gateId)));
+        }
+        return result;
+    }
+
+    /** Who answers for each terminal of an event, invited or signed in, for the terminal cards. */
+    public Map<String, List<Map<String, Object>>> byTerminal(long sessionId) {
+        Map<String, List<Map<String, Object>>> result = new LinkedHashMap<>();
+        managers.assignedBySession(sessionId).forEach((gateId, list) -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (BoothManagerRepository.Assigned assigned : list) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("managerId", assigned.managerId());
+                row.put("email", assigned.email());
+                row.put("status", assigned.status());
+                rows.add(row);
+            }
+            result.put(gateId, rows);
+        });
         return result;
     }
 
@@ -128,11 +155,19 @@ public class BoothManagerService {
      * Invites somebody to run a booth, and returns the link once - only its hash is kept,
      * so this is the one moment it can be copied without rotating it. An address that was
      * revoked before is invited afresh on the same row, which keeps its history.
+     *
+     * <p>The person answers for one of the booth's terminals - an existing one, or one made
+     * here under the given name. The console always asks; an older caller naming none
+     * still gets a manager who records as themselves.
      */
     @Transactional
-    public Map<String, Object> invite(long boothId, String rawEmail, boolean notify) {
+    public Map<String, Object> invite(long boothId, String rawEmail, boolean notify, String gateId,
+            String newTerminalLabel) {
         Booth booth = requireBooth(boothId);
         String email = EmailOtpService.normalize(rawEmail);
+        // Checked before anything is written, so a refused terminal leaves no half invitation.
+        Gate chosen = newTerminalLabel != null || gateId == null || gateId.isBlank() ? null
+            : ownTerminal(booth, gateId);
         String token = Secrets.randomToken(32);
         BoothManager existing = managers.findByBoothAndEmail(booth.id, email).orElse(null);
         long id;
@@ -148,12 +183,18 @@ public class BoothManagerService {
         } else {
             throw alreadyManager(email);
         }
+        // A new terminal is made once the invitation stands, so an address that is already
+        // a manager does not leave a stray terminal to roll back.
+        String terminal = newTerminalLabel != null ? newTerminal(booth, newTerminalLabel)
+            : chosen == null ? null : chosen.id;
+        managers.setGate(id, terminal);
         String link = linkFor(token);
         if (notify) sendInvite(booth, email, link, false);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("managerId", id);
         result.put("email", email);
         result.put("status", "INVITED");
+        result.put("gateId", terminal);
         result.put("link", link);
         result.put("notified", notify);
         return result;
@@ -197,6 +238,45 @@ public class BoothManagerService {
         return Map.of("managerId", manager.id, "status", "REVOKED");
     }
 
+    /**
+     * Changes which terminal a manager answers for, or takes it away with null. What they
+     * handed over before keeps the counter it was recorded under.
+     */
+    @Transactional
+    public Map<String, Object> assign(long managerId, String gateId) {
+        BoothManager manager = managers.lockById(managerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스 관리자를 찾을 수 없어요."));
+        if (manager.revoked()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "해지된 관리자예요. 다시 초대해 주세요.");
+        }
+        Booth booth = requireBooth(manager.boothId);
+        Gate gate = gateId == null || gateId.isBlank() ? null : ownTerminal(booth, gateId);
+        managers.setGate(manager.id, gate == null ? null : gate.id);
+        manager.gateId = gate == null ? null : gate.id;
+        return row(manager, gate);
+    }
+
+    /**
+     * Makes this device the manager's terminal, as a correct setup code would: the person
+     * the organiser put in charge of it, signed in with their passkey, is proof enough.
+     * A device already holding it may ask again; another one has to be released first,
+     * because a gate shared by two devices splits its record.
+     */
+    @Transactional
+    public Map<String, Object> useAsTerminal(BoothManager manager, String deviceId) {
+        if (!manager.claimed()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키 등록을 마친 관리자만 단말을 연결할 수 있어요.");
+        }
+        Gate gate = assignedTerminal(manager);
+        if (gate == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "담당 단말이 정해지지 않았어요. 주최 측에 문의해 주세요.");
+        }
+        Map<String, Object> result = new LinkedHashMap<>(gateSetup.handTo(gate, deviceId,
+            "이 단말은 다른 기기에서 사용 중이에요. 주최 측에 연결 해제를 요청해 주세요."));
+        result.remove("direction");
+        return result;
+    }
+
     /** Mailed once the invitation is committed, so a rollback never leaves a live-looking link in an inbox. */
     private void sendInvite(Booth booth, String email, String link, boolean again) {
         EventSession session = ticketService.requireSession(booth.sessionId);
@@ -208,11 +288,13 @@ public class BoothManagerService {
         AfterCommit.run(() -> mail.send(email, subject, body));
     }
 
-    private Map<String, Object> row(BoothManager manager) {
+    private Map<String, Object> row(BoothManager manager, Gate terminal) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("managerId", manager.id);
         row.put("email", manager.email);
         row.put("status", manager.status);
+        row.put("gateId", terminal == null ? null : terminal.id);
+        row.put("gateLabel", terminal == null ? null : terminal.label);
         row.put("invitedAt", time(manager.invitedAt));
         row.put("claimedAt", time(manager.claimedAt));
         row.put("lastSeenAt", time(manager.lastSeenAt));
@@ -245,8 +327,18 @@ public class BoothManagerService {
         return CouponService.Counter.at(gate);
     }
 
+    /** The booth at a glance, and which terminal this manager answers for, if any. */
     public Map<String, Object> dashboard(BoothManager manager) {
-        return dashboard(counter(manager));
+        Map<String, Object> result = new LinkedHashMap<>(dashboard(counter(manager)));
+        Gate gate = assignedTerminal(manager);
+        if (gate != null) {
+            Map<String, Object> terminal = new LinkedHashMap<>();
+            terminal.put("gateId", gate.id);
+            terminal.put("label", gate.label);
+            terminal.put("connected", gate.boundDevice != null);
+            result.put("terminal", terminal);
+        }
+        return result;
     }
 
     public Map<String, Object> dashboard(CouponService.Counter counter) {
@@ -431,7 +523,7 @@ public class BoothManagerService {
      */
     @Transactional
     public Map<String, Object> scan(BoothManager manager, String code, String rawAction, Long offerId) {
-        CouponService.Counter counter = counter(manager);
+        CouponService.Counter counter = desk(manager);
         String action = rawAction == null ? "" : rawAction.trim().toUpperCase(Locale.ROOT);
         Map<String, Object> result;
         if ("REDEEM".equals(action)) {
@@ -457,7 +549,7 @@ public class BoothManagerService {
     /** The counter's answer after a GIVE read without an offer: how many of each to add. */
     @Transactional
     public Map<String, Object> confirmGive(BoothManager manager, String pick, Map<Long, Integer> wanted) {
-        Map<String, Object> result = new LinkedHashMap<>(coupons.grantPicked(counter(manager), pick, wanted));
+        Map<String, Object> result = new LinkedHashMap<>(coupons.grantPicked(desk(manager), pick, wanted));
         result.put("message", message(result));
         return result;
     }
@@ -465,6 +557,55 @@ public class BoothManagerService {
     /** The counter a manager stands at: their booth, and who they are, for what the booth records. */
     public static CouponService.Counter counter(BoothManager manager) {
         return CouponService.Counter.manager(manager.sessionId, manager.boothId, manager.id);
+    }
+
+    /**
+     * The counter a manager hands coupons over at: their terminal, when they answer for
+     * one, so the record names the terminal the organiser set up rather than a person;
+     * otherwise themselves. The terminal lends its name and nothing else - the phone still
+     * gives whatever the booth has switched on, not the terminal's own list - so the
+     * counter carries its id as the key and no gate.
+     */
+    CouponService.Counter desk(BoothManager manager) {
+        Gate gate = assignedTerminal(manager);
+        return gate == null ? counter(manager)
+            : CouponService.Counter.managerAt(manager.sessionId, manager.boothId, gate.id);
+    }
+
+    /**
+     * The manager's terminal while it is still a terminal of their booth. One moved to
+     * another booth since is not theirs to act as, and reads as none.
+     */
+    private Gate assignedTerminal(BoothManager manager) {
+        if (manager.gateId == null) return null;
+        return gates.findById(manager.gateId)
+            .filter(gate -> gate.booth() && gate.boothId != null && gate.boothId == manager.boothId
+                && gate.sessionId == manager.sessionId)
+            .orElse(null);
+    }
+
+    /** One of this booth's terminals; anything else is not a terminal this booth can hand out. */
+    private Gate ownTerminal(Booth booth, String gateId) {
+        return gates.findById(gateId.trim())
+            .filter(gate -> gate.booth() && gate.boothId != null && gate.boothId == booth.id
+                && gate.sessionId == booth.sessionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 부스의 단말을 골라 주세요."));
+    }
+
+    /**
+     * A new terminal for the booth, made as the console's 단말 추가 makes one: placed where
+     * the booth says it is. The place column is short, so a long note is cut to fit.
+     */
+    private String newTerminal(Booth booth, String rawLabel) {
+        String label = rawLabel.strip();
+        if (label.isEmpty() || label.length() > 40) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "단말 이름은 1자부터 40자까지 정해 주세요.");
+        }
+        String zone = booth.note == null || booth.note.isBlank() ? booth.name : booth.note.strip();
+        if (zone.length() > 32) zone = zone.substring(0, 32);
+        Map<String, Object> made = gateSetup.register(booth.sessionId, null, label, zone, "BIDIRECTIONAL",
+            "BOOTH", booth.id);
+        return (String) made.get("gateId");
     }
 
     /** The booth a console counter runs; a counter without one has no console to run. */

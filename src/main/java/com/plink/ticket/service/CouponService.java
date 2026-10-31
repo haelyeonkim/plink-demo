@@ -237,6 +237,14 @@ public class CouponService {
         public static Counter manager(long sessionId, long boothId, long managerId) {
             return new Counter(sessionId, boothId, MANAGER_PREFIX + managerId, null);
         }
+
+        /**
+         * A manager answering for one of the booth's terminals: recorded under the
+         * terminal's id, but giving what the booth gives, as any manager does.
+         */
+        public static Counter managerAt(long sessionId, long boothId, String gateId) {
+            return new Counter(sessionId, boothId, gateId, null);
+        }
     }
 
     /** What a coupon's redeemed_gate starts with when a booth manager handed it over. */

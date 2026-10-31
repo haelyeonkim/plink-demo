@@ -88,6 +88,13 @@ public class BoothManagerController {
         return managers.dashboard(manager);
     }
 
+    /** Makes this device the manager's own terminal, and hands it the terminal's credentials. */
+    @PostMapping("/terminal")
+    public Map<String, Object> useAsTerminal(@PathVariable String token, @RequestBody Map<String, Object> body,
+            HttpSession session) {
+        return managers.useAsTerminal(signedIn(token, session), string(body.get("deviceId")));
+    }
+
     @PostMapping("/offers")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> defineOffer(@PathVariable String token, @RequestBody Map<String, String> body,

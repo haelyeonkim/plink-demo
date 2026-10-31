@@ -8,6 +8,8 @@ public class BoothManager {
     public String email, tokenHash, status;
     /** The person whose passkey opens the booth; null until the invitation is taken up. */
     public Long holderId;
+    /** The booth terminal this person answers for and acts as; null when none was chosen. */
+    public String gateId;
     public Timestamp invitedAt, claimedAt, lastSeenAt;
 
     public boolean revoked() { return "REVOKED".equals(status); }
