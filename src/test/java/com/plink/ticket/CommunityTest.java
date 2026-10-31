@@ -129,6 +129,7 @@ class CommunityTest {
         assertEquals(true, summary.get("entered"));
         assertEquals(false, summary.get("chatOpen"));
         assertNull(summary.get("lastMessage"), "nothing of the talk reaches someone outside");
+        assertEquals("장외에서는 닫혀 있어요. 다시 입장하면 열려요.", summary.get("chatClosed"));
 
         // Back in, it opens again.
         jdbc.update("UPDATE ticket_presence SET state = 'INSIDE' WHERE ticket_id = ?", in.ticketId());

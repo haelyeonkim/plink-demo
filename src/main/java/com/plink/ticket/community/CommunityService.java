@@ -99,8 +99,8 @@ public class CommunityService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "입장한 뒤에 볼 수 있어요.");
         }
         CommunityRepository.Settings settings = repo.settings(ticket.sessionId);
-        // A ban is told first: it outlasts a closed chat or a step outside, and the holder
-        // should know that coming back in will not change it.
+        // A ban is told first: it outlasts a closed chat, and the holder should know that
+        // nothing they do will change it.
         boolean banned = repo.banned(ticket.sessionId, ticket.id);
         String blocked = banned ? "운영자가 이 입장권의 채팅을 차단했어요."
             : !settings.enabled() ? "지금은 채팅이 닫혀 있어요."
@@ -113,7 +113,9 @@ public class CommunityService {
     private Member chatter(TicketService.Resolved resolved, HttpSession session) {
         Member member = member(resolved, session);
         if (!member.inside()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "장외에서는 채팅을 볼 수 없어요. 다시 입장하면 열려요.");
+            // A banned holder is not promised that coming back in opens it.
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, member.banned()
+                ? member.writeBlocked() : "장외에서는 채팅을 볼 수 없어요. 다시 입장하면 열려요.");
         }
         return member;
     }
@@ -287,8 +289,8 @@ public class CommunityService {
     }
 
     /**
-     * Pressing on a line is writing to the room, under the same rules: a muted ticket, a
-     * closed chat or someone who has left reads but does not like, dislike or report.
+     * Pressing on a line is writing to the room, under the same rules: a muted ticket or a
+     * closed chat reads but does not like, dislike or report.
      */
     private Member writer(TicketService.Resolved resolved, HttpSession session) {
         Member member = chatter(resolved, session);
@@ -393,6 +395,11 @@ public class CommunityService {
                 "id", m.id(), "body", m.body(), "createdAt", m.createdAt().toInstant().toString())));
         }
         if (!entered) return result;
+        if (!chatOpen) {
+            // What the closed chat tile says; a ban is not lifted by coming back in.
+            result.put("chatClosed", repo.banned(sessionId, resolved.ticket.id)
+                ? "운영자가 이 입장권의 채팅을 차단했어요." : "장외에서는 닫혀 있어요. 다시 입장하면 열려요.");
+        }
         result.put("inside", admissions.occupancy(sessionId).getOrDefault("inside", 0));
         // The chat's tile, only for someone who could open it: outside, the room's talk is not theirs.
         if (chatOpen) {

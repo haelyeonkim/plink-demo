@@ -615,7 +615,7 @@ export default function TicketPage() {
           )}
           {view === 'chat' && (chatOpen
             ? <TicketChat sessionId={sessionId} token={token} tick={chatTick} counts={counts} onSeen={markChat} />
-            : <p className="console-none">{entered ? '장외에서는 채팅을 볼 수 없어요. 다시 입장하면 열려요.' : '입장한 뒤에 볼 수 있어요.'}</p>)}
+            : <p className="console-none">{entered ? community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.' : '입장한 뒤에 볼 수 있어요.'}</p>)}
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
@@ -709,7 +709,7 @@ export default function TicketPage() {
                   /* Stepped out: the room's talk stays in the room until they come back. */
                   <div className="room-tile is-closed" aria-disabled="true">
                     <b>장내 채팅</b>
-                    <small>장외에서는 닫혀 있어요. 다시 입장하면 열려요.</small>
+                    <small>{community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.'}</small>
                   </div>
                 )}
                 <button type="button" className="room-tile" onClick={() => go('ads')}>

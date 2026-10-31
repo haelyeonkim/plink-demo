@@ -1604,7 +1604,6 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
   .booth-terminals .gate-card-head > div:first-child { min-width: 0; }
   .booth-terminals .gate-card-head h3 { font-size: 15px; margin-bottom: 4px; overflow-wrap: anywhere; }
   .booth-terminals .gate-card-tags { font-size: 12px; gap: 4px; }
-  .booth-terminals .gate-card-tags .pill { display: none; }
   .booth-terminals .gate-status { padding: 6px 8px; font-size: 13px; gap: 6px; }
   .booth-terminals .gate-status .muted { display: none; }
   .booth-terminals .gate-facts { grid-template-columns: minmax(0, 1fr); gap: 6px; }

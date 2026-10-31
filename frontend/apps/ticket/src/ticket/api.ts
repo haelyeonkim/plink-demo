@@ -251,6 +251,8 @@ export interface CommunitySummary {
   entered: boolean;
   /** Entered and inside now: the chat is the room's, and closes when they step out. */
   chatOpen?: boolean;
+  /** Why the chat is shut to an entered holder: stepped out, or banned. */
+  chatClosed?: string;
   latestChatId?: number;
   inside?: number;
   notice?: string | null;
