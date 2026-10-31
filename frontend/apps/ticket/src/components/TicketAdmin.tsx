@@ -1657,8 +1657,8 @@ export default function TicketAdmin() {
                     <option key={value} value={value}>{INVITE_STATUS_LABEL[value]}</option>
                   ))}
                 </select>
+                <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
               </div>
-              <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
               <div className="zone-capacity">
                 {inviteTiers.map(tier => (
                   <div className="field" key={tier || '(none)'}>
