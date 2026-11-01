@@ -238,6 +238,17 @@ class InviteTest {
         assertEquals(HttpStatus.OK, outcome(() -> invite(inviter, "pending@example.com")));
     }
 
+    @Test void cancellingIsCappedSoInvitingCannotLoopMail() {
+        long sessionId = newSession(Map.of("", 1));
+        Holder inviter = holder(sessionId, "looper@example.com", null);
+        long first = invite(inviter, "loop@example.com");
+        invites.cancel(inviter.resolved(), inviter.session(), first);
+        long second = invite(inviter, "loop@example.com");
+        assertEquals(false, view(inviter).get("canCancel"));
+        assertEquals(HttpStatus.CONFLICT, outcome(() -> invites.cancel(inviter.resolved(), inviter.session(), second)));
+        assertTrue(ticketRows.findById(second).isPresent());
+    }
+
     @Test void whoSeesTheGroupFollowsTheEventSetting() {
         long sessionId = newSession(Map.of("", 2));
         Holder inviter = holder(sessionId, "leader@example.com", null);

@@ -235,14 +235,15 @@ export default function TicketPage() {
   // screen - and every half minute while the group is open, since the others' movements
   // are not sent to this phone.
   const [invites, setInvites] = useState<InviteView | null>(null);
+  const [invitesFailed, setInvitesFailed] = useState(false);
   const inviteSeq = useRef(0);
   const loadInvites = useCallback(async () => {
     const seq = ++inviteSeq.current;
     try {
       const next = await fetchInvites(sessionId, token);
-      if (seq === inviteSeq.current) setInvites(next);
+      if (seq === inviteSeq.current) { setInvites(next); setInvitesFailed(false); }
     } catch {
-      if (seq === inviteSeq.current) setInvites(null);
+      if (seq === inviteSeq.current) { setInvites(null); setInvitesFailed(true); }
     }
   }, [sessionId, token]);
   useEffect(() => { if (showing) void loadInvites(); }, [showing, ticket, loadInvites]);
@@ -649,7 +650,9 @@ export default function TicketPage() {
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'group' && (invites
             ? <TicketGroup sessionId={sessionId} token={token} view={invites} onChange={loadInvites} />
-            : <p className="loading" role="status">일행 정보를 불러오고 있어요.</p>)}
+            : invitesFailed
+              ? <p className="console-none">일행 정보를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.</p>
+              : <p className="loading" role="status">일행 정보를 불러오고 있어요.</p>)}
         </section>
         {tabBar}
       </>

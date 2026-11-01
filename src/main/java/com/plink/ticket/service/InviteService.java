@@ -24,7 +24,9 @@ import java.util.Map;
  * has proved it, issues up to that many tickets, each to an address they type; each is
  * mailed and claimed like any console-issued ticket, and remembers who invited it. An
  * invitee never invites in turn. Cancelling an invite deletes its ticket, which frees the
- * slot, and is allowed only until the invitee registers.
+ * slot, and is allowed only until the invitee registers, and only as many times as the
+ * tier grants invites: each invite and each cancel sends mail to an address the holder
+ * typed, and a slot freed without limit would let them send it without end.
  *
  * <p>On the day, the event decides who sees whether the others in a group have come in:
  * nobody, the inviter alone, or the whole group. People in a group appear only by masked
@@ -91,6 +93,9 @@ public class InviteService {
         result.put("used", invited.size());
         result.put("remaining", remaining);
         result.put("canInvite", !ticket.invitee && remaining > 0);
+        // Read fresh: the cap must hold even on a ticket resolved before the last cancel.
+        int cancelled = ticketRows.findById(ticket.id).map(row -> row.invitesCancelled).orElse(0);
+        result.put("canCancel", !ticket.invitee && cancelled < quota);
         result.put("status", event.inviteStatus);
         result.put("invitedBy", ticket.invitee && inviter != null ? TicketService.mask(address(inviter)) : null);
         result.put("invites", invited.stream().map(InviteService::inviteRow).toList());
@@ -188,7 +193,10 @@ public class InviteService {
     /** Takes back an invite nobody has registered yet; its ticket is deleted and the slot is free again. */
     @Transactional
     public Map<String, Object> cancel(TicketService.Resolved resolved, HttpSession session, long ticketId) {
-        Ticket ticket = holder(resolved, session);
+        Ticket holder = holder(resolved, session);
+        // Locked first, as inviting does, so a cancel and an invite from two tabs queue.
+        Ticket ticket = ticketRows.lockById(holder.id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         Ticket invited = ticketRows.lockById(ticketId)
             .filter(found -> found.invitedBy != null && found.invitedBy == ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "초대를 찾을 수 없어요."));
@@ -199,7 +207,11 @@ public class InviteService {
             // The organiser switched it off; whether that frees the slot is theirs to say.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "운영팀이 비활성화한 초대는 취소할 수 없어요.");
         }
+        if (ticket.invitesCancelled >= quotaFor(ticket)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "초대를 더 취소할 수 없어요. 취소할 수 있는 횟수를 모두 썼어요.");
+        }
         tickets.delete(invited.id, false);
+        ticketRows.countInviteCancelled(ticket.id);
         String recipient = address(invited);
         String eventName = tickets.requireSession(invited.sessionId).name;
         AfterCommit.run(() -> mail.send(recipient, "[" + eventName + "] 초대가 취소되었어요",

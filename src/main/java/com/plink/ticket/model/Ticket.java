@@ -16,6 +16,8 @@ public class Ticket {
     public Long invitedBy;
     /** Issued on a holder's invitation: it never invites in turn, even once unlinked. */
     public boolean invitee;
+    /** Invites this holder has taken back; capped, so cancelling cannot become a way to send mail. */
+    public int invitesCancelled;
 
     public boolean bound() { return "BOUND".equals(status); }
 

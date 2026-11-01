@@ -44,6 +44,7 @@ public class TicketRepository {
         long invitedBy = rs.getLong("invited_by");
         t.invitedBy = rs.wasNull() ? null : invitedBy;
         t.invitee = rs.getBoolean("invitee");
+        t.invitesCancelled = rs.getInt("invites_cancelled");
         return t;
     };
 
@@ -75,6 +76,10 @@ public class TicketRepository {
     /** Marks a ticket just inserted as issued on a holder's invitation. */
     public void markInvited(long id, long invitedBy) {
         jdbc.update("UPDATE ticket SET invited_by = ?, invitee = TRUE WHERE id = ?", invitedBy, id);
+    }
+
+    public void countInviteCancelled(long inviterId) {
+        jdbc.update("UPDATE ticket SET invites_cancelled = invites_cancelled + 1 WHERE id = ?", inviterId);
     }
 
     /** The tickets a holder has invited, whatever became of them, oldest first. */

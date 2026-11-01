@@ -90,10 +90,13 @@ export default function TicketGroup({ sessionId, token, view, onChange }: {
               <p className="hint-text">받는 분은 메일로 자기 입장권을 받아 직접 등록해요.</p>
             </form>
           ) : (
-            <p className="hint-text">초대할 수 있는 인원을 모두 채웠어요. 등록 전인 초대는 취소할 수 있어요.</p>
+            <p className="hint-text">초대할 수 있는 인원을 모두 채웠어요.{view.canCancel ? ' 등록 전인 초대는 취소할 수 있어요.' : ''}</p>
           )}
           {notice && <p className="notice-text" role="status">{notice}</p>}
           {error && <p className="error-text" role="alert">{error}</p>}
+          {view.invites.length > 0 && !view.canCancel && view.invites.some(row => !row.registered && !row.revoked) && (
+            <p className="hint-text">취소할 수 있는 횟수를 모두 써서 더는 취소할 수 없어요.</p>
+          )}
           {view.invites.length > 0 && (
             <ul className="invite-list">
               {view.invites.map(row => (
@@ -101,7 +104,7 @@ export default function TicketGroup({ sessionId, token, view, onChange }: {
                   <span className="invite-email">{row.email}</span>
                   <span className={`pill pill-${row.revoked ? 'off' : row.registered ? 'ok' : 'wait'}`}>
                     {row.revoked ? '비활성' : row.registered ? '등록됨' : '등록 대기'}</span>
-                  {!row.registered && !row.revoked && (
+                  {!row.registered && !row.revoked && view.canCancel && (
                     <button type="button" className="btn-tiny" disabled={busy} onClick={() => setCancelling(row)}>취소</button>
                   )}
                 </li>

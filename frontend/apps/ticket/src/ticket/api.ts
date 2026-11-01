@@ -351,6 +351,8 @@ export interface GroupMember {
 
 export interface InviteView {
   quota: number; used: number; remaining: number; canInvite: boolean;
+  /** Cancels are capped at the tier's grant, so inviting and cancelling cannot loop mail. */
+  canCancel: boolean;
   /** Who in a group sees the others come in, as the event has it. */
   status: 'OFF' | 'INVITER' | 'GROUP';
   /** Set on an invitee's ticket: who invited them, masked. */
