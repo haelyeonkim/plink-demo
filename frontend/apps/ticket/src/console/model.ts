@@ -124,6 +124,8 @@ export interface BoothRow {
 export interface TicketSummary {
   counts: { all: number; unclaimed: number; bound: number; inside: number; revoked: number; live: number };
   seats: string[]; tiers: string[]; attributes: Record<string, string[]>;
+  /** Tickets that can invite, per tier ('' for none): whom each invite count reaches. */
+  tierCounts?: Record<string, number>;
 }
 
 export type TicketFilter = 'ALL' | 'UNCLAIMED' | 'BOUND' | 'INSIDE' | 'REVOKED';

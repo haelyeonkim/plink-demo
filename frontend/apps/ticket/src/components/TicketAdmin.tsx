@@ -455,10 +455,28 @@ export default function TicketAdmin() {
     const data = new FormData(form);
     await read(await mutate(`/api/admin/sessions/${selected}/fields`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: data.get('label'), kind: data.get('kind') }),
+      body: JSON.stringify({ label: data.get('label'), kind: 'CUSTOM' }),
     }));
     form.reset();
     setNotice('항목을 추가했어요. 발급 화면에서 바로 쓸 수 있습니다.');
+    await loadSessions();
+  });
+
+  /**
+   * Tier and seat are always on the settings screen; the field behind each is made the
+   * first time a value goes in, so nobody has to create "등급" before typing VIP.
+   */
+  const saveFixedField = (kind: 'TIER' | 'SEAT', existing: TicketFieldRow | undefined, values: string[]) => act(async () => {
+    if (existing) {
+      await read(await mutate(`/api/admin/fields/${existing.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }),
+      }));
+    } else {
+      await read(await mutate(`/api/admin/sessions/${selected}/fields`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: kind === 'TIER' ? '등급' : '좌석', kind, values }),
+      }));
+    }
     await loadSessions();
   });
 
@@ -902,7 +920,6 @@ export default function TicketAdmin() {
     return new Set(summary?.attributes?.[field.label] ?? []);
   }
 
-  const KINDS: Record<string, string> = { SEAT: '좌석 · 중복 불가', TIER: '등급', CUSTOM: '일반' };
   // Places come from the gates. A capacity left over from a gate that has since been
   // renamed still shows, so the operator can see it and clear it.
   const zoneNames = [...new Set([
@@ -1715,10 +1732,24 @@ export default function TicketAdmin() {
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <fieldset className="settings-group">
                 <legend>등급별 초대 인원</legend>
+                {inviteTiers.length === 1 && (
+                  /* No tiers yet: every ticket reads the one count below, and where tiers come from is not obvious. */
+                  <p className="hint-text tier-none-hint">
+                    이 이벤트에는 등급이 없어서, 모든 입장권이 아래 인원을 따라요. 등급을 나누려면{' '}
+                    <button type="button" className="link-button"
+                      onClick={() => document.getElementById('settings-fields')?.scrollIntoView({ block: 'start' })}>
+                      발급 항목</button>의 등급에 VIP, 일반처럼 값을 넣어 주세요.
+                  </p>
+                )}
                 <div className="zone-capacity">
                   {inviteTiers.map(tier => (
                     <div className="field" key={tier || '(none)'}>
-                      <label htmlFor={`quota-${tier || 'none'}`}>{tier || '등급 없음'}</label>
+                      <label htmlFor={`quota-${tier || 'none'}`}>
+                        {tier ? `${tier} 등급` : inviteTiers.length === 1 ? '모든 입장권' : '등급 없는 입장권'}
+                        {summary?.tierCounts && (
+                          <span className="label-note">입장권 {summary.tierCounts[tier] ?? 0}장</span>
+                        )}
+                      </label>
                       <input id={`quota-${tier || 'none'}`} name={`quota:${tier}`} type="number" min={0} max={100}
                         defaultValue={session.inviteQuotas?.[tier] ?? 0} />
                     </div>
@@ -1753,20 +1784,41 @@ export default function TicketAdmin() {
             <section id="settings-fields" className="settings-section" aria-labelledby="settings-fields-title">
               <div className="settings-side">
                 <h3 id="settings-fields-title">발급 항목</h3>
-                <p>입장권마다 붙는 항목입니다. 좌석은 같은 값을 두 장에 줄 수 없어요.</p>
+                <p>입장권마다 붙는 정보예요. 등급과 좌석은 값만 넣으면 되고, 다른 정보는 항목을 추가해요.</p>
               </div>
               <div className="settings-body">
             <div className="settings-form">
               <p className="hint-text">
-                입장권이 무엇을 담을지는 이벤트마다 다릅니다. 좌석과 등급도 여기서 만드는 항목 중
-                하나일 뿐이고, 구역·트랙·식사처럼 필요한 이름을 직접 붙일 수 있어요. 값 목록을 비워
-                두면 발급할 때 자유롭게 입력합니다.
+                등급과 좌석은 비워 두면 그 이벤트에서 쓰지 않아요. 구역·트랙·식사처럼 다른 정보는 아래 추가 항목으로 만들어요.
               </p>
 
-              {fieldList.map(field => (
+              {([['TIER', '등급', 'VIP, 일반처럼 입장권을 나누는 단계예요. 초대 인원을 등급마다 정할 수 있어요.', '예: VIP'],
+                ['SEAT', '좌석', '한 좌석은 한 장에만 발급돼요.', '예: A-12']] as const).map(([kind, name, note, placeholder]) => {
+                const field = fieldList.find(row => row.kind === kind);
+                return (
+                  <div className="field-card fixed-field" key={kind}>
+                    <CatalogEditor label={field && field.label !== name ? `${name} (${field.label})` : name}
+                      placeholder={`${placeholder} · 입력하고 추가`}
+                      items={field?.values ?? []} inUse={kind === 'SEAT' ? takenSeats : usedTiers} busy={busy}
+                      onChange={next => saveFixedField(kind, field, next)} />
+                    <p className="hint-text">{note}{field && field.values.length === 0
+                      ? ' 지금은 값 목록이 없어 발급할 때 직접 입력해요.' : ''}</p>
+                    {field && (
+                      <button type="button" className="btn-tiny" onClick={() => setConfirmField(field)}>
+                        {name} 쓰지 않기</button>
+                    )}
+                  </div>
+                );
+              })}
+
+              <h3 className="fields-subhead">추가 항목</h3>
+              {fieldList.filter(field => field.kind === 'CUSTOM').length === 0 && (
+                <p className="hint-text">아직 추가한 항목이 없어요.</p>
+              )}
+              {fieldList.filter(field => field.kind === 'CUSTOM').map(field => (
                 <div className="field-card" key={field.id}>
                   <div className="panel-head">
-                    <span className="pill pill-wait">{KINDS[field.kind] ?? field.kind}</span>
+                    <span className="pill pill-wait">추가 항목</span>
                     <button className="btn-tiny" onClick={() => setConfirmField(field)}>항목 삭제</button>
                   </div>
                   <CatalogEditor label={field.label} placeholder="값을 입력하고 추가"
@@ -1778,24 +1830,13 @@ export default function TicketAdmin() {
               <form key={`add-field-${session.id}`} className="field-card"
                 onSubmit={e => { e.preventDefault(); addField(e.currentTarget); }}>
                 <h3>항목 추가</h3>
-                <div className="form-row">
-                  <div className="field">
-                    <label htmlFor="field-label">이름</label>
-                    <input id="field-label" name="label" required maxLength={40}
-                      placeholder="좌석, 등급, 구역, 트랙…" />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="field-kind">유형</label>
-                    <select id="field-kind" name="kind" defaultValue="CUSTOM">
-                      <option value="CUSTOM">일반</option>
-                      <option value="SEAT">좌석 · 한 값은 한 장에만</option>
-                      <option value="TIER">등급</option>
-                    </select>
-                  </div>
+                <div className="field">
+                  <label htmlFor="field-label">이름</label>
+                  <input id="field-label" name="label" required maxLength={40}
+                    placeholder="구역, 트랙, 식사…" />
                 </div>
                 <p className="hint-text">
-                  '좌석' 유형은 같은 값을 두 장에 발급할 수 없습니다. 이벤트마다 좌석과 등급은 하나씩만
-                  둘 수 있어요.
+                  항목을 만든 뒤 값 목록을 넣으면 발급할 때 그중에서 고르고, 비워 두면 직접 입력해요.
                 </p>
                 <button className="btn-primary" type="submit">항목 추가</button>
               </form>

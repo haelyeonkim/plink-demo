@@ -1657,3 +1657,11 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
 /* A phone zooms into a field typed in under 16px. */
 @media (max-width: 620px) { .invite-quota-form input { font-size: 16px; } }
 .invite-quota-note { display: block; margin-top: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+
+/* A word in a sentence that goes somewhere on the page. */
+.link-button { border: 0; background: none; padding: 0; font: inherit; color: var(--blue); text-decoration: underline; cursor: pointer; }
+.tier-none-hint { margin-bottom: 12px; }
+.fixed-field { display: flex; flex-direction: column; gap: 8px; }
+.fixed-field .hint-text { margin: 0; }
+.fixed-field > .btn-tiny { align-self: flex-start; }
+.fields-subhead { font-size: 15px; margin: 18px 0 4px; }

@@ -299,6 +299,18 @@ public class TicketRepository {
 
     public record FieldValues(String seat, String tier, String attributes) {}
 
+    /**
+     * How many tickets that can invite each tier holds, '' for no tier: what the invite
+     * settings show beside each count, so the organiser sees whom a number reaches.
+     */
+    public Map<String, Integer> inviterTierCounts(long sessionId) {
+        Map<String, Integer> counts = new java.util.TreeMap<>();
+        jdbc.query("SELECT COALESCE(tier, '') AS tier, COUNT(*) AS n FROM ticket "
+            + "WHERE session_id = ? AND invitee = FALSE GROUP BY COALESCE(tier, '')",
+            rs -> { counts.put(rs.getString("tier"), rs.getInt("n")); }, sessionId);
+        return counts;
+    }
+
     public void bind(long id, long holderId, String holderEmail) {
         jdbc.update("UPDATE ticket SET status = 'BOUND', holder_id = ?, holder_email = ?, "
             + "bound_at = CURRENT_TIMESTAMP, claim_expires_at = NULL WHERE id = ?",

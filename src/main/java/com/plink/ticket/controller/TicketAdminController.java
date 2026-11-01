@@ -655,6 +655,7 @@ public class TicketAdminController {
         result.put("counts", counts);
         result.put("seats", seats);
         result.put("tiers", tiers);
+        result.put("tierCounts", tickets.inviterTierCounts(id));
         result.put("attributes", attributes);
         return result;
     }
