@@ -762,7 +762,7 @@ export default function TicketPage() {
               <section className="room-tiles" aria-labelledby="group-tile-title">
                 <h3 id="group-tile-title">일행</h3>
                 <button type="button" className="room-tile" onClick={() => go('group')}>
-                  <b>{invites.quota > 0 ? (invites.group ? '초대 · 입장 현황' : '초대') : '입장 현황'}</b>
+                  <b>{invites.quota > 0 || invites.invites.length > 0 ? (invites.group ? '초대 · 입장 현황' : '초대') : '입장 현황'}</b>
                   <small>{groupSummary(invites)}</small>
                 </button>
               </section>

@@ -21,9 +21,11 @@ export interface SessionRow {
   inviteStatus: InviteStatus;
   /** Invites per tier; '' is the tickets with no tier. A tier left out invites nobody. */
   inviteQuotas: Record<string, number>;
+  /** Tickets that may invite by a count of their own, whatever their tier grants. */
+  ticketsWithInviteOverride?: number;
 }
 export type InviteStatus = 'OFF' | 'INVITER' | 'GROUP';
-export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = { OFF: '끔', INVITER: '초대자만', GROUP: '일행 모두' };
+export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = { OFF: '안 보여줌', INVITER: '초대한 사람만', GROUP: '일행 모두' };
 export interface TicketFieldRow { id: number; label: string; kind: 'SEAT' | 'TIER' | 'CUSTOM'; values: string[] }
 
 export interface TicketRow {
@@ -39,6 +41,10 @@ export interface TicketRow {
   invitedBy?: { ticketId: number; ticketRef: string; email: string } | null;
   /** How many this ticket has invited, whatever became of them. */
   invitesUsed?: number;
+  /** The organiser's count for this ticket alone; null follows its tier. Always null on an invitee. */
+  inviteQuota?: number | null;
+  /** What this ticket may invite now: its own count, else its tier's; 0 for an invitee. */
+  inviteQuotaEffective?: number;
 }
 
 /** Whether an event is still ahead, is today, or has been, by the calendar day. */

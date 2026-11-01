@@ -20,12 +20,13 @@ import java.util.Map;
 /**
  * A holder inviting others onto tickets of their own.
  *
- * <p>The organiser grants invites per tier. A holder who has registered, on a browser that
+ * <p>The organiser grants invites per tier, and may set a count of its own on any ticket
+ * that was not itself invited, above or below its tier's. A holder who has registered, on a browser that
  * has proved it, issues up to that many tickets, each to an address they type; each is
  * mailed and claimed like any console-issued ticket, and remembers who invited it. An
  * invitee never invites in turn. Cancelling an invite deletes its ticket, which frees the
  * slot, and is allowed only until the invitee registers, and only as many times as the
- * tier grants invites: each invite and each cancel sends mail to an address the holder
+ * ticket may invite: each invite and each cancel sends mail to an address the holder
  * typed, and a slot freed without limit would let them send it without end.
  *
  * <p>On the day, the event decides who sees whether the others in a group have come in:
@@ -35,7 +36,7 @@ import java.util.Map;
 @Service
 public class InviteService {
     public static final List<String> STATUSES = List.of("OFF", "INVITER", "GROUP");
-    /** The most invites one tier can be granted. */
+    /** The most invites one tier, or one ticket, can be granted. */
     public static final int MAX_QUOTA = 100;
 
     private final TicketService tickets;
@@ -67,13 +68,77 @@ public class InviteService {
         return ticket;
     }
 
-    /** What this ticket may invite: its tier's grant, and nothing for an invitee. */
+    /**
+     * What this ticket may invite: nothing for an invitee, else the organiser's count for
+     * this ticket when they set one, else its tier's grant.
+     */
     public int quotaFor(Ticket ticket) {
-        return ticket.invitee ? 0 : quotas.quota(ticket.sessionId, ticket.tier);
+        if (ticket.invitee) return 0;
+        return ticket.inviteQuota != null ? ticket.inviteQuota : quotas.quota(ticket.sessionId, ticket.tier);
+    }
+
+    /** As {@link #quotaFor}, with the event's tier grants already read: for a page of tickets at once. */
+    public static int quotaFor(Ticket ticket, Map<String, Integer> tierQuotas) {
+        if (ticket.invitee) return 0;
+        if (ticket.inviteQuota != null) return ticket.inviteQuota;
+        return tierQuotas.getOrDefault(ticket.tier == null ? "" : ticket.tier, 0);
     }
 
     private static String address(Ticket ticket) {
         return ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
+    }
+
+    // ---- From the console ----
+
+    /**
+     * Sets one ticket's own invite count, or with null returns it to its tier's. Lowering it
+     * below what the holder has already used takes no invite back: those tickets stay, and
+     * the holder simply has none left.
+     */
+    @Transactional
+    public Map<String, Object> setQuota(long ticketId, Integer quota) {
+        requireQuota(quota);
+        Ticket ticket = ticketRows.lockById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (ticket.invitee) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "초대받은 입장권은 다시 초대할 수 없어서 초대 인원을 정할 수 없어요.");
+        }
+        ticketRows.updateInviteQuota(ticket.id, quota);
+        ticket.inviteQuota = quota;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ticketId", ticket.id);
+        result.put("inviteQuota", quota);
+        result.put("inviteQuotaEffective", quotaFor(ticket));
+        result.put("invitesUsed", ticketRows.findInvitedBy(ticket.id).size());
+        return result;
+    }
+
+    /**
+     * The same for the tickets chosen in the console's list. Invitees, and tickets that are
+     * not this event's, are skipped rather than failing the rest.
+     */
+    @Transactional
+    public Map<String, Object> setQuotas(long sessionId, List<Long> ticketIds, Integer quota) {
+        requireQuota(quota);
+        int changed = 0, skipped = 0;
+        for (long ticketId : ticketIds) {
+            Ticket ticket = ticketRows.lockById(ticketId).filter(found -> found.sessionId == sessionId).orElse(null);
+            if (ticket == null || ticket.invitee) { skipped++; continue; }
+            ticketRows.updateInviteQuota(ticket.id, quota);
+            changed++;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("changed", changed);
+        result.put("skipped", skipped);
+        return result;
+    }
+
+    private static void requireQuota(Integer quota) {
+        if (quota != null && (quota < 0 || quota > MAX_QUOTA)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "초대 인원은 0에서 " + MAX_QUOTA + "명 사이여야 해요.");
+        }
     }
 
     // ---- From the holder's ticket ----

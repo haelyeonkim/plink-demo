@@ -45,6 +45,8 @@ public class TicketRepository {
         t.invitedBy = rs.wasNull() ? null : invitedBy;
         t.invitee = rs.getBoolean("invitee");
         t.invitesCancelled = rs.getInt("invites_cancelled");
+        int inviteQuota = rs.getInt("invite_quota");
+        t.inviteQuota = rs.wasNull() ? null : inviteQuota;
         return t;
     };
 
@@ -76,6 +78,18 @@ public class TicketRepository {
     /** Marks a ticket just inserted as issued on a holder's invitation. */
     public void markInvited(long id, long invitedBy) {
         jdbc.update("UPDATE ticket SET invited_by = ?, invitee = TRUE WHERE id = ?", invitedBy, id);
+    }
+
+    /** Sets one ticket's own invite count, or with null returns it to its tier's. */
+    public void updateInviteQuota(long id, Integer quota) {
+        jdbc.update("UPDATE ticket SET invite_quota = ? WHERE id = ?", quota, id);
+    }
+
+    /** Tickets in this event that may invite by a count of their own, whatever their tier grants. */
+    public int countInviteOverrides(long sessionId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM ticket WHERE session_id = ? "
+            + "AND invite_quota > 0 AND invitee = FALSE", Integer.class, sessionId);
+        return n == null ? 0 : n;
     }
 
     public void countInviteCancelled(long inviterId) {

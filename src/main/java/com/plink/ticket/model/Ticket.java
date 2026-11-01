@@ -18,6 +18,8 @@ public class Ticket {
     public boolean invitee;
     /** Invites this holder has taken back; capped, so cancelling cannot become a way to send mail. */
     public int invitesCancelled;
+    /** The organiser's invite count for this ticket alone; null follows its tier. */
+    public Integer inviteQuota;
 
     public boolean bound() { return "BOUND".equals(status); }
 

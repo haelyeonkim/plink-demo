@@ -41,15 +41,53 @@ const SETTINGS_TABS: Array<[SettingsTab, string]> = [
 ];
 /** What each choice of who sees a group's entry status means, in one line. */
 const INVITE_STATUS_HINT: Record<InviteStatus, string> = {
-  OFF: '초대는 그대로 되지만, 누가 입장했는지는 아무도 볼 수 없어요.',
-  INVITER: '초대한 사람만 초대받은 사람들의 입장 상태를 봐요.',
-  GROUP: '초대한 사람과 초대받은 사람 모두 서로의 입장 상태를 봐요.',
+  OFF: '초대는 그대로 되지만, 입장 상태는 아무에게도 보여주지 않아요.',
+  INVITER: '초대한 사람만 자기가 초대한 사람들의 입장 상태를 봐요.',
+  GROUP: '일행 모두 서로의 입장 상태를 봐요.',
 };
 
-/** One line beside a ticket's address: who invited it, or how many it has invited. */
+/** One line beside a ticket's address: who invited it, or how many it has invited of how many. */
 function inviteNote(row: TicketRow): string | null {
   if (row.invitee) return row.invitedBy ? `초대: ${row.invitedBy.email}` : '초대';
-  return row.invitesUsed ? `초대 ${row.invitesUsed}명` : null;
+  const used = row.invitesUsed ?? 0;
+  const quota = row.inviteQuotaEffective;
+  if (quota === undefined) return used ? `초대 ${used}명` : null;
+  return used || quota ? `초대 ${used}/${quota}` : null;
+}
+
+/**
+ * A ticket's invite count in its detail: its tier's, or one of its own, which can be set
+ * here and taken back. Not shown for an invitee, who never invites.
+ */
+function InviteQuotaControl({ row, busy, onSave }: {
+  row: TicketRow; busy: boolean; onSave: (quota: number | null) => Promise<boolean>;
+}) {
+  const own = row.inviteQuota ?? null;
+  const effective = row.inviteQuotaEffective ?? 0;
+  const used = row.invitesUsed ?? 0;
+  const [value, setValue] = useState(String(effective));
+  useEffect(() => { setValue(String(effective)); }, [row.ticketId, effective]);
+  const parsed = value.trim() === '' ? NaN : Number(value);
+  const valid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 100;
+  return (
+    <div className="invite-quota">
+      <dt>초대 인원</dt>
+      <dd>
+        {own === null ? `등급 기본값 ${effective}명` : `개별 ${own}명`}
+        {used > 0 ? ` · ${used}명 초대함` : ''}
+        <form className="invite-quota-form" onSubmit={e => { e.preventDefault(); if (valid) void onSave(parsed); }}>
+          <input type="number" min={0} max={100} step={1} inputMode="numeric" required aria-label="이 입장권의 초대 인원"
+            value={value} onChange={e => setValue(e.target.value)} />
+          <span>명</span>
+          <button type="submit" className="btn-tiny" disabled={busy || !valid || parsed === own}>저장</button>
+          {own !== null && (
+            <button type="button" className="btn-tiny" disabled={busy} onClick={() => void onSave(null)}>기본값으로</button>
+          )}
+        </form>
+        {used > effective && <small className="invite-quota-note">이미 {used}명을 초대해서 더 초대할 수 없어요. 보낸 초대는 그대로예요.</small>}
+      </dd>
+    </div>
+  );
 }
 
 
@@ -91,7 +129,9 @@ export default function TicketAdmin() {
   const [savingSettings, setSavingSettings] = useState(false);
   // The 초대 section's hint follows its select before the save; null means as saved.
   const [inviteStatusHint, setInviteStatusHint] = useState<InviteStatus | null>(null);
-  useEffect(() => { setInviteStatusHint(null); }, [selected]);
+  // Whether any tier input grants invites before the save; null means as saved.
+  const [inviteQuotaAny, setInviteQuotaAny] = useState<boolean | null>(null);
+  useEffect(() => { setInviteStatusHint(null); setInviteQuotaAny(null); }, [selected]);
   // Counts edits per form, so a change typed while its save is on the way is not
   // marked saved along with it.
   const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0, invite: 0 });
@@ -102,6 +142,7 @@ export default function TicketAdmin() {
   const revertSettings = () => {
     settingsDirty.forEach(key => settingsForms[key].current?.reset());
     setInviteStatusHint(null);
+    setInviteQuotaAny(null);
     setSettingsDirty(new Set());
   };
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
@@ -363,6 +404,19 @@ export default function TicketAdmin() {
     setChecked(new Set());
     setConfirmBulkOff(null);
     await loadSession(selected!);
+  });
+
+  /** One ticket's own invite count, or with null its tier's again. */
+  const setInviteQuota = (ticketId: number, quota: number | null) => act(async () => {
+    const result = await read(await mutate(`/api/admin/tickets/${ticketId}/invite-quota`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quota }),
+    }));
+    setNotice(quota === null
+      ? `초대 인원을 등급 기본값 ${result.inviteQuotaEffective}명으로 되돌렸어요.`
+      : `이 입장권의 초대 인원을 ${quota}명으로 정했어요.`);
+    // The settings page counts tickets with their own count, so the events are read again too.
+    await Promise.all([loadSession(selected!), loadSessions()]);
   });
 
   const setRevoked = (ticketId: number, revoked: boolean) => act(async () => {
@@ -828,6 +882,10 @@ export default function TicketAdmin() {
   // tier that still has a quota. '' - no tier - comes last.
   const inviteTiers = [...new Set([...(session?.tiers ?? []), ...usedTiers,
     ...Object.keys(session?.inviteQuotas ?? {}).filter(Boolean)])].concat('');
+  // Who sees the group only matters once someone can invite: a tier that grants some, or a
+  // ticket given its own count. Until then the choice is dimmed, though still saved.
+  const invitesInUse = (inviteQuotaAny ?? Object.values(session?.inviteQuotas ?? {}).some(n => n > 0))
+    || (session?.ticketsWithInviteOverride ?? 0) > 0;
   const counts = summary?.counts ?? { all: 0, unclaimed: 0, bound: 0, inside: 0, revoked: 0, live: 0 };
   const fieldList = session?.fields ?? [];
 
@@ -1132,8 +1190,8 @@ export default function TicketAdmin() {
                     <div><dt>초대한 사람</dt><dd>{open.invitedBy
                       ? `${open.invitedBy.email} · ${open.invitedBy.ticketRef}` : '삭제된 입장권'}</dd></div>
                   )}
-                  {!open.invitee && (open.invitesUsed ?? 0) > 0 && (
-                    <div><dt>초대</dt><dd>{open.invitesUsed}명 초대함</dd></div>
+                  {!open.invitee && (
+                    <InviteQuotaControl row={open} busy={busy} onSave={quota => setInviteQuota(open.ticketId, quota)} />
                   )}
                   <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
                 </dl>
@@ -1643,35 +1701,52 @@ export default function TicketAdmin() {
             <section id="settings-invite" className="settings-section" aria-labelledby="settings-invite-title">
               <div className="settings-side">
                 <h3 id="settings-invite-title">초대</h3>
-                <p>입장권을 등록한 사람이 등급별로 정한 인원만큼 다른 사람을 초대할 수 있어요. 초대받은 사람은 자기 입장권을 메일로 받고, 다시 초대할 수는 없어요.</p>
+                <p>입장권을 등록한 사람이 정한 인원만큼 다른 사람에게 입장권을 보낼 수 있어요.
+                  받은 사람은 자기 입장권으로 등록·입장하고, 다시 초대할 수는 없어요.</p>
+                <p>일행은 초대한 사람과 그 사람이 초대한 사람들이에요.</p>
               </div>
               <div className="settings-body">
             <form key={`invite-${session.id}`} className="settings-form" ref={settingsForms.invite}
-              onChange={() => markSettingsDirty('invite')}
+              onChange={e => {
+                markSettingsDirty('invite');
+                setInviteQuotaAny(Array.from(e.currentTarget.querySelectorAll<HTMLInputElement>('input[name^="quota:"]'))
+                  .some(input => Number(input.value) > 0));
+              }}
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
-              <div className="field">
-                <label htmlFor="invite-status">일행 입장 현황 공개</label>
-                <select id="invite-status" name="inviteStatus" defaultValue={session.inviteStatus ?? 'GROUP'}
-                  onChange={e => setInviteStatusHint(e.target.value as InviteStatus)}>
-                  {(Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]).map(value => (
-                    <option key={value} value={value}>{INVITE_STATUS_LABEL[value]}</option>
+              <fieldset className="settings-group">
+                <legend>등급별 초대 인원</legend>
+                <div className="zone-capacity">
+                  {inviteTiers.map(tier => (
+                    <div className="field" key={tier || '(none)'}>
+                      <label htmlFor={`quota-${tier || 'none'}`}>{tier || '등급 없음'}</label>
+                      <input id={`quota-${tier || 'none'}`} name={`quota:${tier}`} type="number" min={0} max={100}
+                        defaultValue={session.inviteQuotas?.[tier] ?? 0} />
+                    </div>
                   ))}
-                </select>
-                <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
-              </div>
-              <div className="zone-capacity">
-                {inviteTiers.map(tier => (
-                  <div className="field" key={tier || '(none)'}>
-                    <label htmlFor={`quota-${tier || 'none'}`}>{tier || '등급 없음'} 초대 인원</label>
-                    <input id={`quota-${tier || 'none'}`} name={`quota:${tier}`} type="number" min={0} max={100}
-                      defaultValue={session.inviteQuotas?.[tier] ?? 0} />
-                  </div>
-                ))}
-              </div>
-              <p className="hint-text">
-                0명이면 그 등급은 초대할 수 없어요. 초대받은 사람이 등록하기 전에는 초대한 사람이 취소할 수 있고,
-                취소하면 그 자리가 다시 비어요.
-              </p>
+                </div>
+                <p className="hint-text">
+                  0명이면 그 등급은 초대할 수 없어요. 입장권마다 따로 정하려면 입장권 상세에서 바꿔요.
+                </p>
+                <p className="hint-text">
+                  초대받은 사람이 등록하기 전에는 취소할 수 있고, 취소는 초대 인원만큼만 할 수 있어요.
+                </p>
+              </fieldset>
+              <fieldset className={`settings-group${invitesInUse ? '' : ' is-dimmed'}`}>
+                <legend>일행끼리 입장 상태 보기</legend>
+                <div className="field">
+                  <label htmlFor="invite-status" className="visually-hidden">일행끼리 입장 상태 보기</label>
+                  <select id="invite-status" name="inviteStatus" defaultValue={session.inviteStatus ?? 'GROUP'}
+                    onChange={e => setInviteStatusHint(e.target.value as InviteStatus)}>
+                    {(Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]).map(value => (
+                      <option key={value} value={value}>{INVITE_STATUS_LABEL[value]}</option>
+                    ))}
+                  </select>
+                  <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
+                  {!invitesInUse && (
+                    <p className="hint-text">초대 인원을 정하면 쓸 수 있어요. 지금은 모든 등급이 0명이고, 따로 정한 입장권도 없어요.</p>
+                  )}
+                </div>
+              </fieldset>
             </form>
               </div>
             </section>

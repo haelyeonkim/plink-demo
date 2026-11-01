@@ -388,9 +388,174 @@ class InviteTest {
             .andExpect(jsonPath("$.cancelled").value(true));
     }
 
-    private MockHttpSession signIn(String email) throws Exception {
+    /** The holder as a new request would see them: the console may have changed their ticket since. */
+    private Holder fresh(Holder h) {
+        return new Holder(tickets.resolve(h.resolved().ticket.sessionId, h.token()), h.session(), h.ticketId(), h.token());
+    }
+
+    private String quotaUrl(long ticketId) { return "/api/admin/tickets/" + ticketId + "/invite-quota"; }
+
+    private String bulkQuotaUrl(long sessionId) { return "/api/admin/sessions/" + sessionId + "/tickets/invite-quota"; }
+
+    private org.springframework.test.web.servlet.ResultActions setQuota(MockHttpSession organiser, long ticketId,
+            String body) throws Exception {
+        return mvc.perform(put(quotaUrl(ticketId)).session(organiser).with(csrf())
+            .contentType("application/json").content(body));
+    }
+
+    @Test void aTicketsOwnCountOverridesItsTierBothWays() throws Exception {
+        long sessionId = newSession(Map.of("VIP", 2));
+        MockHttpSession organiser = signIn("override-organiser@example.com");
+        Holder general = holder(sessionId, "override-general@example.com", "일반");
+        Holder vip = holder(sessionId, "override-vip@example.com", "VIP");
+        assertEquals(0, view(general).get("quota"));
+
+        // Above a tier that grants none.
+        setQuota(organiser, general.ticketId(), "{\"quota\":3}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.inviteQuota").value(3))
+            .andExpect(jsonPath("$.inviteQuotaEffective").value(3));
+        Holder low = fresh(general);
+        assertEquals(3, view(low).get("quota"));
+        assertEquals(true, view(low).get("canInvite"));
+        assertEquals(HttpStatus.OK, outcome(() -> invite(low, "low-tier-guest@example.com")));
+        assertEquals(HttpStatus.OK, outcome(() -> invite(fresh(vip), "first-of-vip@example.com")));
+
+        // Zero stops a tier that grants some.
+        setQuota(organiser, vip.ticketId(), "{\"quota\":0}").andExpect(status().isOk())
+            .andExpect(jsonPath("$.inviteQuotaEffective").value(0));
+        Holder stopped = fresh(vip);
+        assertEquals(0, view(stopped).get("quota"));
+        assertEquals(false, view(stopped).get("canInvite"));
+        assertEquals(HttpStatus.FORBIDDEN, outcome(() -> invite(stopped, "blocked@example.com")));
+
+        // Null goes back to the tier.
+        setQuota(organiser, vip.ticketId(), "{\"quota\":null}").andExpect(status().isOk())
+            .andExpect(jsonPath("$.inviteQuota").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.inviteQuotaEffective").value(2));
+        assertNull(ticketRows.findById(vip.ticketId()).orElseThrow().inviteQuota);
+        assertEquals(2, view(fresh(vip)).get("quota"));
+        assertEquals(1, view(fresh(vip)).get("remaining"));
+
+        // The list says which is which.
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/tickets?q=override-general").session(organiser))
+            .andExpect(jsonPath("$.items[0].inviteQuota").value(3))
+            .andExpect(jsonPath("$.items[0].inviteQuotaEffective").value(3))
+            .andExpect(jsonPath("$.items[0].invitesUsed").value(1));
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/tickets?q=override-vip").session(organiser))
+            .andExpect(jsonPath("$.items[0].inviteQuota").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.items[0].inviteQuotaEffective").value(2));
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/tickets?q=low-tier-guest").session(organiser))
+            .andExpect(jsonPath("$.items[0].inviteQuotaEffective").value(0));
+        assertEquals(1, ticketRows.countInviteOverrides(sessionId));
+    }
+
+    @Test void anInviteeCannotBeGivenACount() throws Exception {
+        long sessionId = newSession(Map.of("", 1));
+        MockHttpSession organiser = signIn("override-organiser@example.com");
+        Holder inviter = holder(sessionId, "override-host@example.com", null);
+        long guest = invite(inviter, "override-guest@example.com");
+        setQuota(organiser, guest, "{\"quota\":2}").andExpect(status().isConflict());
+        setQuota(organiser, guest, "{\"quota\":null}").andExpect(status().isConflict());
+        assertNull(ticketRows.findById(guest).orElseThrow().inviteQuota);
+
+        // Chosen in bulk, the invitee is skipped and the rest change.
+        mvc.perform(post(bulkQuotaUrl(sessionId)).session(organiser).with(csrf())
+                .contentType("application/json")
+                .content("{\"ticketIds\":[" + guest + "," + inviter.ticketId() + "],\"quota\":4}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.changed").value(1))
+            .andExpect(jsonPath("$.skipped").value(1));
+        assertNull(ticketRows.findById(guest).orElseThrow().inviteQuota);
+        assertEquals(4, ticketRows.findById(inviter.ticketId()).orElseThrow().inviteQuota);
+        assertEquals(0, invites.quotaFor(ticketRows.findById(guest).orElseThrow()));
+    }
+
+    @Test void loweringBelowWhatIsUsedKeepsTheInvites() throws Exception {
+        long sessionId = newSession(Map.of("", 3));
+        MockHttpSession organiser = signIn("override-organiser@example.com");
+        Holder inviter = holder(sessionId, "lowered@example.com", null);
+        long one = invite(inviter, "lowered-one@example.com");
+        long two = invite(inviter, "lowered-two@example.com");
+        setQuota(organiser, inviter.ticketId(), "{\"quota\":1}").andExpect(status().isOk())
+            .andExpect(jsonPath("$.invitesUsed").value(2));
+        Holder now = fresh(inviter);
+        assertTrue(ticketRows.findById(one).isPresent());
+        assertTrue(ticketRows.findById(two).isPresent());
+        assertEquals(2, view(now).get("used"));
+        assertEquals(0, view(now).get("remaining"));
+        assertEquals(false, view(now).get("canInvite"));
+        assertEquals(HttpStatus.CONFLICT, outcome(() -> invite(now, "lowered-three@example.com")));
+    }
+
+    @Test void theCancelCapFollowsTheTicketsOwnCount() throws Exception {
+        long sessionId = newSession(Map.of());
+        MockHttpSession organiser = signIn("override-organiser@example.com");
+        Holder inviter = holder(sessionId, "cap-host@example.com", null);
+        setQuota(organiser, inviter.ticketId(), "{\"quota\":2}").andExpect(status().isOk());
+        Holder h = fresh(inviter);
+        invites.cancel(h.resolved(), h.session(), invite(h, "cap-one@example.com"));
+        invites.cancel(h.resolved(), h.session(), invite(h, "cap-two@example.com"));
+        long third = invite(h, "cap-three@example.com");
+        assertEquals(false, view(h).get("canCancel"));
+        assertEquals(HttpStatus.CONFLICT, outcome(() -> invites.cancel(h.resolved(), h.session(), third)));
+
+        // Raised, the cap rises with it.
+        setQuota(organiser, inviter.ticketId(), "{\"quota\":3}").andExpect(status().isOk());
+        Holder raised = fresh(inviter);
+        assertEquals(true, view(raised).get("canCancel"));
+        assertEquals(HttpStatus.OK, outcome(() -> invites.cancel(raised.resolved(), raised.session(), third)));
+    }
+
+    @Test void theCountIsCheckedAndOnlyTicketAccountsMaySetIt() throws Exception {
+        long sessionId = newSession(Map.of());
+        Holder holder = holder(sessionId, "guarded@example.com", null);
+        MockHttpSession organiser = signIn("override-organiser@example.com");
+        for (String bad : List.of("{\"quota\":101}", "{\"quota\":-1}", "{\"quota\":1.5}",
+                "{\"quota\":\"3\"}", "{}")) {
+            setQuota(organiser, holder.ticketId(), bad).andExpect(status().isBadRequest());
+        }
+        mvc.perform(post(bulkQuotaUrl(sessionId)).session(organiser).with(csrf())
+                .contentType("application/json").content("{\"ticketIds\":[" + holder.ticketId() + "],\"quota\":101}"))
+            .andExpect(status().isBadRequest());
+        assertNull(ticketRows.findById(holder.ticketId()).orElseThrow().inviteQuota);
+        setQuota(organiser, holder.ticketId(), "{\"quota\":100}").andExpect(status().isOk());
+        setQuota(organiser, 99_999_999L, "{\"quota\":1}").andExpect(status().isNotFound());
+
+        // A ticket of another event is not changed through that event.
+        long otherSession = newSession(Map.of());
+        mvc.perform(post(bulkQuotaUrl(otherSession)).session(organiser).with(csrf())
+                .contentType("application/json").content("{\"ticketIds\":[" + holder.ticketId() + "],\"quota\":5}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.changed").value(0))
+            .andExpect(jsonPath("$.skipped").value(1));
+
+        // Signed out, without CSRF, signed in to an account that may not manage tickets, or
+        // as the holder: refused, and nothing changes.
+        mvc.perform(put(quotaUrl(holder.ticketId())).with(csrf()).contentType("application/json")
+                .content("{\"quota\":5}"))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(put(quotaUrl(holder.ticketId())).session(organiser).contentType("application/json")
+                .content("{\"quota\":5}"))
+            .andExpect(status().isForbidden());
+        MockHttpSession linksOnly = signIn("links-only-organiser@example.com", false);
+        mvc.perform(put(quotaUrl(holder.ticketId())).session(linksOnly).with(csrf()).contentType("application/json")
+                .content("{\"quota\":5}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(post(bulkQuotaUrl(sessionId)).session(linksOnly).with(csrf())
+                .contentType("application/json").content("{\"ticketIds\":[" + holder.ticketId() + "],\"quota\":5}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(put(quotaUrl(holder.ticketId())).session(holder.session()).with(csrf())
+                .contentType("application/json").content("{\"quota\":5}"))
+            .andExpect(status().isUnauthorized());
+        assertEquals(100, ticketRows.findById(holder.ticketId()).orElseThrow().inviteQuota);
+    }
+
+    private MockHttpSession signIn(String email) throws Exception { return signIn(email, true); }
+
+    private MockHttpSession signIn(String email, boolean canTickets) throws Exception {
         accountRows.findByEmail(email).orElseGet(() -> {
-            accounts.create(email, PASSWORD, null, true, true, false);
+            accounts.create(email, PASSWORD, null, true, canTickets, false);
             return accountRows.findByEmail(email).orElseThrow();
         });
         MockHttpSession session = new MockHttpSession();

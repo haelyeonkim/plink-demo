@@ -23,6 +23,7 @@ export function groupSummary(view: InviteView): string {
   const inside = view.group?.filter(member => !member.me && member.state === 'INSIDE').length ?? 0;
   const parts: string[] = [];
   if (view.quota > 0) parts.push(`초대 ${view.remaining}/${view.quota}명 남음`);
+  else if (view.invites.length > 0) parts.push(`초대 ${view.used}명`);
   else if (view.invitedBy) parts.push(`${view.invitedBy}님이 초대했어요`);
   if (view.group) parts.push(inside > 0 ? `일행 ${inside}명 장내` : '일행 아직 장내에 없어요');
   return parts.join(' · ');
@@ -76,9 +77,10 @@ export default function TicketGroup({ sessionId, token, view, onChange }: {
         {view.invitedBy && <p>{view.invitedBy}님이 초대했어요.</p>}
       </header>
 
-      {view.quota > 0 && (
+      {/* Kept while invites remain, even once the organiser has set this ticket to none. */}
+      {(view.quota > 0 || view.invites.length > 0) && (
         <section className="group-card" aria-labelledby="invite-title">
-          <h3 id="invite-title">초대 <b>{view.remaining}/{view.quota}명 남음</b></h3>
+          <h3 id="invite-title">초대 <b>{view.quota > 0 ? `${view.remaining}/${view.quota}명 남음` : `${view.used}명`}</b></h3>
           {view.canInvite ? (
             <form onSubmit={e => { e.preventDefault(); void invite(); }}>
               <div className="field">
@@ -90,11 +92,12 @@ export default function TicketGroup({ sessionId, token, view, onChange }: {
               <p className="hint-text">받는 분은 메일로 자기 입장권을 받아 직접 등록해요.</p>
             </form>
           ) : (
-            <p className="hint-text">초대할 수 있는 인원을 모두 채웠어요.{view.canCancel ? ' 등록 전인 초대는 취소할 수 있어요.' : ''}</p>
+            <p className="hint-text">{view.quota > 0 ? '초대할 수 있는 인원을 모두 채웠어요.' : '이제 더 초대할 수 없어요.'}
+              {view.canCancel ? ' 등록 전인 초대는 취소할 수 있어요.' : ''}</p>
           )}
           {notice && <p className="notice-text" role="status">{notice}</p>}
           {error && <p className="error-text" role="alert">{error}</p>}
-          {view.invites.length > 0 && !view.canCancel && view.invites.some(row => !row.registered && !row.revoked) && (
+          {view.quota > 0 && !view.canCancel && view.invites.some(row => !row.registered && !row.revoked) && (
             <p className="hint-text">취소할 수 있는 횟수를 모두 써서 더는 취소할 수 없어요.</p>
           )}
           {view.invites.length > 0 && (

@@ -1640,3 +1640,20 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
 /* A ticket's invites beside its address in the console list; on a phone, a line of its own. */
 .ticket-list .invite-note { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 620px) { .ticket-list .invite-note { display: block; margin-left: 0; } }
+
+/* The invite settings in two groups: how many may be invited, then who sees the group. The
+   second is dimmed while nobody can invite, but stays usable and saves with the rest. */
+.settings-group { border: none; padding: 0; margin: 0 0 22px; min-width: 0; }
+.settings-group legend { font-size: 14px; font-weight: 700; margin-bottom: 10px; padding: 0; }
+.settings-group.is-dimmed legend, .settings-group.is-dimmed select { opacity: .55; }
+/* A ticket's own invite count, in its detail: a small number, 저장 and 기본값으로 on one
+   line, wrapping on a narrow phone. */
+.invite-quota-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-weight: 500; }
+.invite-quota-form input {
+  width: 72px; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px;
+  font: inherit; font-size: 14px; background: white;
+}
+.invite-quota-form input:focus { outline: none; border-color: var(--blue); }
+/* A phone zooms into a field typed in under 16px. */
+@media (max-width: 620px) { .invite-quota-form input { font-size: 16px; } }
+.invite-quota-note { display: block; margin-top: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }

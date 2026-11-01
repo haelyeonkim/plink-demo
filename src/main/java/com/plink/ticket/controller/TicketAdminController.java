@@ -59,6 +59,7 @@ public class TicketAdminController {
     private final com.plink.ticket.service.SessionPolicyService policies;
     private final com.plink.ticket.service.BoothManagerService boothManagers;
     private final com.plink.ticket.repository.InviteQuotaRepository inviteQuotas;
+    private final com.plink.ticket.service.InviteService invites;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -71,8 +72,10 @@ public class TicketAdminController {
             com.plink.ticket.community.AdImageService adImages,
             com.plink.ticket.service.SessionPolicyService policies,
             com.plink.ticket.service.BoothManagerService boothManagers,
-            com.plink.ticket.repository.InviteQuotaRepository inviteQuotas) {
+            com.plink.ticket.repository.InviteQuotaRepository inviteQuotas,
+            com.plink.ticket.service.InviteService invites) {
         this.inviteQuotas = inviteQuotas;
+        this.invites = invites;
         this.boothManagers = boothManagers;
         this.adImages = adImages;
         this.policies = policies;
@@ -301,6 +304,38 @@ public class TicketAdminController {
         result.put("changed", changed);
         result.put("skipped", skipped);
         return result;
+    }
+
+    /**
+     * Gives the chosen tickets an invite count of their own, or with null returns them to
+     * their tier's. Invitees and tickets of other events are skipped.
+     */
+    @PostMapping("/sessions/{id}/tickets/invite-quota")
+    public Map<String, Object> setTicketsInviteQuota(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        ticketService.requireSession(id);
+        return invites.setQuotas(id, ticketIds(body), inviteQuota(body));
+    }
+
+    /** One ticket's own invite count, above or below its tier's; null returns it to the tier's. */
+    @PutMapping("/tickets/{ticketId}/invite-quota")
+    public Map<String, Object> setTicketInviteQuota(@PathVariable long ticketId,
+            @RequestBody Map<String, Object> body) {
+        return invites.setQuota(ticketId, inviteQuota(body));
+    }
+
+    /** The count a body names: a whole number, or null for the tier's. Left out is a mistake, not a reset. */
+    private static Integer inviteQuota(Map<String, Object> body) {
+        if (body == null || !body.containsKey("quota")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "초대 인원을 입력해 주세요.");
+        }
+        Object value = body.get("quota");
+        if (value == null) return null;
+        if (value instanceof Integer || value instanceof Long || value instanceof Short) {
+            long number = ((Number) value).longValue();
+            if (number >= Integer.MIN_VALUE && number <= Integer.MAX_VALUE) return (int) number;
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            "초대 인원은 0에서 " + com.plink.ticket.service.InviteService.MAX_QUOTA + "명 사이여야 해요.");
     }
 
     /**
@@ -566,6 +601,7 @@ public class TicketAdminController {
         // Who invited the invitees on this page, and how many each inviter has used: two
         // more queries for the page, not two per row.
         Map<Long, Integer> invitesUsed = tickets.inviteCounts(ids);
+        Map<String, Integer> tierQuotas = inviteQuotas.findBySession(id);
         Map<Long, Ticket> inviters = new java.util.HashMap<>();
         for (Ticket inviter : tickets.findAllById(found.stream()
                 .map(ticket -> ticket.invitedBy).filter(java.util.Objects::nonNull).toList())) {
@@ -581,6 +617,9 @@ public class TicketAdminController {
                 "ticketRef", inviter.ticketRef,
                 "email", email(inviter.holderEmail != null ? inviter.holderEmail : inviter.issuedToEmail, plain)));
             row.put("invitesUsed", invitesUsed.getOrDefault(ticket.id, 0));
+            // The organiser's own count for this ticket, or null when it follows its tier.
+            row.put("inviteQuota", ticket.invitee ? null : ticket.inviteQuota);
+            row.put("inviteQuotaEffective", com.plink.ticket.service.InviteService.quotaFor(ticket, tierQuotas));
             items.add(row);
         }
         return paged(items, tickets.count(id, narrowed, query), page, limit);
@@ -1101,6 +1140,9 @@ public class TicketAdminController {
         row.put("geoRadiusMeters", session.geoRadiusMeters);
         row.put("inviteStatus", session.inviteStatus);
         row.put("inviteQuotas", inviteQuotas.findBySession(session.id));
+        // Tickets that may invite by a count of their own, so the console knows invites are
+        // in use even when every tier grants none.
+        row.put("ticketsWithInviteOverride", tickets.countInviteOverrides(session.id));
         List<TicketField> configured = fields.findBySession(session.id);
         row.put("fields", configured.stream().map(this::describeField).toList());
         row.put("seats", configured.stream().filter(TicketField::seat)
