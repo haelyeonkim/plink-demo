@@ -126,6 +126,11 @@ a { color: inherit; text-decoration: none; }
 .btn-secondary:hover { border-color: var(--blue); color: var(--blue); }
 
 .btn-tiny {
+  /* Spelled out rather than left to the browser: Safari on iPad drew the label of a
+     native-looking button in a colour that vanished against the panel. */
+  -webkit-appearance: none; appearance: none;
+  color: var(--ink);
+  font-family: inherit;
   background: none;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -135,6 +140,8 @@ a { color: inherit; text-decoration: none; }
   margin-left: 6px;
 }
 .btn-tiny:hover { border-color: var(--blue); color: var(--blue); }
+.btn-tiny:disabled { opacity: .45; cursor: not-allowed; }
+.btn-tiny:disabled:hover { border-color: var(--line); color: var(--ink); }
 
 /* ---- Page Section ---- */
 .page-section {
