@@ -47,6 +47,9 @@ public class TicketRepository {
         t.invitesCancelled = rs.getInt("invites_cancelled");
         int inviteQuota = rs.getInt("invite_quota");
         t.inviteQuota = rs.wasNull() ? null : inviteQuota;
+        t.inviteName = rs.getString("invite_name");
+        t.inviteResends = rs.getInt("invite_resends");
+        t.inviteResentAt = rs.getTimestamp("invite_resent_at");
         return t;
     };
 
@@ -76,8 +79,32 @@ public class TicketRepository {
     }
 
     /** Marks a ticket just inserted as issued on a holder's invitation. */
-    public void markInvited(long id, long invitedBy) {
-        jdbc.update("UPDATE ticket SET invited_by = ?, invitee = TRUE WHERE id = ?", invitedBy, id);
+    public void markInvited(long id, long invitedBy, String name) {
+        jdbc.update("UPDATE ticket SET invited_by = ?, invitee = TRUE, invite_name = ? WHERE id = ?",
+            invitedBy, name, id);
+    }
+
+    /** A new window to register in, for a link mailed again unchanged. */
+    public void extendClaim(long id, Timestamp claimExpiresAt) {
+        jdbc.update("UPDATE ticket SET claim_expires_at = ? WHERE id = ? AND holder_id IS NULL", claimExpiresAt, id);
+    }
+
+    /** What the inviter calls this invitee; null goes back to the masked address. */
+    public void updateInviteName(long id, String name) {
+        jdbc.update("UPDATE ticket SET invite_name = ? WHERE id = ?", name, id);
+    }
+
+    /**
+     * Counts one more resend of an invite, only while it is under the cap and the last one
+     * is older than {@code notAfter}: checked and counted in one statement, so two taps at
+     * once send one mail.
+     *
+     * @return whether it was counted
+     */
+    public boolean countInviteResent(long id, int max, Timestamp notAfter, Timestamp now) {
+        return jdbc.update("UPDATE ticket SET invite_resends = invite_resends + 1, invite_resent_at = ? "
+            + "WHERE id = ? AND invite_resends < ? AND (invite_resent_at IS NULL OR invite_resent_at <= ?)",
+            now, id, max, notAfter) == 1;
     }
 
     /** Sets one ticket's own invite count, or with null returns it to its tier's. */
@@ -229,7 +256,7 @@ public class TicketRepository {
      * What the console's 발급 현황 can narrow the list down to. They match the labels on
      * the rows, so choosing one shows exactly the rows wearing that label.
      */
-    public enum Filter { ALL, UNCLAIMED, BOUND, INSIDE, REVOKED, LIVE }
+    public enum Filter { ALL, UNCLAIMED, BOUND, INSIDE, REVOKED, LIVE, INVITED }
 
     /** One page of a session's tickets, oldest first. */
     public List<Ticket> search(long sessionId, Filter filter, String query, int limit, int offset) {
@@ -256,6 +283,7 @@ public class TicketRepository {
             case BOUND -> sql.append(" AND t.status = 'BOUND'");
             case REVOKED -> sql.append(" AND t.status = 'REVOKED'");
             case LIVE -> sql.append(" AND t.status <> 'REVOKED'");
+            case INVITED -> sql.append(" AND t.invitee = TRUE");
             case INSIDE -> sql.append(" AND EXISTS (SELECT 1 FROM ticket_presence p "
                 + "WHERE p.ticket_id = t.id AND p.state = 'INSIDE')");
             case ALL -> { }
@@ -281,6 +309,7 @@ public class TicketRepository {
             + "SUM(CASE WHEN status = 'BOUND' THEN 1 ELSE 0 END) AS bound, "
             + "SUM(CASE WHEN status = 'REVOKED' THEN 1 ELSE 0 END) AS revoked, "
             + "SUM(CASE WHEN status <> 'REVOKED' THEN 1 ELSE 0 END) AS live, "
+            + "SUM(CASE WHEN invitee THEN 1 ELSE 0 END) AS invited, "
             + "(SELECT COUNT(*) FROM ticket_presence p WHERE p.session_id = ? AND p.state = 'INSIDE') AS inside "
             + "FROM ticket WHERE session_id = ?", sessionId, sessionId);
     }

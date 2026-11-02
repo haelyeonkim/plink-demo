@@ -69,9 +69,14 @@ class InviteTest {
 
     @BeforeEach void clearMail() { mailbox.clear(); }
 
+    /** An event starting now, so it is already the event's day and the group's states show. */
     private long newSession(Map<String, Integer> quota) {
+        return newSession(quota, Instant.now());
+    }
+
+    private long newSession(Map<String, Integer> quota, Instant startsAt) {
         long sessionId = sessions.insert("초대 이벤트 " + Secrets.randomAlnum(6), "메인홀",
-            Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)), null);
+            Timestamp.from(startsAt), null);
         quotas.replace(sessionId, quota);
         return sessionId;
     }
@@ -115,8 +120,8 @@ class InviteTest {
     private Map<String, Object> view(Holder h) { return invites.view(h.resolved(), h.session()); }
 
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> group(Map<String, Object> view) {
-        return (List<Map<String, Object>>) view.get("group");
+    private static List<Map<String, Object>> members(Map<String, Object> view) {
+        return (List<Map<String, Object>>) view.get("members");
     }
 
     @Test void theQuotaComesFromTheTierAndBlankTierReadsTheEmptyKey() {
@@ -141,8 +146,7 @@ class InviteTest {
         assertTrue(mail[1].endsWith("초대 입장권이 도착했어요"));
         assertTrue(mail[2].contains("v***@example.com님이 초대했어요"));
         assertTrue(mail[2].contains("/tickets/" + sessionId + "/"));
-        Ticket issued = ticketRows.findById(((Number) ((Map<?, ?>) ((List<?>) after.get("invites")).get(0))
-            .get("ticketId")).longValue()).orElseThrow();
+        Ticket issued = ticketRows.findById(((Number) members(after).get(1).get("ticketId")).longValue()).orElseThrow();
         assertEquals(vip.ticketId(), issued.invitedBy);
         assertTrue(issued.invitee);
         assertEquals("ISSUED", issued.status);
@@ -183,7 +187,7 @@ class InviteTest {
         mvc.perform(post(inviter.base(sessionId)).session(inviter.session()).with(csrf())
                 .contentType("application/json").content("{\"email\":\"Over-MVC@Example.com\"}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.email").value("o***@example.com"))
+            .andExpect(jsonPath("$.email").value("over-mvc@example.com"))
             .andExpect(jsonPath("$.registered").value(false));
     }
 
@@ -262,7 +266,7 @@ class InviteTest {
             since, inviter.ticketId());
 
         // GROUP is the default: everyone in it sees everyone.
-        List<Map<String, Object>> seen = group(view(guest));
+        List<Map<String, Object>> seen = members(view(guest));
         assertEquals(3, seen.size());
         Map<String, Object> leader = seen.get(0);
         assertEquals("l***@example.com", leader.get("email"));
@@ -274,22 +278,37 @@ class InviteTest {
         assertEquals("INSIDE", me.get("state"));
         assertEquals("NOT_ENTERED", seen.get(2).get("state"));
         assertNull(seen.get(2).get("since"));
-        assertEquals(3, group(view(inviter)).size());
+        List<Map<String, Object>> hosts = members(view(inviter));
+        assertEquals(3, hosts.size());
+        assertEquals(true, hosts.get(0).get("me"), "the inviter's own row comes first");
+        assertEquals("OUTSIDE", hosts.get(0).get("state"));
+        assertEquals("INSIDE", hosts.get(1).get("state"));
 
         sessions.updateInviteStatus(sessionId, "INVITER");
-        assertEquals(3, group(view(inviter)).size());
-        assertNull(view(guest).get("group"));
+        assertEquals(3, members(view(inviter)).size());
+        assertEquals("INSIDE", members(view(inviter)).get(1).get("state"));
+        assertEquals(false, view(guest).get("statesShown"));
+        List<Map<String, Object>> alone = members(view(guest));
+        assertEquals(1, alone.size(), "an invitee not shown the group sees only themselves");
+        assertEquals(true, alone.get(0).get("me"));
+        assertNull(alone.get(0).get("state"));
         assertEquals("INVITER", view(guest).get("status"));
 
         sessions.updateInviteStatus(sessionId, "OFF");
-        assertNull(view(inviter).get("group"));
-        assertNull(view(guest).get("group"));
-        assertEquals(2, ((List<?>) view(inviter).get("invites")).size(), "the inviter still manages their invites");
+        List<Map<String, Object>> managed = members(view(inviter));
+        assertEquals(3, managed.size(), "the inviter still manages their invites");
+        assertTrue(managed.stream().allMatch(row -> row.get("state") == null));
+        assertEquals(false, managed.get(2).get("registered"));
+        assertEquals(1, members(view(guest)).size());
 
-        // A revoked invitee drops out of who is coming.
+        // A revoked invitee drops out of who is coming, but its inviter still sees what became of it.
         sessions.updateInviteStatus(sessionId, "GROUP");
         tickets.setRevoked(waiting, true);
-        assertEquals(2, group(view(inviter)).size());
+        assertEquals(2, members(view(guest)).size());
+        List<Map<String, Object>> withRevoked = members(view(inviter));
+        assertEquals(3, withRevoked.size());
+        assertEquals(true, withRevoked.get(2).get("revoked"));
+        assertEquals(false, withRevoked.get(2).get("canResend"));
     }
 
     @Test void holdersSeeMaskedAddressesOnly() throws Exception {
@@ -305,11 +324,19 @@ class InviteTest {
             String body = mvc.perform(get(h.base(sessionId)).session(h.session()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             assertFalse(body.contains("masked-host@"), body);
-            assertFalse(body.contains("masked-guest@"), body);
             assertFalse(body.contains(hostRef), body);
             assertFalse(body.contains(guestRef), body);
             assertFalse(body.contains("Z-99"), body);
             assertTrue(body.contains("m***@example.com"), body);
+            // The inviter typed the guest's address, and sees it; the guest is shown no address in full.
+            assertEquals(h == inviter, body.contains("masked-guest@example.com"), body);
+        }
+        Map<String, Object> guestRow = members(view(inviter)).get(1);
+        assertEquals(guest.ticketId(), ((Number) guestRow.get("ticketId")).longValue());
+        assertNotNull(guestRow.get("sentAt"));
+        for (Map<String, Object> row : members(view(guest))) {
+            assertNull(row.get("ticketId"), "an invitee is handed no ticket ids");
+            assertNull(row.get("sentAt"));
         }
     }
 
@@ -325,7 +352,7 @@ class InviteTest {
         assertTrue(kept.invitee);
         Map<String, Object> mine = invites.view(tickets.resolve(sessionId, survivor.token()), survivor.session());
         assertNull(mine.get("invitedBy"));
-        assertNull(mine.get("group"));
+        assertEquals(1, members(mine).size());
         assertEquals(0, mine.get("quota"));
 
         // The whole event, invites and quotas included, still goes in one delete.
@@ -549,6 +576,203 @@ class InviteTest {
                 .contentType("application/json").content("{\"quota\":5}"))
             .andExpect(status().isUnauthorized());
         assertEquals(100, ticketRows.findById(holder.ticketId()).orElseThrow().inviteQuota);
+    }
+
+    @Test void aCallNameIsGivenOnInviteAndChangedLaterByTheInviterAlone() throws Exception {
+        long sessionId = newSession(Map.of("", 2));
+        Holder inviter = holder(sessionId, "namer@example.com", null);
+        Holder other = holder(sessionId, "other-namer@example.com", null);
+        Map<String, Object> sent = invites.invite(inviter.resolved(), inviter.session(), "named@example.com", " 민지 ");
+        long named = ((Number) sent.get("ticketId")).longValue();
+        assertEquals("민지", sent.get("name"));
+        assertEquals("named@example.com", sent.get("email"));
+        assertEquals("민지", ticketRows.findById(named).orElseThrow().inviteName);
+        assertEquals(HttpStatus.BAD_REQUEST, outcome(() -> invites.invite(inviter.resolved(), inviter.session(),
+            "too-long@example.com", "열세글자짜리부를이름이에요")));
+        assertTrue(mailbox.ticketUrlFor("too-long@example.com").isEmpty(), "a refused name sends nothing");
+
+        // Over the API, with CSRF; blank goes back to the masked address.
+        String url = inviter.base(sessionId) + "/" + named + "/name";
+        mvc.perform(put(url).session(inviter.session()).with(csrf()).contentType("application/json")
+                .content("{\"name\":\"  지훈  \"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("지훈"));
+        mvc.perform(put(url).session(inviter.session()).contentType("application/json").content("{\"name\":\"x\"}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(put(url).session(inviter.session()).with(csrf()).contentType("application/json")
+                .content("{\"name\":\"일이삼사오육칠팔구십일이\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(put(url).session(inviter.session()).with(csrf()).contentType("application/json")
+                .content("{\"name\":\"일이삼사오육칠팔구십일이삼\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(put(url).session(inviter.session()).with(csrf()).contentType("application/json")
+                .content("{\"name\":\"   \"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value(org.hamcrest.Matchers.nullValue()));
+        assertNull(ticketRows.findById(named).orElseThrow().inviteName);
+
+        // Still the inviter's to change once the invitee has registered and come in.
+        Holder joined = accept(sessionId, "named@example.com");
+        jdbc.update("UPDATE ticket_presence SET state = 'INSIDE', entry_count = 1, inside_since = CURRENT_TIMESTAMP "
+            + "WHERE ticket_id = ?", joined.ticketId());
+        assertEquals(HttpStatus.OK, outcome(() -> invites.rename(inviter.resolved(), inviter.session(), named, "민지")));
+        Map<String, Object> me = members(view(joined)).stream()
+            .filter(row -> Boolean.TRUE.equals(row.get("me"))).findFirst().orElseThrow();
+        assertEquals("민지", me.get("name"), "the invitee sees the name they were given");
+        assertEquals("n***@example.com", me.get("email"));
+
+        // Nobody else names them: not another holder, not the invitee.
+        assertEquals(HttpStatus.NOT_FOUND, outcome(() -> invites.rename(other.resolved(), other.session(), named, "남")));
+        assertEquals(HttpStatus.NOT_FOUND, outcome(() -> invites.rename(joined.resolved(), joined.session(), named, "나")));
+        assertEquals(HttpStatus.NOT_FOUND,
+            outcome(() -> invites.rename(inviter.resolved(), inviter.session(), other.ticketId(), "남")));
+        assertEquals("민지", ticketRows.findById(named).orElseThrow().inviteName);
+    }
+
+    @Test void anInviteIsMailedTheSameLinkAgainAFewTimesAndNotTooOften() throws Exception {
+        long sessionId = newSession(Map.of("", 3));
+        Holder inviter = holder(sessionId, "resender@example.com", null);
+        Holder other = holder(sessionId, "other-resender@example.com", null);
+        long pending = invite(inviter, "resent@example.com");
+        String link = mailbox.ticketUrlFor("resent@example.com").orElseThrow();
+
+        mailbox.clear();
+        mvc.perform(post(inviter.base(sessionId) + "/" + pending + "/resend").session(inviter.session()).with(csrf()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mailed").value(true))
+            .andExpect(jsonPath("$.email").value("resent@example.com"));
+        assertEquals(1, mailbox.sent.size());
+        assertEquals("resent@example.com", mailbox.sent.get(0)[0]);
+        assertTrue(mailbox.sent.get(0)[2].contains("r***@example.com님이 초대했어요"));
+        assertEquals(link, mailbox.ticketUrlFor("resent@example.com").orElseThrow(), "the same link, not a new one");
+        assertEquals(pending, tickets.resolve(sessionId, tokenOf(link)).ticket.id, "and it still opens the ticket");
+
+        // Not again straight away, and the refusal says when.
+        ResponseStatusException soon = assertThrows(ResponseStatusException.class,
+            () -> invites.resend(inviter.resolved(), inviter.session(), pending));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS.value(), soon.getStatusCode().value());
+        assertTrue(soon.getReason().contains("분 뒤에"), soon.getReason());
+        assertEquals(1, mailbox.sent.size());
+
+        // Three in all, ten minutes apart.
+        for (int i = 0; i < 2; i++) {
+            jdbc.update("UPDATE ticket SET invite_resent_at = ? WHERE id = ?",
+                Timestamp.from(Instant.now().minus(11, ChronoUnit.MINUTES)), pending);
+            assertEquals(HttpStatus.OK, outcome(() -> invites.resend(inviter.resolved(), inviter.session(), pending)));
+        }
+        jdbc.update("UPDATE ticket SET invite_resent_at = ? WHERE id = ?",
+            Timestamp.from(Instant.now().minus(11, ChronoUnit.MINUTES)), pending);
+        ResponseStatusException spent = assertThrows(ResponseStatusException.class,
+            () -> invites.resend(inviter.resolved(), inviter.session(), pending));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS.value(), spent.getStatusCode().value());
+        assertTrue(spent.getReason().contains("3번"), spent.getReason());
+        assertEquals(3, mailbox.sent.size());
+        assertEquals(false, members(view(inviter)).get(1).get("canResend"));
+
+        // Only the inviter, and only while nobody has registered and the organiser has not switched it off.
+        long other1 = invite(inviter, "to-register@example.com");
+        assertEquals(HttpStatus.NOT_FOUND, outcome(() -> invites.resend(other.resolved(), other.session(), other1)));
+        accept(sessionId, "to-register@example.com");
+        assertEquals(HttpStatus.CONFLICT, outcome(() -> invites.resend(inviter.resolved(), inviter.session(), other1)));
+        long revoked = invite(inviter, "to-revoke@example.com");
+        tickets.setRevoked(revoked, true);
+        assertEquals(HttpStatus.CONFLICT, outcome(() -> invites.resend(inviter.resolved(), inviter.session(), revoked)));
+
+        // The link mailed again registers like the first.
+        Holder registered = register(sessionId, tokenOf(link), "resent@example.com");
+        assertTrue(ticketRows.findById(registered.ticketId()).orElseThrow().claimed());
+    }
+
+    @Test void beforeTheEventsDayNobodysStateIsShown() {
+        long sessionId = newSession(Map.of("", 1), Instant.now().plus(3, ChronoUnit.DAYS));
+        Holder inviter = holder(sessionId, "early@example.com", null);
+        invite(inviter, "early-guest@example.com");
+        Holder guest = accept(sessionId, "early-guest@example.com");
+        jdbc.update("UPDATE ticket_presence SET state = 'INSIDE', entry_count = 1, inside_since = CURRENT_TIMESTAMP "
+            + "WHERE ticket_id = ?", guest.ticketId());
+        for (Holder h : List.of(inviter, guest)) {
+            Map<String, Object> seen = view(h);
+            assertEquals(true, seen.get("beforeDay"));
+            assertEquals(false, seen.get("statesShown"));
+            assertNotNull(seen.get("statesFrom"));
+            assertEquals(2, members(seen).size());
+            assertTrue(members(seen).stream().allMatch(row -> row.get("state") == null && row.get("since") == null));
+            assertTrue(members(seen).stream().allMatch(row -> Boolean.TRUE.equals(row.get("registered"))));
+        }
+        assertNotNull(view(inviter).get("updatedAt"));
+    }
+
+    @Test void anInviteesLinkSaysWhoInvitedThemBeforeTheyRegister() throws Exception {
+        long sessionId = newSession(Map.of("", 2));
+        Holder inviter = holder(sessionId, "welcomer@example.com", null);
+        invite(inviter, "welcomed@example.com");
+        invite(inviter, "also-welcomed@example.com");
+        String token = tokenOf(mailbox.ticketUrlFor("welcomed@example.com").orElseThrow());
+        String body = mvc.perform(get("/api/tickets/" + sessionId + "/" + token))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.claimed").value(false))
+            .andExpect(jsonPath("$.invitation.by").value("w***@example.com"))
+            .andExpect(jsonPath("$.invitation.groupSize").value(3))
+            .andReturn().getResponse().getContentAsString();
+        assertFalse(body.contains("welcomer@"), body);
+        assertFalse(body.contains("also-welcomed"), body);
+
+        // A ticket nobody invited says nothing of the kind.
+        mvc.perform(get(inviter.base(sessionId).replace("/invites", "")).session(inviter.session()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ticketRef").exists())
+            .andExpect(jsonPath("$.invitation").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void theConsoleShowsATicketsGroupAndNarrowsToInvitees() throws Exception {
+        long sessionId = newSession(Map.of("", 3));
+        MockHttpSession organiser = signIn("group-organiser@example.com");
+        Holder inviter = holder(sessionId, "console-host@example.com", null);
+        Map<String, Object> sent = invites.invite(inviter.resolved(), inviter.session(), "console-guest@example.com", "지훈");
+        long guest = ((Number) sent.get("ticketId")).longValue();
+        long revoked = invite(inviter, "console-off@example.com");
+        tickets.setRevoked(revoked, true);
+        invites.cancel(inviter.resolved(), inviter.session(), invite(inviter, "console-cancel@example.com"));
+        holder(sessionId, "console-plain@example.com", null);
+
+        String group = "/api/admin/tickets/" + guest + "/group";
+        mvc.perform(get(group).session(organiser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.inviterId").value(inviter.ticketId()))
+            .andExpect(jsonPath("$.name").value("지훈"))
+            .andExpect(jsonPath("$.members.length()").value(3))
+            .andExpect(jsonPath("$.members[0].role").value("INVITER"))
+            .andExpect(jsonPath("$.members[0].email").value("c***@example.com"))
+            .andExpect(jsonPath("$.members[1].current").value(true))
+            .andExpect(jsonPath("$.members[1].name").value("지훈"))
+            .andExpect(jsonPath("$.members[1].registered").value(false))
+            .andExpect(jsonPath("$.members[2].revoked").value(true))
+            .andExpect(jsonPath("$.quotaEffective").value(3))
+            .andExpect(jsonPath("$.used").value(2))
+            .andExpect(jsonPath("$.cancelsUsed").value(1));
+        // A test event shows addresses in full, as the list does.
+        sessions.updateTestEvent(sessionId, true);
+        mvc.perform(get("/api/admin/tickets/" + inviter.ticketId() + "/group").session(organiser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.members[0].current").value(true))
+            .andExpect(jsonPath("$.members[0].email").value("console-host@example.com"))
+            .andExpect(jsonPath("$.members[1].email").value("console-guest@example.com"));
+
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/tickets?filter=invited").session(organiser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.items[0].ticketId").value(guest))
+            .andExpect(jsonPath("$.items[0].inviteName").value("지훈"));
+        mvc.perform(get("/api/admin/sessions/" + sessionId + "/tickets/summary").session(organiser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.counts.invited").value(2))
+            .andExpect(jsonPath("$.counts.all").value(4));
+
+        // Only for accounts that manage tickets.
+        mvc.perform(get(group)).andExpect(status().isUnauthorized());
+        mvc.perform(get(group).session(signIn("links-only-organiser@example.com", false))).andExpect(status().isForbidden());
+        mvc.perform(get(group).session(inviter.session())).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/tickets/99999999/group").session(organiser)).andExpect(status().isNotFound());
     }
 
     private MockHttpSession signIn(String email) throws Exception { return signIn(email, true); }

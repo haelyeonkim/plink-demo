@@ -20,6 +20,11 @@ public class Ticket {
     public int invitesCancelled;
     /** The organiser's invite count for this ticket alone; null follows its tier. */
     public Integer inviteQuota;
+    /** What the inviter calls this invitee in the group; null shows the masked address. */
+    public String inviteName;
+    /** How often the inviter has mailed this unregistered invite again, and when last. */
+    public int inviteResends;
+    public Timestamp inviteResentAt;
 
     public boolean bound() { return "BOUND".equals(status); }
 

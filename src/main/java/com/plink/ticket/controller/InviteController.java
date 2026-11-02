@@ -28,7 +28,21 @@ public class InviteController {
     public Map<String, Object> invite(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody Map<String, Object> body, HttpSession session) {
         return invites.invite(tickets.resolve(sessionId, token), session,
-            body.get("email") == null ? null : body.get("email").toString());
+            body.get("email") == null ? null : body.get("email").toString(), body.get("name"));
+    }
+
+    /** What the inviter calls one of their invitees; null or blank goes back to the masked address. */
+    @PutMapping("/{ticketId}/name")
+    public Map<String, Object> rename(@PathVariable long sessionId, @PathVariable String token,
+            @PathVariable long ticketId, @RequestBody Map<String, Object> body, HttpSession session) {
+        return invites.rename(tickets.resolve(sessionId, token), session, ticketId, body.get("name"));
+    }
+
+    /** Mails an unregistered invite the same link again. */
+    @PostMapping("/{ticketId}/resend")
+    public Map<String, Object> resend(@PathVariable long sessionId, @PathVariable String token,
+            @PathVariable long ticketId, HttpSession session) {
+        return invites.resend(tickets.resolve(sessionId, token), session, ticketId);
     }
 
     @DeleteMapping("/{ticketId}")

@@ -355,6 +355,18 @@ public class TicketAdminController {
         return Map.of("issued", new ArrayList<>(tickets.liveEmailsAmong(id, emails)));
     }
 
+    /**
+     * The group a ticket belongs to: who invited it, or whom it invited, each with what the
+     * inviter calls them and where they are. Addresses follow the list's rule: in full on a
+     * test event, masked on a real one.
+     */
+    @GetMapping("/tickets/{ticketId}/group")
+    public Map<String, Object> ticketGroup(@PathVariable long ticketId) {
+        Ticket ticket = tickets.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        return invites.consoleGroup(ticket.id, ticketService.requireSession(ticket.sessionId).testEvent);
+    }
+
     /** One ticket's movements and coupons, for the detail beside the ticket list. */
     @GetMapping("/tickets/{ticketId}/history")
     public Map<String, Object> ticketHistory(@PathVariable long ticketId) {
@@ -612,6 +624,7 @@ public class TicketAdminController {
             Map<String, Object> row = ticketRow(ticket, presence.get(ticket.id), plain);
             Ticket inviter = ticket.invitedBy == null ? null : inviters.get(ticket.invitedBy);
             row.put("invitee", ticket.invitee);
+            row.put("inviteName", ticket.invitee ? ticket.inviteName : null);
             row.put("invitedBy", inviter == null ? null : Map.of(
                 "ticketId", inviter.id,
                 "ticketRef", inviter.ticketRef,
@@ -635,7 +648,7 @@ public class TicketAdminController {
         Map<String, Object> raw = tickets.counts(id);
         Map<String, Object> counts = new LinkedHashMap<>();
         counts.put("all", number(raw.get("all_count")));
-        for (String key : List.of("unclaimed", "bound", "inside", "revoked", "live")) {
+        for (String key : List.of("unclaimed", "bound", "inside", "revoked", "live", "invited")) {
             counts.put(key, number(raw.get(key)));
         }
         java.util.Set<String> seats = new java.util.TreeSet<>();

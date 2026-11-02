@@ -134,7 +134,7 @@ public class TicketService {
      *     the caller locks the inviter and checks they still have an invite to give, so the
      *     check and the ticket it allows commit together or not at all
      */
-    public record Invitation(long inviterId, String inviterMasked, Runnable admit) {}
+    public record Invitation(long inviterId, String inviterMasked, String name, Runnable admit) {}
 
     public Map<String, Object> issueInvite(long sessionId, String email, Invitation invitation) {
         return issue(sessionId, email, null, null, null, true, Map.of(), invitation);
@@ -145,12 +145,11 @@ public class TicketService {
         Issued issued = transactions.execute(status -> {
             if (invitation != null) invitation.admit().run();
             Issued created = create(sessionId, email, seat, tier, rawPhone, values);
-            if (invitation != null) tickets.markInvited(created.id, invitation.inviterId());
+            if (invitation != null) tickets.markInvited(created.id, invitation.inviterId(), invitation.name());
             return created;
         });
         // Committed: the link exists whatever happens to the messages below.
-        String claimNote = "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
-            + "\n링크를 다른 사람에게 전달하지 마세요.";
+        String claimNote = claimNote();
         String delivered = !notify ? "LINK" : invitation == null
             ? deliver(issued.session, issued.recipient, issued.phone, issued.url,
                 "[" + issued.session.name + "] 입장권이 발급되었어요",
@@ -173,6 +172,36 @@ public class TicketService {
         result.put("url", issued.url);
         result.put("claimExpiresAt", issued.claimExpiresAt.toInstant().toString());
         return result;
+    }
+
+    private String claimNote() {
+        return "\n\n이 링크는 " + properties.getClaimTtlHours() + "시간 안에 등록해야 하며, 먼저 등록한 기기에만 묶입니다."
+            + "\n링크를 다른 사람에게 전달하지 마세요.";
+    }
+
+    /**
+     * Mails an invite nobody has registered yet its own link again, unchanged, as the
+     * console's resend does: the link already in the invitee's mailbox keeps working. The
+     * window to register starts over, since a reminder for a link that can no longer be
+     * registered would be no use. The caller has checked who may ask and how often.
+     *
+     * @return whether the mail went
+     */
+    public boolean resendInvite(Ticket invited, String inviterMasked) {
+        String token = cipher.open(invited.tokenCipher);
+        if (token == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이 초대는 메일을 다시 보낼 수 없어요.");
+        }
+        EventSession session = requireSession(invited.sessionId);
+        String url = urlFor(invited.sessionId, token);
+        tickets.extendClaim(invited.id, Timestamp.from(
+            Instant.now().plus(properties.getClaimTtlHours(), ChronoUnit.HOURS)));
+        boolean mailed = mail.send(invited.issuedToEmail, "[" + session.name + "] 초대 입장권을 다시 보내 드려요",
+            inviterMasked + "님이 초대했어요.\n\n"
+            + "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다. 처음 받은 링크와 같은 링크예요.\n\n"
+            + url + claimNote());
+        if (mailed) tickets.recordDelivery(invited.id, "EMAIL");
+        return mailed;
     }
 
     /** What the issuing transaction leaves for the messages that follow it. */
@@ -565,6 +594,7 @@ public class TicketService {
             : ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail));
         result.put("claimExpired", !claimed && ticket.claimExpiresAt != null
             && ticket.claimExpiresAt.toInstant().isBefore(Instant.now()));
+        result.put("invitation", resolved.viaTransfer() ? null : invitation(ticket));
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("name", session.name);
@@ -601,6 +631,23 @@ public class TicketService {
         // costs nothing to carry, and the screen shows nothing when there is nothing.
         result.put("coupons", coupons.forTicket(session.id, ticket.id));
         return result;
+    }
+
+    /**
+     * Who invited this ticket, masked, and how many are in that group now: what the
+     * invitee's page says even before they register. Nothing else about the group - not
+     * who the others are - is said to a link that has not proved its holder.
+     */
+    private Map<String, Object> invitation(Ticket ticket) {
+        if (!ticket.invitee || ticket.invitedBy == null) return null;
+        Ticket inviter = tickets.findById(ticket.invitedBy).orElse(null);
+        if (inviter == null) return null;
+        long size = (inviter.revoked() ? 0 : 1)
+            + tickets.findInvitedBy(inviter.id).stream().filter(member -> !member.revoked()).count();
+        Map<String, Object> invitation = new LinkedHashMap<>();
+        invitation.put("by", mask(inviter.holderEmail != null ? inviter.holderEmail : inviter.issuedToEmail));
+        invitation.put("groupSize", size);
+        return invitation;
     }
 
     public Integer reentryRemaining(EventSession session, Presence presence) {
