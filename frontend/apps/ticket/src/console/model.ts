@@ -39,6 +39,8 @@ export interface TicketRow {
   /** Issued on a holder's invitation; invitedBy is gone once the inviter's ticket is deleted. */
   invitee?: boolean;
   invitedBy?: { ticketId: number; ticketRef: string; email: string } | null;
+  /** What the inviter calls this invitee in the group; null when they gave no name. */
+  inviteName?: string | null;
   /** How many this ticket has invited, whatever became of them. */
   invitesUsed?: number;
   /** The organiser's count for this ticket alone; null follows its tier. Always null on an invitee. */
@@ -122,13 +124,30 @@ export interface BoothRow {
 
 /** What the console needs from the tickets without loading the tickets. */
 export interface TicketSummary {
-  counts: { all: number; unclaimed: number; bound: number; inside: number; revoked: number; live: number };
+  counts: { all: number; unclaimed: number; bound: number; inside: number; revoked: number; live: number; invited?: number };
   seats: string[]; tiers: string[]; attributes: Record<string, string[]>;
   /** Tickets that can invite, per tier ('' for none): whom each invite count reaches. */
   tierCounts?: Record<string, number>;
 }
 
-export type TicketFilter = 'ALL' | 'UNCLAIMED' | 'BOUND' | 'INSIDE' | 'REVOKED';
+export type TicketFilter = 'ALL' | 'UNCLAIMED' | 'BOUND' | 'INSIDE' | 'REVOKED' | 'INVITED';
+
+/** One person in a ticket's group, as the console's detail lists them. */
+export interface TicketGroupMember {
+  ticketId: number; ticketRef: string; role: 'INVITER' | 'GUEST';
+  /** The ticket whose detail is open. */
+  current: boolean;
+  email: string; name: string | null; tier: string | null;
+  registered: boolean; revoked: boolean;
+  state: 'NOT_ENTERED' | 'INSIDE' | 'OUTSIDE'; since: string | null; sentAt: string | null;
+}
+
+/** The group a ticket belongs to: its inviter, and everyone they invited. */
+export interface TicketGroup {
+  ticketId: number; inviterId: number | null; name: string | null;
+  members: TicketGroupMember[];
+  quotaEffective: number; used: number; cancelsUsed: number;
+}
 /** What happens to somebody who left without scanning out. */
 export const UNMATCHED_LABEL: Record<string, string> = {
   STRICT: '안내 데스크에서만 정리',

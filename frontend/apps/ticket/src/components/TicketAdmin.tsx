@@ -20,7 +20,7 @@ import ConsoleCoupons from './ConsoleCoupons';
 import BoothManagers from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -53,6 +53,65 @@ function inviteNote(row: TicketRow): string | null {
   const quota = row.inviteQuotaEffective;
   if (quota === undefined) return used ? `초대 ${used}명` : null;
   return used || quota ? `초대 ${used}/${quota}` : null;
+}
+
+const GROUP_STATE: Record<TicketGroupMember['state'], string> = { NOT_ENTERED: '미입장', INSIDE: '입장', OUTSIDE: '퇴장' };
+
+/** One person's state in the console's group block: the same rules as the holder's screen. */
+function groupPill(member: TicketGroupMember): { label: string; tone: string } {
+  if (member.revoked) return { label: '비활성', tone: 'off' };
+  if (!member.registered) return { label: '미등록', tone: 'pending' };
+  if (member.state === 'INSIDE') return { label: `${clock(member.since)} 입장`, tone: 'in' };
+  if (member.state === 'OUTSIDE') return { label: `${clock(member.since)} 퇴장`, tone: 'out' };
+  return { label: GROUP_STATE.NOT_ENTERED, tone: 'wait' };
+}
+
+function sentDay(value: string): string {
+  const d = new Date(value);
+  return `${d.getMonth() + 1}/${d.getDate()} 보냄`;
+}
+
+/**
+ * The group in a ticket's detail: its inviter and everyone they invited, with what the
+ * inviter calls them and where each is. A row opens that ticket's own detail.
+ */
+function GroupBlock({ group, onOpen }: { group: TicketGroup; onOpen: (member: TicketGroupMember) => void }) {
+  const cancelsQuota = group.quotaEffective;
+  return (
+    <section className="ticket-detail-part console-group" aria-labelledby="console-group-title">
+      <div className="console-group-head">
+        <h4 id="console-group-title">일행 {group.members.length}명</h4>
+        {group.inviterId !== null && (
+          <small>초대 {group.used}/{group.quotaEffective} · 취소 {group.cancelsUsed}/{cancelsQuota}</small>
+        )}
+      </div>
+      <ul className="console-group-list">
+        {group.members.map(member => {
+          const pill = groupPill(member);
+          const note = [
+            member.role === 'INVITER' ? '초대한 사람' : member.name,
+            member.role === 'INVITER' ? member.tier : null,
+            member.revoked ? '비활성화함' : null,
+            member.current ? '지금 보는 입장권' : null,
+            !member.registered && !member.revoked && member.sentAt ? sentDay(member.sentAt) : null,
+          ].filter(Boolean).join(' · ');
+          return (
+            <li key={member.ticketId} className={`${member.current ? 'is-current' : ''}${member.revoked ? ' is-off' : ''}`}>
+              <button type="button" disabled={member.current} onClick={() => onOpen(member)}
+                aria-label={member.current ? undefined : `${member.email} 상세 보기`}>
+                <span className="console-group-who">
+                  <b>{member.email}</b>
+                  {note && <small>{note}</small>}
+                </span>
+                <span className={`pill pill-${pill.tone}`}>{pill.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="hint-text">줄을 누르면 그 입장권 상세로 가요.</p>
+    </section>
+  );
 }
 
 /**
@@ -111,6 +170,8 @@ export default function TicketAdmin() {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [openTicket, setOpenTicket] = useState<TicketRow | null>(null);
   const [history, setHistory] = useState<TicketHistory | null>(null);
+  // The open ticket's group, when it was invited or has invited anyone.
+  const [group, setGroup] = useState<TicketGroup | null>(null);
   // Bumped after anything that changes a list, so the page on screen is read again.
   const [revision, setRevision] = useState(0);
   const [occupancy, setOccupancy] = useState<Occupancy | null>(null);
@@ -279,6 +340,34 @@ export default function TicketAdmin() {
       .catch(() => { if (current) setHistory(null); });
     return () => { current = false; };
   }, [openTicket?.ticketId, revision]);
+  const inGroup = openTicket !== null && (openTicket.invitee === true || (openTicket.invitesUsed ?? 0) > 0);
+  useEffect(() => {
+    if (!openTicket || !inGroup) { setGroup(null); return; }
+    let current = true;
+    fetch(`/api/admin/tickets/${openTicket.ticketId}/group`).then(read)
+      .then(data => { if (current) setGroup(data); })
+      .catch(() => { if (current) setGroup(null); });
+    return () => { current = false; };
+  }, [openTicket?.ticketId, inGroup, revision]);
+
+  /**
+   * Opens another ticket's detail - the inviter, or someone in the group - whether or not
+   * it is on the page of the list on screen: if not, it is found by its reference.
+   */
+  const openById = async (ticketId: number, ticketRef: string) => {
+    const shown = ticketPage.items.find(row => row.ticketId === ticketId);
+    if (shown) { setOpenTicket(shown); return; }
+    if (selected === null) return;
+    try {
+      const query = new URLSearchParams({ page: '0', size: '20', filter: 'ALL', q: ticketRef });
+      const found: { items: TicketRow[] } = await read(await fetch(`/api/admin/sessions/${selected}/tickets?${query}`));
+      const row = found.items.find(item => item.ticketId === ticketId);
+      if (row) setOpenTicket(row);
+      else setError('그 입장권을 찾지 못했어요. 삭제되었을 수 있어요.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.');
+    }
+  };
 
   useEffect(() => {
     if (selected === null) return;
@@ -1101,6 +1190,8 @@ export default function TicketAdmin() {
               ['BOUND', '등록 완료', counts.bound],
               ['INSIDE', '장내', counts.inside],
               ['REVOKED', '비활성', counts.revoked],
+              ...((counts.invited ?? 0) > 0 || ticketFilter === 'INVITED'
+                ? [['INVITED', '초대받은 입장권', counts.invited ?? 0] as [TicketFilter, string, number]] : []),
             ]} />
 
           {checked.size > 0 && (
@@ -1204,14 +1295,24 @@ export default function TicketAdmin() {
                     {open.reissueCount > 0 ? ` · 재발급 ${open.reissueCount}회` : ''}</dd></div>
                   {open.phone && <div><dt>휴대폰</dt><dd>{open.phone}</dd></div>}
                   {open.invitee && (
-                    <div><dt>초대한 사람</dt><dd>{open.invitedBy
-                      ? `${open.invitedBy.email} · ${open.invitedBy.ticketRef}` : '삭제된 입장권'}</dd></div>
+                    <div><dt>초대한 사람</dt><dd>{open.invitedBy ? (
+                      <button type="button" className="link-button"
+                        onClick={() => { const by = open.invitedBy!; void openById(by.ticketId, by.ticketRef); }}>
+                        {open.invitedBy.email} ({open.invitedBy.ticketRef.slice(0, 4)}…)</button>
+                    ) : '삭제된 입장권'}</dd></div>
+                  )}
+                  {open.invitee && (
+                    <div><dt>부를 이름</dt><dd>{open.inviteName ?? <span className="muted">없음 · 가린 이메일로 보여요</span>}</dd></div>
                   )}
                   {!open.invitee && (
                     <InviteQuotaControl row={open} busy={busy} onSave={quota => setInviteQuota(open.ticketId, quota)} />
                   )}
                   <div><dt>입장</dt><dd>{open.entryCount}회{open.reentryCount > 0 ? ` (재입장 ${open.reentryCount})` : ''}</dd></div>
                 </dl>
+
+                {group && group.ticketId === open.ticketId && (
+                  <GroupBlock group={group} onOpen={member => { void openById(member.ticketId, member.ticketRef); }} />
+                )}
 
                 {issued?.from === 'row' && issued.ticketId === open.ticketId && (
                   <IssuedLink url={issued.url} note="이 입장권의 링크입니다. 보는 것만으로는 아무것도 바뀌지 않아요." />
