@@ -436,7 +436,7 @@ export default function TicketGroup({ sessionId, token, view, onChange, onBack, 
     try {
       const row = await renameInvite(sessionId, token, member.ticketId!, name);
       setSheet(null);
-      setNotice(row.name ? `이제 ${row.name}(으)로 보여요` : '이름을 지웠어요. 가린 이메일로 보여요');
+      setNotice(row.name ? `이제 '${row.name}' 이름으로 보여요` : '이름을 지웠어요. 가린 이메일로 보여요');
       await onChange();
     } finally { setBusy(false); }
   };
@@ -509,7 +509,8 @@ export default function TicketGroup({ sessionId, token, view, onChange, onBack, 
         <div>
           <h2>일행</h2>
           <p>
-            {!inviter && <><b>{view.invitedBy}</b> 님의 일행이에요{counted && !guestAlone ? ' · ' : ''}</>}
+            {!inviter && <><b>{view.invitedBy}</b> 님의 일행이에요</>}
+            {!inviter && counted && !guestAlone && <br />}
             {(inviter || !guestAlone) && (counted || (inviter ? `일행 ${people.length}명` : ''))}
           </p>
         </div>
