@@ -657,6 +657,45 @@ class BoothManagerTest {
             .andExpect(jsonPath("$.terminal").doesNotExist());
     }
 
+    @Test void aTerminalInUseTakesNoMoreManagersUntilItIsReleased() throws Exception {
+        String counter = terminal(boothId, "커피 카운터");
+        String spare = terminal(boothId, "커피 카운터 2");
+        inviteAt(boothId, email(), counter);
+        // Somebody answers for it, but no device holds it yet: another may still be invited.
+        inviteAt(boothId, email(), counter);
+
+        jdbc.update("UPDATE gate SET bound_device = 'phone-1' WHERE id = ?", counter);
+        String refused = "이 단말은 담당자가 있고 기기가 연결돼 있어요. 단말 연결을 해제한 뒤 초대해 주세요.";
+        String late = email();
+        json(post("/api/admin/booths/" + boothId + "/managers").with(admin(true)),
+                "{\"email\":\"" + late + "\",\"gateId\":\"" + counter + "\"}")
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value(refused));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM booth_manager WHERE email = ?", Integer.class, late));
+        // Nor can someone be moved onto it.
+        Invite elsewhere = inviteAt(boothId, email(), spare);
+        json(put("/api/admin/booth-managers/" + elsewhere.managerId()).with(admin(true)), "{\"gateId\":\"" + counter + "\"}")
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value(refused));
+
+        // Released, it takes managers again.
+        mvc.perform(post("/api/admin/gates/" + counter + "/release").with(admin(true)).with(csrf()))
+            .andExpect(status().isOk());
+        inviteAt(boothId, late, counter);
+    }
+
+    @Test void aNewBoothStartsWithATerminal() throws Exception {
+        String body = json(post("/api/admin/sessions/" + sessionId + "/booths").with(admin(true)),
+                "{\"name\":\"포토존\",\"note\":\"메인홀 뒤편\"}")
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        Number booth = JsonPath.read(body, "$.boothId");
+        String gateId = JsonPath.read(body, "$.gateId");
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM gate WHERE booth_id = ? AND role = 'BOOTH'",
+            Integer.class, booth.longValue()));
+        assertEquals("포토존 1", jdbc.queryForObject("SELECT label FROM gate WHERE id = ?", String.class, gateId));
+    }
+
     @Test void aSignedInManagerMakesTheirDeviceTheirTerminal() throws Exception {
         String counter = terminal(boothId, "커피 카운터");
         String email = email();

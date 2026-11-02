@@ -120,6 +120,13 @@ public class BoothManagerRepository {
         return result;
     }
 
+    /** Managers still answering for a terminal, leaving one out (the one being moved). */
+    public int countOnGate(String gateId, long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM booth_manager WHERE gate_id = ? "
+            + "AND status <> 'REVOKED' AND id <> ?", Integer.class, gateId, exceptId);
+        return n == null ? 0 : n;
+    }
+
     public boolean revoke(long id) {
         return jdbc.update("UPDATE booth_manager SET status = 'REVOKED' WHERE id = ? AND status <> 'REVOKED'", id) > 0;
     }

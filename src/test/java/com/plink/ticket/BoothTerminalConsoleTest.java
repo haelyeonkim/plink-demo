@@ -303,6 +303,7 @@ class BoothTerminalConsoleTest {
     }
 
     @Test void aDeletedTerminalIsGoneAndItsTabletIsRefusedButItsHistoryStays() throws Exception {
+        terminal("BOOTH", boothId); // the booth keeps this one
         Terminal t = terminal("BOOTH", boothId);
         long offer = createdOffer(t, "스티커");
         jdbc.update("INSERT INTO gate_offer (gate_id, offer_id, auto_on_entry) VALUES (?, ?, FALSE)", t.id(), offer);
@@ -320,6 +321,20 @@ class BoothTerminalConsoleTest {
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM coupon WHERE redeemed_gate = ?", Integer.class, t.id()));
         mvc.perform(as(t, get(base(t) + "/dashboard"))).andExpect(status().isUnauthorized());
         mvc.perform(delete("/api/admin/gates/" + t.id()).with(organiser()).with(csrf())).andExpect(status().isNotFound());
+    }
+
+    @Test void aBoothsLastTerminalGoesOnlyWithTheBooth() throws Exception {
+        Terminal last = terminal("BOOTH", boothId);
+        mvc.perform(delete("/api/admin/gates/" + last.id()).with(organiser()).with(csrf()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("부스의 마지막 단말은 지울 수 없어요. 부스를 삭제하면 함께 지워져요."));
+        assertTrue(gates.findById(last.id()).isPresent());
+
+        Terminal second = terminal("BOOTH", boothId);
+        mvc.perform(delete("/api/admin/booths/" + boothId).with(organiser()).with(csrf()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.terminals").value(2));
+        assertTrue(gates.findById(last.id()).isEmpty());
+        assertTrue(gates.findById(second.id()).isEmpty());
     }
 
     @Test void onlyAnOrganiserDeletesATerminal() throws Exception {

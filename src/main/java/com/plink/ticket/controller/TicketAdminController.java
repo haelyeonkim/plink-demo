@@ -778,9 +778,12 @@ public class TicketAdminController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createBooth(@PathVariable long id, @RequestBody Map<String, String> body) {
         ticketService.requireSession(id);
-        long boothId = booths.insert(id, required(body.get("name"), "부스 이름을 입력해 주세요."),
-            blankToNull(body.get("note")));
-        return Map.of("boothId", boothId, "name", body.get("name"));
+        String name = required(body.get("name"), "부스 이름을 입력해 주세요.");
+        long boothId = booths.insert(id, name, blankToNull(body.get("note")));
+        // A booth is run from a terminal, so it starts with one, named as 단말 추가 would.
+        String label = name.strip().length() > 38 ? name.strip().substring(0, 38) : name.strip();
+        Map<String, Object> terminal = boothManagers.addTerminal(boothId, label + " 1");
+        return Map.of("boothId", boothId, "name", name, "gateId", terminal.get("gateId"));
     }
 
     /** Deleting a booth takes its coupons with it, which the console warns about. */
@@ -788,8 +791,16 @@ public class TicketAdminController {
     public Map<String, Object> deleteBooth(@PathVariable long boothId) {
         com.plink.ticket.model.Booth booth = booths.findById(boothId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스를 찾을 수 없어요."));
+        // Its terminals go with it: a terminal with no booth has nothing to hand over.
+        int terminals = 0;
+        for (Gate gate : gates.findBySession(booth.sessionId)) {
+            if (gate.booth() && gate.boothId != null && gate.boothId == booth.id) {
+                gates.delete(gate.id);
+                terminals++;
+            }
+        }
         booths.delete(booth.id);
-        return Map.of("deleted", true, "boothId", booth.id);
+        return Map.of("deleted", true, "boothId", booth.id, "terminals", terminals);
     }
 
     /**
@@ -1030,6 +1041,12 @@ public class TicketAdminController {
     public Map<String, Object> deleteGate(@PathVariable String gateId) {
         Gate gate = gates.findById(gateId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "게이트를 찾을 수 없어요."));
+        // A booth is never left without a terminal; the last one goes with the booth.
+        if (gate.booth() && gate.boothId != null && gates.findBySession(gate.sessionId).stream()
+                .filter(other -> other.booth() && gate.boothId.equals(other.boothId)).count() <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "부스의 마지막 단말은 지울 수 없어요. 부스를 삭제하면 함께 지워져요.");
+        }
         gates.delete(gateId);
         log.info("audit: gate {} ({}) of event {} deleted", gate.id, gate.booth() ? "booth terminal" : "admission", gate.sessionId);
         return Map.of("deleted", true, "gateId", gateId);

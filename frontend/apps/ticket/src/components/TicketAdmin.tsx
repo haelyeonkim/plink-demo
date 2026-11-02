@@ -671,6 +671,11 @@ export default function TicketAdmin() {
   });
 
   /** The next free "부스 이름 N", so terminals of one booth never share a name by default. */
+  /** The booth this terminal is the only one of, if it is: that terminal goes with its booth. */
+  const lastOfBooth = (gate: GateRow) => gate.role !== 'BOOTH' || gate.boothId == null ? null
+    : gates.filter(other => other.role === 'BOOTH' && other.boothId === gate.boothId).length > 1 ? null
+      : booths.find(booth => booth.boothId === gate.boothId) ?? null;
+
   const nextTerminalName = (booth: BoothRow) => {
     const taken = new Set(gates.map(gate => gate.label));
     let n = gates.filter(gate => gate.role === 'BOOTH' && gate.boothId === booth.boothId).length + 1;
@@ -1457,7 +1462,10 @@ export default function TicketAdmin() {
                         { label: '단말 연결 해제', onSelect: () => setConfirmGate({ gate, action: 'release' }), disabled: !gate.boundDevice },
                         'separator',
                         { label: '토큰 폐기', onSelect: () => setConfirmGate({ gate, action: 'rotate' }), danger: true },
-                        { label: gate.role === 'BOOTH' ? '단말 삭제' : '게이트 삭제', onSelect: () => setConfirmGate({ gate, action: 'delete' }), danger: true },
+                        // A booth keeps at least one terminal: the last one goes by deleting the booth.
+                        ...(lastOfBooth(gate)
+                          ? [{ label: '부스 삭제 (마지막 단말)', onSelect: () => setConfirmBooth(lastOfBooth(gate)!), danger: true }]
+                          : [{ label: gate.role === 'BOOTH' ? '단말 삭제' : '게이트 삭제', onSelect: () => setConfirmGate({ gate, action: 'delete' }), danger: true }]),
                       ]} />
                     </div>
                     <div className={`gate-status${gate.boundDevice ? ' on' : ''}`}>
@@ -2312,10 +2320,11 @@ export default function TicketAdmin() {
       <ConfirmDialog
         open={confirmBooth != null}
         title={`'${confirmBooth?.name}' 부스를 지울까요?`}
-        message={'이 부스의 쿠폰이 모두 함께 사라집니다. 이미 사용한 기록도 같이 지워지니, '
+        message={'이 부스의 단말과 쿠폰이 모두 함께 사라집니다. 이미 사용한 기록도 같이 지워지니, '
           + '기록을 남겨야 한다면 쿠폰을 무효화하는 쪽을 쓰세요.'}
         details={confirmBooth ? [
           ['부스', confirmBooth.name],
+          ['단말', gates.filter(gate => gate.role === 'BOOTH' && gate.boothId === confirmBooth.boothId).length],
           ['쿠폰 종류', confirmBooth.offers.length],
           ['발급', confirmBooth.offers.reduce((sum, offer) => sum + offer.issued, 0)],
           ['사용', confirmBooth.offers.reduce((sum, offer) => sum + offer.redeemed, 0)],

@@ -52,9 +52,14 @@ function useEscape(onClose: () => void, active = true) {
 interface Shown { boothId: number; managerId: number; email: string; link: string; mailed: boolean }
 type Confirm = { row: BoothManagerRow; boothId: number; action: 'reissue' | 'revoke' };
 
+/** Why a terminal takes no more managers, on its greyed-out invite button. */
+const STAFFED = '담당자가 이 단말을 쓰고 있어요. 단말 연결을 해제하면 다시 초대할 수 있어요.';
+
 export interface ManagerDesk {
   /** A terminal's managers who can still open it. */
   forTerminal: (gate: GateRow) => BoothManagerRow[];
+  /** A device holds it and somebody answers for it: nobody else is invited until it is released. */
+  staffed: (gate: GateRow) => boolean;
   /** A booth's managers, all of them; null until read. */
   forBooth: (boothId: number) => BoothManagerRow[] | null;
   menu: (row: BoothManagerRow, boothId: number) => Array<MenuItem | 'separator'>;
@@ -122,6 +127,7 @@ export function useBoothManagers({ booths, terminals, enabled, busy, act, onNoti
     if (!list) return (gate.managers ?? []).map(manager => fromCard(gate, manager));
     return list.filter(row => row.gateId === gate.gateId && row.status !== 'REVOKED');
   };
+  const staffed = (gate: GateRow) => Boolean(gate.boundDevice) && forTerminal(gate).length > 0;
   const boothTerminals = (boothId: number) => terminals.filter(gate => gate.boothId === boothId);
   const boothName = (boothId: number) => booths.find(booth => booth.boothId === boothId)?.name ?? '';
 
@@ -187,7 +193,7 @@ export function useBoothManagers({ booths, terminals, enabled, busy, act, onNoti
   const dialogs = (
     <>
       {sheetGate && (
-        <TerminalManagersSheet gate={sheetGate} rows={forTerminal(sheetGate)} busy={busy}
+        <TerminalManagersSheet gate={sheetGate} rows={forTerminal(sheetGate)} busy={busy} staffed={staffed(sheetGate)}
           // A dialog opened over it takes Escape for itself.
           covered={confirm !== null || moving !== null || inviting !== null}
           menu={row => menu(row, sheetGate.boothId!)}
@@ -213,7 +219,7 @@ export function useBoothManagers({ booths, terminals, enabled, busy, act, onNoti
           onClose={() => setInviting(null)} />
       )}
       {moving && (
-        <MoveManagerDialog row={moving.row} busy={busy}
+        <MoveManagerDialog row={moving.row} busy={busy} isStaffed={staffed}
           terminals={boothTerminals(moving.boothId).filter(gate => gate.gateId !== moving.row.gateId)}
           onMove={gateId => void move(moving.row, moving.boothId, gateId).then(ok => { if (ok) setMoving(null); })}
           onClose={() => setMoving(null)} />
@@ -235,7 +241,7 @@ export function useBoothManagers({ booths, terminals, enabled, busy, act, onNoti
   );
 
   return {
-    forTerminal, forBooth, menu, invite, shown, copy, busy, dialogs,
+    forTerminal, staffed, forBooth, menu, invite, shown, copy, busy, dialogs,
     openInvite: setInviting,
     openSheet: setSheet,
     reveal: setShown,
@@ -277,8 +283,9 @@ export function TerminalManagers({ gate, desk }: { gate: GateRow; desk: ManagerD
             <button type="button" className="tm-count" aria-label={`${name} 담당 ${list.length}명 보기`}
               onClick={() => desk.openSheet(gate)}>담당 {list.length}</button>
           )}
-          <button type="button" className="btn-tiny" disabled={desk.busy}
-            aria-label={`${name} 관리자 초대`} onClick={() => desk.openInvite(gate)}>+ 초대</button>
+          <button type="button" className="btn-tiny" disabled={desk.busy || desk.staffed(gate)}
+            title={desk.staffed(gate) ? STAFFED : undefined}
+            aria-label={`${name} 관리자 초대`} onClick={() => desk.openInvite(gate)}>초대</button>
         </span>
       </dd>
     </div>
@@ -288,8 +295,9 @@ export function TerminalManagers({ gate, desk }: { gate: GateRow; desk: ManagerD
 /** The card's own invite button, among its actions; a phone has the small one above instead. */
 export function InviteManagerButton({ gate, desk }: { gate: GateRow; desk: ManagerDesk }) {
   return (
-    <button className="btn-secondary tm-invite" type="button" disabled={desk.busy}
-      aria-label={`${terminalName(gate)} 관리자 초대`} onClick={() => desk.openInvite(gate)}>+ 관리자 초대</button>
+    <button className="btn-secondary tm-invite" type="button" disabled={desk.busy || desk.staffed(gate)}
+      title={desk.staffed(gate) ? STAFFED : undefined}
+      aria-label={`${terminalName(gate)} 관리자 초대`} onClick={() => desk.openInvite(gate)}>관리자 초대</button>
   );
 }
 
@@ -414,11 +422,11 @@ function InviteManagerDialog({ gate, busy, copy, onInvite, onClose }: {
 const NONE = '';
 
 /** Hands a manager to another of the booth's terminals, or to none. */
-function MoveManagerDialog({ row, terminals, busy, onMove, onClose }: {
-  row: BoothManagerRow; terminals: GateRow[]; busy: boolean;
+function MoveManagerDialog({ row, terminals, isStaffed, busy, onMove, onClose }: {
+  row: BoothManagerRow; terminals: GateRow[]; isStaffed: (gate: GateRow) => boolean; busy: boolean;
   onMove: (gateId: string) => void; onClose: () => void;
 }) {
-  const [target, setTarget] = useState(terminals[0]?.gateId ?? NONE);
+  const [target, setTarget] = useState(terminals.find(gate => !isStaffed(gate))?.gateId ?? NONE);
   const select = useRef<HTMLSelectElement>(null);
   useEffect(() => { select.current?.focus(); }, []);
   const close = useCallback(() => { if (!busy) onClose(); }, [busy, onClose]);
@@ -439,15 +447,15 @@ function MoveManagerDialog({ row, terminals, busy, onMove, onClose }: {
           <label htmlFor="tm-move-select">담당 단말</label>
           <select id="tm-move-select" ref={select} value={target} onChange={event => setTarget(event.target.value)}>
             {terminals.map(gate => (
-              <option key={gate.gateId} value={gate.gateId}>
-                {terminalName(gate)} · {gate.boundDevice ? '연결됨' : '연결 안 됨'}</option>
+              <option key={gate.gateId} value={gate.gateId} disabled={isStaffed(gate)}>
+                {terminalName(gate)} · {isStaffed(gate) ? '담당자 사용 중' : gate.boundDevice ? '연결됨' : '연결 안 됨'}</option>
             ))}
             {row.gateId && <option value={NONE}>없음 · 본인 이름으로 기록</option>}
           </select>
         </div>
         <div className="modal-actions">
           <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>취소</button>
-          <button type="submit" className="btn-primary" disabled={busy || (!row.gateId && !target)}>
+          <button type="submit" className="btn-primary" disabled={busy || (!row.gateId && (!target || target === NONE))}>
             {busy ? '저장 중…' : row.gateId ? '옮기기' : '지정'}</button>
         </div>
       </form>
@@ -456,8 +464,8 @@ function MoveManagerDialog({ row, terminals, busy, onMove, onClose }: {
 }
 
 /** A terminal's managers on a phone, where the card only has room for how many there are. */
-function TerminalManagersSheet({ gate, rows, busy, covered, menu, onInvite, onClose }: {
-  gate: GateRow; rows: BoothManagerRow[]; busy: boolean; covered: boolean;
+function TerminalManagersSheet({ gate, rows, busy, covered, staffed, menu, onInvite, onClose }: {
+  gate: GateRow; rows: BoothManagerRow[]; busy: boolean; covered: boolean; staffed: boolean;
   menu: (row: BoothManagerRow) => Array<MenuItem | 'separator'>;
   onInvite: () => void; onClose: () => void;
 }) {
@@ -471,7 +479,8 @@ function TerminalManagersSheet({ gate, rows, busy, covered, menu, onInvite, onCl
           <ul className="tm-list">{rows.map(row => <ManagerItem key={row.managerId} row={row} menu={menu(row)} />)}</ul>
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" disabled={busy} onClick={onInvite}>+ 관리자 초대</button>
+          <button type="button" className="btn-secondary" disabled={busy || staffed} title={staffed ? STAFFED : undefined}
+            onClick={onInvite}>관리자 초대</button>
           <button type="button" className="btn-primary" onClick={onClose}>닫기</button>
         </div>
       </div>

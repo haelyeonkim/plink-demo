@@ -168,6 +168,7 @@ public class BoothManagerService {
         // Checked before anything is written, so a refused terminal leaves no half invitation.
         Gate chosen = newTerminalLabel != null || gateId == null || gateId.isBlank() ? null
             : ownTerminal(booth, gateId);
+        if (chosen != null) refuseIfStaffed(chosen, -1);
         String token = Secrets.randomToken(32);
         BoothManager existing = managers.findByBoothAndEmail(booth.id, email).orElse(null);
         long id;
@@ -251,6 +252,7 @@ public class BoothManagerService {
         }
         Booth booth = requireBooth(manager.boothId);
         Gate gate = gateId == null || gateId.isBlank() ? null : ownTerminal(booth, gateId);
+        if (gate != null && !gate.id.equals(manager.gateId)) refuseIfStaffed(gate, manager.id);
         managers.setGate(manager.id, gate == null ? null : gate.id);
         manager.gateId = gate == null ? null : gate.id;
         return row(manager, gate);
@@ -590,6 +592,24 @@ public class BoothManagerService {
             .filter(gate -> gate.booth() && gate.boothId != null && gate.boothId == booth.id
                 && gate.sessionId == booth.sessionId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 부스의 단말을 골라 주세요."));
+    }
+
+    /**
+     * A terminal that is running for someone - a device holds it and a manager answers for
+     * it - takes no one else. Releasing the device opens it again.
+     */
+    private void refuseIfStaffed(Gate gate, long exceptManagerId) {
+        if (gate.boundDevice != null && managers.countOnGate(gate.id, exceptManagerId) > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "이 단말은 담당자가 있고 기기가 연결돼 있어요. 단말 연결을 해제한 뒤 초대해 주세요.");
+        }
+    }
+
+    /** A booth's first terminal, made with the booth so it is never without one. */
+    public Map<String, Object> addTerminal(long boothId, String label) {
+        Booth booth = requireBooth(boothId);
+        String gateId = newTerminal(booth, label);
+        return Map.of("gateId", gateId, "label", label.strip());
     }
 
     /**
