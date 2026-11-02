@@ -1147,20 +1147,23 @@ select, .field select, select.artwork-status {
 .booth-list button small { font-size: 12px; color: var(--muted); }
 .booth-list button.on { border-color: var(--blue); box-shadow: inset 4px 0 0 var(--blue); }
 
-/* Settings: one page, a section each, what is in force beside the form that changes it. */
+/* Settings: one page, a card per section, its title on top and the settings under it. */
 .settings-page { display: flex; flex-direction: column; gap: 16px; }
 .settings-quick { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0; background: var(--bg); }
 .settings-quick a { font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #dfe3ee; color: #3d4663; background: white; }
 .settings-quick a:hover { border-color: var(--blue); color: var(--blue); }
 .settings-quick a.danger { color: #b3362b; border-color: #f0cdc9; }
 .settings-section {
-  display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 22px;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
   background: white; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; scroll-margin-top: 56px;
 }
 .settings-section.danger { border-color: #f0cdc9; }
 .settings-section.danger h3 { color: #b3362b; }
-.settings-side h3 { font-size: 17px; margin: 0 0 6px; }
+.settings-side { padding-bottom: 12px; border-bottom: 1px solid #eef0f5; }
+.settings-side h3 { font-size: 17px; margin: 0; }
+.settings-side h3 + p { margin-top: 6px; }
 .settings-side p { font-size: 13px; line-height: 1.6; color: var(--muted); margin: 0 0 12px; }
+.settings-side > :last-child { margin-bottom: 0; }
 .settings-side .settings-now { display: flex; flex-direction: column; gap: 6px; padding: 0; }
 .settings-body { min-width: 0; }
 .settings-body .settings-form { max-width: none; }
@@ -1268,7 +1271,7 @@ select, .field select, select.artwork-status {
     padding: 10px; max-height: 70vh; overflow-y: auto;
   }
   .event-nav-group a { min-height: 44px; box-sizing: border-box; }
-  .settings-section { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }
+  .settings-section { gap: 10px; padding: 14px 16px; }
   .console-check { margin-left: 0; }
 }
 @media (max-width: 560px) {
