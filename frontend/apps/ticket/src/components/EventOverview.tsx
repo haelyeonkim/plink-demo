@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import InfoTip from '@shared/components/InfoTip';
 import {
   OUTCOMES, clock, count, eventWhen, hourLabel, percent, text, validity,
   type GateRow, type Occupancy, type SessionRow, type TicketSummary,
@@ -157,11 +158,10 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
           {unplaced > 0 && (
             <div className="zone-meter unplaced">
               <div className="zone-meter-head">
-                <b>장소 미지정</b>
+                <b>장소 미지정<InfoTip label="장소 미지정">게이트를 거치지 않고 관리자가 처리한 입장이에요.</InfoTip></b>
                 <span>{unplaced.toLocaleString()}명</span>
               </div>
               <span className="meter-track meter-lg level-none"><span style={{ width: `${percent(unplaced, Math.max(busiest, unplaced))}%` }} /></span>
-              <div className="zone-meter-foot">게이트를 거치지 않고 관리자가 처리한 입장이에요.</div>
             </div>
           )}
         </section>

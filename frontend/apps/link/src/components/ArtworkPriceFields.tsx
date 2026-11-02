@@ -1,4 +1,5 @@
 import { priceDraft, type PriceData, type PriceDraft } from '../artworkPrice';
+import InfoTip from '@shared/components/InfoTip';
 import ArtworkPrice from './ArtworkPrice';
 
 const currencies = [['USD', '미국 달러'], ['EUR', '유로'], ['KRW', '한국 원'], ['GBP', '영국 파운드'],
@@ -28,9 +29,9 @@ export default function ArtworkPriceFields({ value, onChange, id }: {
           </select></div>
       </div>
       {draft.priceCurrency !== 'KRW' && <>
-        <p className="hint-text">원화 참고 금액을 표시하려면 환율과 기준일을 입력하세요.</p>
         <div className="form-row">
-          <div className="field"><label htmlFor={`${id}-rate`}>환율 (1 {draft.priceCurrency}당 원)</label>
+          <div className="field"><label htmlFor={`${id}-rate`}>환율 (1 {draft.priceCurrency}당 원)
+            <InfoTip label="환율">원화 참고 금액을 표시하려면 환율과 기준일을 입력하세요.</InfoTip></label>
             <input id={`${id}-rate`} type="text" inputMode="decimal" pattern="[0-9]{1,12}(\.[0-9]{1,6})?"
               maxLength={19} required={!!draft.priceRateDate} value={draft.priceKrwRate}
               onChange={event => set({ priceKrwRate: event.target.value })} /></div>

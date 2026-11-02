@@ -52,7 +52,6 @@
 /* A terminal's coupon list, booth by booth: an offer, and beside it whether the door
    gives it by itself. */
 .grant-group { border: none; padding: 0; margin: 0 0 18px; }
-.sheet-inner > .hint-text + .grant-group { margin-top: 20px; }
 .grant-group legend { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; padding: 0; }
 .grant-offer {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -65,7 +64,6 @@
 .grant-offer.offer-off b { color: var(--muted); }
 .grant-auto { flex: none; font-size: 13px; align-items: center !important; }
 .grant-auto input:disabled + span { color: var(--muted); }
-.quantity-field .hint-text { margin-top: 6px; }
 .row-menu {
   position: fixed; z-index: 60; min-width: 176px; padding: 6px;
   background: white; border: 1px solid var(--line); border-radius: 12px;
@@ -448,7 +446,6 @@ body:has(.gate-screen) .header-plain { display: none; }
 /* The switch and its hour read as one setting: the hour sits beside the box it qualifies. */
 .day-close-row { align-items: end; }
 .day-close-row .field-inline { margin-bottom: 30px; }
-.hint-text.day-close-hint { margin: -8px 0 22px; }
 .issued-link .share-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .issued-link .share-row a, .issued-link .share-row button {
   font-size: 12px; padding: 6px 12px; border-radius: 8px;

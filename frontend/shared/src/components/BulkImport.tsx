@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { columnIndexes, parseTable } from '../csv';
+import InfoTip from './InfoTip';
 
 export interface ImportField {
   key: string;
@@ -128,11 +129,11 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, 
 
   return (
     <div className="bulk-import">
-      <h3>CSV 일괄 발급</h3>
-      <p className="hint-text">
-        엑셀에서 CSV로 저장하거나, 시트에서 셀을 복사해 아래에 붙여넣으세요. 열 이름이 있으면 순서가
-        달라도 알아서 맞춥니다 ({fields.map(f => f.label).join(' · ')}).
-      </p>
+      <h3>CSV 일괄 발급
+        <InfoTip label="CSV 일괄 발급">
+          엑셀에서 CSV로 저장하거나, 시트에서 셀을 복사해 아래에 붙여넣으세요. 열 이름이 있으면 순서가
+          달라도 알아서 맞춥니다 ({fields.map(f => f.label).join(' · ')}).
+        </InfoTip></h3>
 
       <div className="bulk-actions">
         {/* The browser's own file button speaks the browser's language ("Choose File");

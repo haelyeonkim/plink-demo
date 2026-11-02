@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
+import InfoTip from '@shared/components/InfoTip';
 import { Link } from 'react-router-dom';
 import { PAGE_SIZE, percent, read, shortTime, type BoothRow, type CouponFilter, type CouponRow, type OfferRow } from '../console/model';
 import { EMPTY_PAGE, Pager, useDebounced, type Paged } from './ListTools';
@@ -125,14 +126,12 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
           <span className="kpi-note">사용률 {percent(totals.redeemed, totals.issued - totals.voided)}%</span>
         </div>
         <div className="kpi">
-          <span className="kpi-label">미사용</span>
+          <span className="kpi-label">미사용<InfoTip label="미사용">관람객이 아직 들고 있는 쿠폰이에요.</InfoTip></span>
           <strong className="kpi-num">{totals.waiting.toLocaleString()}</strong>
-          <span className="kpi-note">관람객이 아직 들고 있는 쿠폰</span>
         </div>
         <div className="kpi">
-          <span className="kpi-label">무효</span>
+          <span className="kpi-label">무효<InfoTip label="무효">운영자가 거둔 쿠폰이에요.</InfoTip></span>
           <strong className={`kpi-num${totals.voided > 0 ? ' tone-off' : ''}`}>{totals.voided.toLocaleString()}</strong>
-          <span className="kpi-note">운영자가 거둔 쿠폰</span>
         </div>
       </div>
 
@@ -163,7 +162,11 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
       {view === 'offers' && (<>
         <div className="coupon-toolbar">
           <p className="console-summary">
-            {boothId === null ? '모든 부스' : scope[0]?.name}의 쿠폰 종류 {offers.length}개 · 발급 중인 것만 입장권에 줄 수 있어요
+            {boothId === null ? '모든 부스' : scope[0]?.name}의 쿠폰 종류 {offers.length}개
+            <InfoTip label="쿠폰 종류">
+              <p>발급 중인 것만 입장권에 줄 수 있어요.</p>
+              <p>한 장이라도 지급된 종류는 지울 수 없어 중지만 돼요. 이름이나 안내를 고쳐도 이미 받은 쿠폰은 받을 때의 문구 그대로예요.</p>
+            </InfoTip>
           </p>
           <span className="coupon-toolbar-gap" />
           {booths.length > 0 && !adding && (
@@ -275,7 +278,6 @@ export default function ConsoleCoupons({ sessionId, booths, boothId, onBooth, on
             })()}
           </table>
         </div>
-        <p className="console-foot">한 장이라도 지급된 종류는 지울 수 없어 중지만 돼요. 이름이나 안내를 고쳐도 이미 받은 쿠폰은 받을 때의 문구 그대로예요.</p>
       </>)}
 
       {view === 'issued' && (<>

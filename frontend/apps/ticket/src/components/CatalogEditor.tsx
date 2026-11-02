@@ -1,6 +1,7 @@
 import Icon from '@shared/components/Icon';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
+import InfoTip from '@shared/components/InfoTip';
 
 /**
  * Adds and removes one catalogue entry at a time.
@@ -12,9 +13,11 @@ import ConfirmDialog from '@shared/components/ConfirmDialog';
  * ticket keeps the seat it was issued with, and the list stops offering it for the next
  * one. Pasting several at once still works - commas and newlines split.
  */
-export default function CatalogEditor({ label, placeholder, items, inUse, busy, onChange }: {
+export default function CatalogEditor({ label, placeholder, info, items, inUse, busy, onChange }: {
   label: string;
   placeholder: string;
+  /** What the list is for, behind an "i" beside its name. */
+  info?: ReactNode;
   items: string[];
   inUse: Set<string>;
   busy: boolean;
@@ -39,7 +42,7 @@ export default function CatalogEditor({ label, placeholder, items, inUse, busy, 
   return (
     <div className="catalog">
       <div className="catalog-head">
-        <h3>{label}</h3>
+        <h3>{label}{info && <InfoTip label={label}>{info}</InfoTip>}</h3>
         <span className="hint-text">{items.length}개</span>
       </div>
 

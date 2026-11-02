@@ -1,5 +1,6 @@
 import Icon from '@shared/components/Icon';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import InfoTip from '@shared/components/InfoTip';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '@shared/auth';
 import IssuedLink from './IssuedLink';
@@ -30,6 +31,26 @@ const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', po
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
   gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
+};
+/** What a screen's actions mean, behind an "i" beside its title. */
+const TAB_HELP: Partial<Record<Tab, ReactNode>> = {
+  tickets: <>
+    <p><b>링크 다시 보내기</b>는 처음 보낸 링크를 그대로 다시 보냅니다. <b>새 링크로 재발급</b>은 새 링크를 만들고 그 순간
+      이전 링크를 닫아요.</p>
+    <p>비활성화해도 이미 장내에 있는 사람을 내보내지는 않아요.</p>
+  </>,
+  gates: <>
+    <p>태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 - 긴 토큰을 직접 입력할 일은 없어요.</p>
+    <p>게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
+      장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.</p>
+    <p>단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 -
+      현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다. 건물에 붙박이로 설치한
+      단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.</p>
+  </>,
+  ads: <>
+    <p>부스는 자기 부스 글만 올리고 고칠 수 있고, 올리거나 고친 글은 여기서 승인해야 게시돼요.</p>
+    <p>운영 글과 운영팀이 고친 글은 바로 게시되고, 맨 위에 고정할 수 있어요.</p>
+  </>,
 };
 /** Settings is one page of sections; these are its sections, in order. */
 type SettingsTab = 'event' | 'policy' | 'crowd' | 'invite' | 'fields';
@@ -80,7 +101,8 @@ function GroupBlock({ group, onOpen }: { group: TicketGroup; onOpen: (member: Ti
   return (
     <section className="ticket-detail-part console-group" aria-labelledby="console-group-title">
       <div className="console-group-head">
-        <h4 id="console-group-title">일행 {group.members.length}명</h4>
+        <h4 id="console-group-title">일행 {group.members.length}명
+          <InfoTip label="일행">줄을 누르면 그 입장권 상세로 가요.</InfoTip></h4>
         {group.inviterId !== null && (
           <small>초대 {group.used}/{group.quotaEffective} · 취소 {group.cancelsUsed}/{cancelsQuota}</small>
         )}
@@ -109,7 +131,6 @@ function GroupBlock({ group, onOpen }: { group: TicketGroup; onOpen: (member: Ti
           );
         })}
       </ul>
-      <p className="hint-text">줄을 누르면 그 입장권 상세로 가요.</p>
     </section>
   );
 }
@@ -188,11 +209,9 @@ export default function TicketAdmin() {
   };
   const [settingsDirty, setSettingsDirty] = useState<Set<SettingsKey>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
-  // The 초대 section's hint follows its select before the save; null means as saved.
-  const [inviteStatusHint, setInviteStatusHint] = useState<InviteStatus | null>(null);
   // Whether any tier input grants invites before the save; null means as saved.
   const [inviteQuotaAny, setInviteQuotaAny] = useState<boolean | null>(null);
-  useEffect(() => { setInviteStatusHint(null); setInviteQuotaAny(null); }, [selected]);
+  useEffect(() => { setInviteQuotaAny(null); }, [selected]);
   // Counts edits per form, so a change typed while its save is on the way is not
   // marked saved along with it.
   const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0, invite: 0 });
@@ -202,7 +221,6 @@ export default function TicketAdmin() {
   };
   const revertSettings = () => {
     settingsDirty.forEach(key => settingsForms[key].current?.reset());
-    setInviteStatusHint(null);
     setInviteQuotaAny(null);
     setSettingsDirty(new Set());
   };
@@ -1019,7 +1037,8 @@ export default function TicketAdmin() {
     <section className="page-section page-wide console">
       {!session && (<>
         <div className="page-head">
-          <h2><span aria-current="page">이벤트</span><span className="count">{sessions.length}</span></h2>
+          <h2><span aria-current="page">이벤트</span><span className="count">{sessions.length}</span>
+            <InfoTip label="이벤트 목록">이벤트 이름을 누르면 들어갑니다. 오늘·예정 이벤트가 위에, 종료된 이벤트는 아래에 놓입니다.</InfoTip></h2>
           <span className="page-actions">
             <Link className="btn-primary" to="/tickets/sessions/new">이벤트 추가</Link>
           </span>
@@ -1043,7 +1062,7 @@ export default function TicketAdmin() {
         <div className="console-main">
           <div className="console-head">
             <div>
-              <h2>{TAB_TITLES[tab]}</h2>
+              <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
               <p>{dayTime(session.startsAt)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
                 {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
             </div>
@@ -1375,10 +1394,6 @@ export default function TicketAdmin() {
               </aside>
             )}
           </div>
-          <p className="hint-text console-help">
-            <b>링크 다시 보내기</b>는 처음 보낸 링크를 그대로 다시 보냅니다. <b>새 링크로 재발급</b>은 새 링크를 만들고 그 순간
-            이전 링크를 닫아요. 비활성화해도 이미 장내에 있는 사람을 내보내지는 않아요.
-          </p>
         </div>
         );
       })()}
@@ -1513,11 +1528,11 @@ export default function TicketAdmin() {
               <p className="console-none">아직 입장 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
             )}
             <details className="console-card add-card" open={doors.length === 0}>
-              <summary>게이트 추가</summary>
-              <p className="hint-text">
-                이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요.
-                쿠폰을 주는 부스 단말은 <Link to="?tab=booths">부스</Link>에서 추가해요.
-              </p>
+              <summary>게이트 추가
+                <InfoTip label="게이트 추가">
+                  이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요.
+                  쿠폰을 주는 부스 단말은 <Link to="?tab=booths">부스</Link>에서 추가해요.
+                </InfoTip></summary>
               <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
                 <input type="hidden" name="role" value="ADMISSION" />
                 <div className="form-row">
@@ -1541,7 +1556,8 @@ export default function TicketAdmin() {
                 <details className="more-fields">
                   <summary>게이트 ID 직접 정하기</summary>
                   <div className="field">
-                    <label htmlFor="gate-new-id">게이트 ID <span className="label-note">비워 두면 자동으로 만들어요</span></label>
+                    <label htmlFor="gate-new-id">게이트 ID
+                      <InfoTip label="게이트 ID">비워 두면 자동으로 만들어요.</InfoTip></label>
                     <input id="gate-new-id" name="gateId" pattern="[A-Za-z0-9_\-]{1,32}"
                       placeholder="예: main-door-1" />
                   </div>
@@ -1550,14 +1566,6 @@ export default function TicketAdmin() {
                 {setupPanel && doors.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
               </form>
             </details>
-            <p className="hint-text console-help">
-              태블릿에서 설정 링크를 열고 인증번호를 입력하면 연결됩니다 - 긴 토큰을 직접 입력할 일은 없어요.
-              게이트 하나는 단말 한 대에만 연결됩니다. 두 대가 같은 ID를 쓰면 각자 절반의 기록만 보게 되어
-              장내 상태가 어긋나기 때문이에요. 단말을 교체하려면 연결을 해제해 주세요.
-              단말 토큰에는 유효기간이 있고, <b>유효기간 갱신</b>은 토큰과 연결을 그대로 둔 채 날짜만 미룹니다 -
-              현장에서 쓰는 태블릿은 기간이 얼마 남지 않으면 스스로 갱신합니다. 건물에 붙박이로 설치한
-              단말이라면 <b>무제한</b>으로 두고, 필요할 때 다시 기간을 줄 수 있어요.
-            </p>
           </div>
           );
         }
@@ -1619,11 +1627,11 @@ export default function TicketAdmin() {
               <p className="console-none">아직 부스가 없어요. 아래에서 첫 부스를 만드세요.</p>
             )}
             <details className="console-card add-card" open={booths.length === 0}>
-              <summary>부스 추가</summary>
-              <p className="hint-text">
-                부스를 만들고 단말을 연결하면, 그 태블릿으로 관람객의 QR을 읽어 쿠폰을 주고 사용 처리해요.
-                부스가 줄 쿠폰은 <Link to="?tab=coupons">쿠폰</Link>에서 만들어요.
-              </p>
+              <summary>부스 추가
+                <InfoTip label="부스 추가">
+                  부스를 만들고 단말을 연결하면, 그 태블릿으로 관람객의 QR을 읽어 쿠폰을 주고 사용 처리해요.
+                  부스가 줄 쿠폰은 <Link to="?tab=coupons">쿠폰</Link>에서 만들어요.
+                </InfoTip></summary>
               <form className="inline-form" onSubmit={e => { e.preventDefault(); addBooth(e.currentTarget); }}>
                 <label>이름<input name="name" required maxLength={80} placeholder="예: 커피 스탠드" /></label>
                 <label>위치 안내<input name="note" maxLength={120} placeholder="예: 로비 왼쪽" /></label>
@@ -1645,8 +1653,8 @@ export default function TicketAdmin() {
             </nav>
             <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
               <div className="settings-side">
-                <h3 id="settings-event-title">이벤트 정보</h3>
-                <p>관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</p>
+                <h3 id="settings-event-title">이벤트 정보
+                  <InfoTip label="이벤트 정보">관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</InfoTip></h3>
               </div>
               <div className="settings-body">
             <form key={`details-${session.id}`} className="settings-form" ref={settingsForms.details}
@@ -1667,7 +1675,11 @@ export default function TicketAdmin() {
                     defaultValue={localInput(session.startsAt)} />
                 </div>
                 <div className="field">
-                  <label htmlFor="event-gate">입장 시각 (선택)</label>
+                  <label htmlFor="event-gate">입장 시각 (선택)
+                    <InfoTip label="입장 시각">
+                      입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
+                      있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
+                    </InfoTip></label>
                   <input id="event-gate" name="gateOpensAt" type="datetime-local"
                     defaultValue={localInput(session.gateOpensAt)} />
                 </div>
@@ -1675,24 +1687,20 @@ export default function TicketAdmin() {
               <label className="field-inline">
                 <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
                 테스트 이벤트
+                <InfoTip label="테스트 이벤트">
+                  테스트 이벤트는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
+                  명단이 들어간 이벤트에는 켜지 마세요.
+                </InfoTip>
               </label>
-              <p className="hint-text">
-                테스트 이벤트는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
-                명단이 들어간 이벤트에는 켜지 마세요.
-              </p>
-              <p className="hint-text">
-                입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
-                있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
-              </p>
-
-
             </form>
               </div>
             </section>
             <section id="settings-policy" className="settings-section" aria-labelledby="settings-policy-title">
               <div className="settings-side">
-                <h3 id="settings-policy-title">재입장 · 퇴장</h3>
-                <p>입장한 사람이 다시 들어올 수 있는지, 퇴장을 찍지 않은 사람을 언제 내보낼지 정합니다. 저장하면 다음 스캔부터 바로 적용돼요.</p>
+                <h3 id="settings-policy-title">재입장 · 퇴장
+                  <InfoTip label="재입장 · 퇴장">
+                    입장한 사람이 다시 들어올 수 있는지, 퇴장을 찍지 않은 사람을 언제 내보낼지 정합니다. 저장하면 다음 스캔부터 바로 적용돼요.
+                  </InfoTip></h3>
               </div>
               <div className="settings-body">
             <form key={`policy-${session.id}`} className="settings-form" ref={settingsForms.policy}
@@ -1700,7 +1708,11 @@ export default function TicketAdmin() {
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="form-row">
                 <div className="field">
-                  <label htmlFor="policy-mode">재입장</label>
+                  <label htmlFor="policy-mode">재입장
+                    <InfoTip label="재입장">
+                      장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
+                      어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
+                    </InfoTip></label>
                   <select id="policy-mode" name="reentryMode" defaultValue={session.reentryMode}>
                     <option value="DISABLED">불가</option>
                     <option value="LIMITED">횟수 제한</option>
@@ -1741,6 +1753,10 @@ export default function TicketAdmin() {
                 <label className="field-inline">
                   <input name="dayCloseExit" type="checkbox" defaultChecked={session.dayCloseExit} />
                   날이 바뀌면 자동 퇴장
+                  <InfoTip label="날이 바뀌면 자동 퇴장">
+                    켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
+                    처리합니다. 자정을 넘겨 계속되는 이벤트라면 기준 시각을 새벽으로 늦추세요.
+                  </InfoTip>
                 </label>
                 <div className="field">
                   <label htmlFor="day-close-hour">날짜 기준 시각</label>
@@ -1751,31 +1767,25 @@ export default function TicketAdmin() {
                   </select>
                 </div>
               </div>
-              <p className="hint-text day-close-hint">
-                켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
-                처리합니다. 자정을 넘겨 계속되는 이벤트라면 기준 시각을 새벽으로 늦추세요.
-              </p>
               <label className="field-inline">
                 <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
                 등록 시 이메일 인증 필요
+                <InfoTip label="등록 시 이메일 인증">
+                  이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
+                  뿌리는 이벤트라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
+                  인증을 요구합니다.
+                </InfoTip>
               </label>
-              <p className="hint-text">
-                이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
-                뿌리는 이벤트라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
-                인증을 요구합니다.
-              </p>
-              <p className="hint-text">
-                장내 상태에서의 재입장은 {session.autoExitAfterMinutes}분이 지나야 보정됩니다. 그 전에는
-                어떤 정책이든 거부되어 QR 공유가 통하지 않습니다.
-              </p>
-
             </form>
               </div>
             </section>
             <section id="settings-crowd" className="settings-section" aria-labelledby="settings-crowd-title">
               <div className="settings-side">
-                <h3 id="settings-crowd-title">혼잡도</h3>
-                <p>장소별 수용 인원과 혼잡 기준입니다. 관람객 입장권 화면에도 같은 단계가 보여요.</p>
+                <h3 id="settings-crowd-title">혼잡도
+                  <InfoTip label="혼잡도">
+                    <p>장소별 수용 인원과 혼잡 기준입니다. 관람객 입장권 화면에도 같은 단계가 보여요.</p>
+                    <p>정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.</p>
+                  </InfoTip></h3>
               </div>
               <div className="settings-body">
             <form key={`crowd-${session.id}`} className="settings-form" ref={settingsForms.crowd}
@@ -1809,19 +1819,17 @@ export default function TicketAdmin() {
                   ))}
                 </div>
               )}
-              <p className="hint-text">
-                정원을 적은 장소는 정원 대비로, 비워 둔 장소는 가장 붐비는 곳과 비교해 표시됩니다.
-              </p>
-
             </form>
               </div>
             </section>
             <section id="settings-invite" className="settings-section" aria-labelledby="settings-invite-title">
               <div className="settings-side">
-                <h3 id="settings-invite-title">초대</h3>
-                <p>입장권을 등록한 사람이 정한 인원만큼 다른 사람에게 입장권을 보낼 수 있어요.
-                  받은 사람은 자기 입장권으로 등록·입장하고, 다시 초대할 수는 없어요.</p>
-                <p>일행은 초대한 사람과 그 사람이 초대한 사람들이에요.</p>
+                <h3 id="settings-invite-title">초대
+                  <InfoTip label="초대">
+                    <p>입장권을 등록한 사람이 정한 인원만큼 다른 사람에게 입장권을 보낼 수 있어요.
+                      받은 사람은 자기 입장권으로 등록·입장하고, 다시 초대할 수는 없어요.</p>
+                    <p>일행은 초대한 사람과 그 사람이 초대한 사람들이에요.</p>
+                  </InfoTip></h3>
               </div>
               <div className="settings-body">
             <form key={`invite-${session.id}`} className="settings-form" ref={settingsForms.invite}
@@ -1832,7 +1840,11 @@ export default function TicketAdmin() {
               }}
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <fieldset className="settings-group">
-                <legend>등급별 초대 인원</legend>
+                <legend>등급별 초대 인원
+                  <InfoTip label="등급별 초대 인원">
+                    <p>0명이면 그 등급은 초대할 수 없어요. 입장권마다 따로 정하려면 입장권 상세에서 바꿔요.</p>
+                    <p>초대받은 사람이 등록하기 전에는 취소할 수 있고, 취소는 초대 인원만큼만 할 수 있어요.</p>
+                  </InfoTip></legend>
                 {inviteTiers.length === 1 && (
                   /* No tiers yet: every ticket reads the one count below, and where tiers come from is not obvious. */
                   <p className="hint-text tier-none-hint">
@@ -1856,24 +1868,21 @@ export default function TicketAdmin() {
                     </div>
                   ))}
                 </div>
-                <p className="hint-text">
-                  0명이면 그 등급은 초대할 수 없어요. 입장권마다 따로 정하려면 입장권 상세에서 바꿔요.
-                </p>
-                <p className="hint-text">
-                  초대받은 사람이 등록하기 전에는 취소할 수 있고, 취소는 초대 인원만큼만 할 수 있어요.
-                </p>
               </fieldset>
               <fieldset className={`settings-group${invitesInUse ? '' : ' is-dimmed'}`}>
-                <legend>일행끼리 입장 상태 보기</legend>
+                <legend>일행끼리 입장 상태 보기
+                  <InfoTip label="일행끼리 입장 상태 보기">
+                    {(Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]).map(value => (
+                      <p key={value}><b>{INVITE_STATUS_LABEL[value]}</b> · {INVITE_STATUS_HINT[value]}</p>
+                    ))}
+                  </InfoTip></legend>
                 <div className="field">
                   <label htmlFor="invite-status" className="visually-hidden">일행끼리 입장 상태 보기</label>
-                  <select id="invite-status" name="inviteStatus" defaultValue={session.inviteStatus ?? 'GROUP'}
-                    onChange={e => setInviteStatusHint(e.target.value as InviteStatus)}>
+                  <select id="invite-status" name="inviteStatus" defaultValue={session.inviteStatus ?? 'GROUP'}>
                     {(Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]).map(value => (
                       <option key={value} value={value}>{INVITE_STATUS_LABEL[value]}</option>
                     ))}
                   </select>
-                  <p className="hint-text">{INVITE_STATUS_HINT[inviteStatusHint ?? session.inviteStatus ?? 'GROUP']}</p>
                   {!invitesInUse && (
                     <p className="hint-text">초대 인원을 정하면 쓸 수 있어요. 지금은 모든 등급이 0명이고, 따로 정한 입장권도 없어요.</p>
                   )}
@@ -1884,14 +1893,14 @@ export default function TicketAdmin() {
             </section>
             <section id="settings-fields" className="settings-section" aria-labelledby="settings-fields-title">
               <div className="settings-side">
-                <h3 id="settings-fields-title">발급 항목</h3>
-                <p>입장권마다 붙는 정보예요. 등급과 좌석은 값만 넣으면 되고, 다른 정보는 항목을 추가해요.</p>
+                <h3 id="settings-fields-title">발급 항목
+                  <InfoTip label="발급 항목">
+                    <p>입장권마다 붙는 정보예요. 등급과 좌석은 값만 넣으면 되고, 다른 정보는 항목을 추가해요.</p>
+                    <p>등급과 좌석은 비워 두면 그 이벤트에서 쓰지 않아요. 구역·트랙·식사처럼 다른 정보는 아래 추가 항목으로 만들어요.</p>
+                  </InfoTip></h3>
               </div>
               <div className="settings-body">
             <div className="settings-form">
-              <p className="hint-text">
-                등급과 좌석은 비워 두면 그 이벤트에서 쓰지 않아요. 구역·트랙·식사처럼 다른 정보는 아래 추가 항목으로 만들어요.
-              </p>
 
               {([['TIER', '등급', 'VIP, 일반처럼 입장권을 나누는 단계예요. 초대 인원을 등급마다 정할 수 있어요.', '예: VIP'],
                 ['SEAT', '좌석', '한 좌석은 한 장에만 발급돼요.', '예: A-12']] as const).map(([kind, name, note, placeholder]) => {
@@ -1899,11 +1908,12 @@ export default function TicketAdmin() {
                 return (
                   <div className="field-card fixed-field" key={kind}>
                     <CatalogEditor label={field && field.label !== name ? `${name} (${field.label})` : name}
-                      placeholder={`${placeholder} · 입력하고 추가`}
+                      placeholder={`${placeholder} · 입력하고 추가`} info={note}
                       items={field?.values ?? []} inUse={kind === 'SEAT' ? takenSeats : usedTiers} busy={busy}
                       onChange={next => saveFixedField(kind, field, next)} />
-                    <p className="hint-text">{note}{field && field.values.length === 0
-                      ? ' 지금은 값 목록이 없어 발급할 때 직접 입력해요.' : ''}</p>
+                    {field && field.values.length === 0 && (
+                      <p className="hint-text">지금은 값 목록이 없어 발급할 때 직접 입력해요.</p>
+                    )}
                     {field && (
                       <button type="button" className="btn-tiny" onClick={() => setConfirmField(field)}>
                         {name} 쓰지 않기</button>
@@ -1930,15 +1940,15 @@ export default function TicketAdmin() {
 
               <form key={`add-field-${session.id}`} className="field-card"
                 onSubmit={e => { e.preventDefault(); addField(e.currentTarget); }}>
-                <h3>항목 추가</h3>
+                <h3>항목 추가
+                  <InfoTip label="항목 추가">
+                    항목을 만든 뒤 값 목록을 넣으면 발급할 때 그중에서 고르고, 비워 두면 직접 입력해요.
+                  </InfoTip></h3>
                 <div className="field">
                   <label htmlFor="field-label">이름</label>
                   <input id="field-label" name="label" required maxLength={40}
                     placeholder="구역, 트랙, 식사…" />
                 </div>
-                <p className="hint-text">
-                  항목을 만든 뒤 값 목록을 넣으면 발급할 때 그중에서 고르고, 비워 두면 직접 입력해요.
-                </p>
                 <button className="btn-primary" type="submit">항목 추가</button>
               </form>
             </div>
@@ -1976,7 +1986,14 @@ export default function TicketAdmin() {
             <form onSubmit={e => { e.preventDefault(); saveGrants(); }}>
               <header className="sheet-head">
                 <div className="sheet-title">
-                  <h3 id="grant-sheet">쿠폰 부여 설정</h3>
+                  <h3 id="grant-sheet">쿠폰 부여 설정
+                    <InfoTip label="쿠폰 부여 설정">
+                      <p>고른 쿠폰은 단말의 <b>쿠폰 부여</b> 모드에서 QR을 찍어 종류와 장수를 정해 줄 수 있어요.</p>
+                      <p>{admitsPeople(grantGate)
+                        ? <><b>입장 시 자동</b>을 켜면 이 단말로 입장할 때마다 1장이 되도록 채워 줍니다. 다시 들어와도 더 주지 않아요.</>
+                        : '입장 시 자동 지급은 입장을 처리하는 단말에서만 쓸 수 있어요.'}</p>
+                      <p>발급을 중지한 쿠폰은 골라 두어도 단말에 보이지 않아요.</p>
+                    </InfoTip></h3>
                   <p>
                     {grantGate.label || grantGate.gateId} ·{' '}
                     {grantGate.role === 'BOOTH' ? '부스 단말' : DIRECTION_LABEL[grantGate.direction] ?? grantGate.direction}
@@ -1987,12 +2004,6 @@ export default function TicketAdmin() {
               </header>
               <div className="sheet-body">
                 <div className="sheet-inner">
-                  <p className="hint-text">
-                    고른 쿠폰은 단말의 <b>쿠폰 부여</b> 모드에서 QR을 찍어 종류와 장수를 정해 줄 수 있어요.
-                    {admitsPeople(grantGate)
-                      ? <> <b>입장 시 자동</b>을 켜면 이 단말로 입장할 때마다 1장이 되도록 채워 줍니다. 다시 들어와도 더 주지 않아요.</>
-                      : ' 입장 시 자동 지급은 입장을 처리하는 단말에서만 쓸 수 있어요.'}
-                  </p>
                   {booths.every(booth => booth.offers.length === 0) ? (
                     <div className="sheet-empty">
                       <b>정해 둔 쿠폰이 없어요.</b>
@@ -2031,7 +2042,6 @@ export default function TicketAdmin() {
                       })}
                     </fieldset>
                   ))}
-                  <p className="hint-text">발급을 중지한 쿠폰은 골라 두어도 단말에 보이지 않아요.</p>
                 </div>
               </div>
               <footer className="sheet-foot">
@@ -2100,7 +2110,11 @@ export default function TicketAdmin() {
             <form onSubmit={e => { e.preventDefault(); issueCoupons(); }}>
               <header className="sheet-head">
                 <div className="sheet-title">
-                  <h3 id="coupon-sheet">쿠폰 발급</h3>
+                  <h3 id="coupon-sheet">쿠폰 발급
+                    <InfoTip label="쿠폰 발급">
+                      관람객은 쿠폰마다 <b>쿠폰 QR</b>을 열어 그 부스 단말에 비추면 한 장씩 사용됩니다. 같은 사람에게 같은 쿠폰을
+                      두 번 주면 한 장만 남습니다.
+                    </InfoTip></h3>
                   <p>
                     {couponSheet.only
                       ? `${couponSheet.only.ticketRef}`
@@ -2163,16 +2177,16 @@ export default function TicketAdmin() {
                         </div>
                       )}
                       <div className="field quantity-field">
-                        <label htmlFor="give-quantity">1인당 장수</label>
+                        {/* A total, not an increment: sending the same batch again for
+                            latecomers must not give everybody else a second helping. */}
+                        <label htmlFor="give-quantity">1인당 장수
+                          <InfoTip label="1인당 장수">
+                            입장권마다 이 쿠폰이 {Number.isFinite(sheetQuantity) && sheetQuantity > 0 ? sheetQuantity : 1}장이
+                            되도록 채워요. 이미 받은 쿠폰(사용한 것 포함)도 장수에 들어가요.
+                          </InfoTip></label>
                         <input id="give-quantity" type="number" inputMode="numeric" min={1} max={MAX_PER_TICKET}
                           value={sheetQuantity}
                           onChange={e => { setSheetQuantity(Number(e.target.value)); setSheetError(''); }} />
-                        {/* A total, not an increment: sending the same batch again for
-                            latecomers must not give everybody else a second helping. */}
-                        <p className="hint-text">
-                          입장권마다 이 쿠폰이 {Number.isFinite(sheetQuantity) && sheetQuantity > 0 ? sheetQuantity : 1}장이
-                          되도록 채워요. 이미 받은 쿠폰(사용한 것 포함)도 장수에 들어가요.
-                        </p>
                       </div>
                     </>);
                   })()}
@@ -2256,11 +2270,6 @@ export default function TicketAdmin() {
                       </div>
                     </>)}
                   </>)}
-
-                  <p className="hint-text">
-                    관람객은 쿠폰마다 <b>쿠폰 QR</b>을 열어 그 부스 단말에 비추면 한 장씩 사용됩니다. 같은 사람에게 같은 쿠폰을
-                    두 번 주면 한 장만 남습니다.
-                  </p>
                 </div>
               </div>
 
@@ -2440,7 +2449,10 @@ export default function TicketAdmin() {
 
             <div className="console-two">
               <section className="console-card" aria-labelledby="live-zones">
-                <h3 id="live-zones">장소별 혼잡도</h3>
+                <h3 id="live-zones">장소별 혼잡도
+                  <InfoTip label="장소별 혼잡도">
+                    관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">이벤트 설정</Link>에서 바꿔요.
+                  </InfoTip></h3>
                 {zones.length === 0 && unplaced === 0 ? (
                   <p className="console-none">등록된 게이트가 없어요.</p>
                 ) : zones.map(z => (
@@ -2463,14 +2475,12 @@ export default function TicketAdmin() {
                 {unplaced > 0 && (
                   <div className="zone-meter unplaced">
                     <div className="zone-meter-head">
-                      <b>장소 미지정</b>
+                      <b>장소 미지정<InfoTip label="장소 미지정">게이트를 거치지 않고 관리자가 처리한 입장이에요.</InfoTip></b>
                       <span>{unplaced.toLocaleString()}명</span>
                     </div>
                     <span className="meter-track meter-lg level-none"><span style={{ width: `${percent(unplaced, Math.max(busiest, unplaced))}%` }} /></span>
-                    <div className="zone-meter-foot">게이트를 거치지 않고 관리자가 처리한 입장이에요.</div>
                   </div>
                 )}
-                <p className="console-foot">관람객 입장권 화면에도 같은 단계가 보입니다. 수용 인원은 <Link to="?tab=settings&sec=crowd">이벤트 설정</Link>에서 바꿔요.</p>
               </section>
 
               <section className="console-card" aria-labelledby="live-gates">

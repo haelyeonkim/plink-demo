@@ -874,6 +874,7 @@ select, .field select, select.artwork-status {
 
 /* Bulk import from a spreadsheet */
 .bulk-import { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 18px; }
+.bulk-import > h3 { margin-bottom: 12px; }
 .bulk-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .bulk-actions input[type="file"] { font-size: 12px; max-width: 100%; min-width: 0; }
 .bulk-text {
@@ -983,7 +984,6 @@ select, .field select, select.artwork-status {
 .tone-ok { color: #1c7a5c; }
 .console-none { color: var(--muted); font-size: 14px; padding: 6px 2px; }
 .console-foot { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
-.console-help { margin-top: 4px; }
 
 /* The list of events. */
 .console-toolbar { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; flex-wrap: wrap; }
@@ -1367,3 +1367,39 @@ body:has(.save-bar) .toast-stack { bottom: calc(96px + env(safe-area-inset-botto
   .console-actions .live-state { font-size: 0; width: 10px; height: 10px; padding: 0; border-radius: 99px; }
   .live-open { background: #2f9e75; } .live-connecting { background: #c4c8d4; } .live-retrying { background: #e0a43a; }
 }
+
+/* What an item means, behind an "i" beside its heading or label (InfoTip), instead of a
+   line of grey text under it. */
+.info-tip {
+  display: inline-grid; place-items: center; vertical-align: middle; flex: none;
+  width: 22px; height: 22px; margin: -3px 0 -3px 4px; padding: 0;
+  border: 0; border-radius: 99px; background: none; color: #8a91a3; cursor: help;
+  font: inherit; line-height: 0; box-shadow: none;
+}
+.info-tip svg { display: block; }
+/* A checkbox line already spaces its parts with a gap. */
+.field-inline > .info-tip { margin-left: -4px; }
+.info-tip:hover, .info-tip[aria-expanded="true"] { color: var(--blue); background: none; }
+.info-tip:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+/* A finger needs more than the glyph to aim at; the margin keeps the line from growing. */
+@media (pointer: coarse) {
+  .info-tip { width: 28px; height: 28px; margin: -6px -3px -6px 1px; }
+}
+.info-tip-bubble {
+  position: fixed; z-index: 90; box-sizing: border-box;
+  width: max-content; max-width: min(280px, calc(100vw - 16px));
+  padding: 9px 12px; border-radius: 10px; background: var(--ink); color: white;
+  font-size: 13px; font-weight: 500; line-height: 1.55; letter-spacing: normal; text-align: left;
+  white-space: normal; overflow-wrap: anywhere; text-transform: none;
+  box-shadow: 0 10px 28px rgba(18, 33, 69, .22);
+}
+.info-tip-bubble::after {
+  content: ""; position: absolute; left: var(--arrow, 50%); top: 100%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--ink);
+}
+.info-tip-bubble.below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ink); }
+.info-tip-bubble b, .info-tip-bubble strong { color: white; }
+.info-tip-bubble code { font-size: 12px; background: rgba(255, 255, 255, .14); padding: 0 4px; border-radius: 4px; color: white; }
+.info-tip-bubble p { margin: 0; }
+.info-tip-bubble p + p { margin-top: 6px; }
+.info-tip-bubble a { color: #b9c8ff; text-decoration: underline; }

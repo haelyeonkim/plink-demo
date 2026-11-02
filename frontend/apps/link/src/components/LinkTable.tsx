@@ -114,7 +114,6 @@ export default function LinkTable({ links, loading }: { links: ProtectedLink[]; 
           </tbody>
         </table>
       </div>
-      <p className="console-foot">링크 이름을 누르면 들어갑니다. 최근에 만든 링크가 위에 놓입니다.</p>
     </>
   );
 }

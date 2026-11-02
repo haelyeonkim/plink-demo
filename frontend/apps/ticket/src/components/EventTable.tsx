@@ -116,7 +116,6 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
           </tbody>
         </table>
       </div>
-      <p className="console-foot">이벤트 이름을 누르면 들어갑니다. 오늘·예정 이벤트가 위에, 종료된 이벤트는 아래에 놓입니다.</p>
     </>
   );
 }

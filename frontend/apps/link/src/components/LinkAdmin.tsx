@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { mutate } from '@shared/auth';
 import BulkImport from '@shared/components/BulkImport';
+import InfoTip from '@shared/components/InfoTip';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
 import LinkTable, { shortDate } from './LinkTable';
 import LinkNav, { type LinkTab } from './LinkNav';
@@ -226,7 +227,8 @@ export default function LinkAdmin() {
     <section className="page-section page-wide console">
       {!detail && (<>
         <div className="page-head">
-          <h2><span aria-current="page">링크</span><span className="count">{links.length}</span></h2>
+          <h2><span aria-current="page">링크</span><span className="count">{links.length}</span>
+            <InfoTip label="링크 목록">링크 이름을 누르면 들어갑니다. 최근에 만든 링크가 위에 놓입니다.</InfoTip></h2>
           <span className="page-actions">
             {/* Content is what a link points at, so it is made from here rather than
                 from a menu of its own. */}
@@ -246,7 +248,9 @@ export default function LinkAdmin() {
         <div className="console-main">
           <div className="console-head">
             <div>
-              <h2>{TAB_TITLES[tab]}</h2>
+              <h2>{TAB_TITLES[tab]}{tab === 'links' && (
+                <InfoTip label={TAB_TITLES[tab]}>비활성화하면 그 사람의 링크만 닫힙니다. 나머지 수신자는 그대로 열 수 있어요.</InfoTip>
+              )}</h2>
               <p>{detail.title || detail.contentTitle || detail.originalUrl}
                 {detail.expiresAt ? ` · ${shortDate(detail.expiresAt)}까지` : ''}{detail.hasPassword ? ' · 비밀번호 보호' : ''}</p>
             </div>
@@ -304,7 +308,10 @@ export default function LinkAdmin() {
               )}
             </form>
                 <div className="console-card">
-                  <h3>이 링크</h3>
+                  <h3>이 링크
+                    <InfoTip label="이 링크">
+                      패스키는 사람(이메일)에 귀속되므로, 한 사람이 여러 링크를 받아도 패스키는 하나입니다.
+                    </InfoTip></h3>
                   <dl className="detail-list">
                     <dt>대상</dt>
                     <dd>
@@ -319,9 +326,6 @@ export default function LinkAdmin() {
                       {detail.expiresAt ? formatDate(detail.expiresAt) : '없음'}{expired ? ' · 만료됨' : ''}
                     </dd>
                   </dl>
-                  <p className="hint-text">
-                    패스키는 사람(이메일)에 귀속되므로, 한 사람이 여러 링크를 받아도 패스키는 하나입니다.
-                  </p>
                 </div>
               </aside>
             </div>
@@ -364,9 +368,6 @@ export default function LinkAdmin() {
                   </tbody>
                 </table>
               </div>
-              <p className="hint-text console-help">
-                비활성화하면 그 사람의 링크만 닫힙니다. 나머지 수신자는 그대로 열 수 있어요.
-              </p>
             </div>
           )}
 
@@ -419,8 +420,10 @@ export default function LinkAdmin() {
             <div className="settings-page">
               <section id="settings-link" className="settings-section" aria-labelledby="settings-link-title">
                 <div className="settings-side">
-                  <h3 id="settings-link-title">링크 정보</h3>
-                  <p>무엇을 열지, 언제까지·몇 번까지 열 수 있는지 정합니다. 이미 발급한 수신자 링크에도 바로 적용돼요.</p>
+                  <h3 id="settings-link-title">링크 정보
+                    <InfoTip label="링크 정보">
+                      무엇을 열지, 언제까지·몇 번까지 열 수 있는지 정합니다. 이미 발급한 수신자 링크에도 바로 적용돼요.
+                    </InfoTip></h3>
                   <dl className="settings-now">
                     <div><dt>대상</dt><dd>{detail.contentId ? `컨텐츠 · ${detail.contentTitle}` : '외부 주소'}</dd></div>
                     <div><dt>만료</dt><dd>{detail.expiresAt ? formatDate(detail.expiresAt) : '없음'}</dd></div>
@@ -465,12 +468,14 @@ export default function LinkAdmin() {
                   )}
                   <div className="form-row">
                     <div className="field">
-                      <label htmlFor="settings-expires">만료 일시</label>
+                      <label htmlFor="settings-expires">만료 일시
+                        <InfoTip label="만료 일시">비워 두면 만료되지 않아요.</InfoTip></label>
                       <input id="settings-expires" name="expiresAt" type="datetime-local"
                         defaultValue={localInput(detail.expiresAt)} />
                     </div>
                     <div className="field">
-                      <label htmlFor="settings-max">최대 열람</label>
+                      <label htmlFor="settings-max">최대 열람
+                        <InfoTip label="최대 열람">0이면 제한 없이 열 수 있어요.</InfoTip></label>
                       <input id="settings-max" name="maxViews" type="number" min={0}
                         defaultValue={detail.maxViews} />
                     </div>
@@ -487,10 +492,6 @@ export default function LinkAdmin() {
                       비밀번호 없애기
                     </label>
                   )}
-                  <p className="hint-text">
-                    만료를 비우면 만료되지 않고, 최대 열람 0은 제한 없음입니다. 이미 발급한 링크에도 바로
-                    적용됩니다.
-                  </p>
                   <button className="btn-primary" type="submit" disabled={busy}>저장하고 바로 적용</button>
                 </form>
                 </div>

@@ -1,4 +1,5 @@
 import Icon from '@shared/components/Icon';
+import InfoTip from '@shared/components/InfoTip';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { mutate } from '@shared/auth';
@@ -138,12 +139,11 @@ export default function AdminConsole() {
 
       {tab === 'accounts' && (
         <div className="tab-panel">
-          <h3>관리자 계정</h3>
-
-        <p className="section-desc">
-          계정마다 열 수 있는 화면을 정합니다. 본인 계정과 마지막 소유자의 권한은 잠금 상태로 바꿀 수
-          없어요. 행의 <code>/s/…</code> 를 누르면 그 계정이 발급하는 링크 주소를 바꿀 수 있습니다.
-        </p>
+          <h3>관리자 계정
+            <InfoTip label="관리자 계정">
+              계정마다 열 수 있는 화면을 정합니다. 본인 계정과 마지막 소유자의 권한은 잠금 상태로 바꿀 수
+              없어요. 행의 <code>/s/…</code> 를 누르면 그 계정이 발급하는 링크 주소를 바꿀 수 있습니다.
+            </InfoTip></h3>
 
         <ul className="entity-list">
           {accounts.map(row => {

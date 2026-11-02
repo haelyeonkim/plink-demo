@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
+import InfoTip from '@shared/components/InfoTip';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
 import { read, shortTime } from '../console/model';
 import { openLive } from '../ticket/live';
@@ -136,17 +137,21 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
           <div className="console-checks">
             <label><input type="checkbox" checked={pin} onChange={e => setPin(e.target.checked)} /> 채팅 맨 위에 고정</label>
             <label><input type="checkbox" checked={alsoAd} onChange={e => setAlsoAd(e.target.checked)} /> 알림판에도 올리기</label>
-            <label><input type="checkbox" checked={alert} onChange={e => setAlert(e.target.checked)} /> 입장권 화면에 알림</label>
+            <label><input type="checkbox" checked={alert} onChange={e => setAlert(e.target.checked)} /> 입장권 화면에 알림
+              <InfoTip label="입장권 화면에 알림">
+                입장 전인 사람까지 이 이벤트의 입장권을 연 모두에게 맨 위에 보여요. 내릴 때까지 남아 있어요.
+              </InfoTip></label>
           </div>
-          {alert && (
-            <p className="hint-text">입장 전인 사람까지 이 이벤트의 입장권을 연 모두에게 맨 위에 보여요. 내릴 때까지 남아 있어요.</p>
-          )}
           <button className="btn-primary" type="submit" disabled={!notice.trim()}>공지 보내기</button>
         </form>
 
         <section className="console-card" aria-labelledby="chat-feed">
           <div className="console-card-head">
-            <h3 id="chat-feed">{pane === 'MESSAGES' ? '메시지' : '참여자'}</h3>
+            <h3 id="chat-feed">{pane === 'MESSAGES' ? '메시지' : '참여자'}
+              <InfoTip label={pane === 'MESSAGES' ? '메시지' : '참여자'}>
+                <p>관람객에게는 자동 별명만 보이고, 여기서만 입장권 번호를 함께 봅니다.</p>
+                <p>채팅 제한은 그 입장권의 쓰기만 막고, 차단은 쓰기를 막으면서 그 사람의 메시지를 모두 관람객에게서 가려요.</p>
+              </InfoTip></h3>
           </div>
           <div className="inner-tabs" role="tablist" aria-label="채팅 보기">
             {([['MESSAGES', '메시지'], ['PEOPLE', '참여자']] as Array<[Pane, string]>).map(([key, label]) => (
@@ -226,14 +231,14 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
             </table>
           </div>
           </>)}
-          <p className="console-foot">관람객에게는 자동 별명만 보이고, 여기서만 입장권 번호를 함께 봅니다. 채팅 제한은 그 입장권의 쓰기만 막고, 차단은 쓰기를 막으면서 그 사람의 메시지를 모두 관람객에게서 가려요.</p>
         </section>
       </div>
 
       <aside className="console-aside">
         <form className="console-card" key={JSON.stringify(view.settings)}
           onSubmit={e => { e.preventDefault(); saveSettings(e.currentTarget); }}>
-          <h3>채팅 규칙</h3>
+          <h3>채팅 규칙
+            <InfoTip label="채팅 규칙">입장한 관람객만 읽을 수 있고, 장내에 있을 때만 쓸 수 있어요.</InfoTip></h3>
           <label className="console-switch"><input type="checkbox" name="enabled" defaultChecked={view.settings.enabled} /> 채팅 열기</label>
           <div className="console-fields">
             <label>입력 간격(초)<input name="cooldownSeconds" type="number" min={0} max={3600} defaultValue={view.settings.cooldownSeconds} /></label>
@@ -242,7 +247,6 @@ export default function ConsoleChat({ sessionId, onNotice, onError }: {
             <label>고정 시간(분)<input name="hotMinutes" type="number" min={1} max={600} defaultValue={view.settings.hotMinutes} /></label>
             <label>자동 가림 신고 수<input name="reportHide" type="number" min={1} defaultValue={view.settings.reportHide} /></label>
           </div>
-          <p className="hint-text">입장한 관람객만 읽을 수 있고, 장내에 있을 때만 쓸 수 있어요.</p>
           <button className="btn-primary" type="submit">저장하고 바로 적용</button>
         </form>
         <section className="console-card" aria-labelledby="chat-pinned">

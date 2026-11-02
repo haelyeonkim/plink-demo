@@ -1,4 +1,5 @@
 import ArtworkPriceFields from './ArtworkPriceFields';
+import InfoTip from '@shared/components/InfoTip';
 import { priceDraft } from '../artworkPrice';
 import { useEffect, useRef, useState } from 'react';
 import type { ArtworkRecord } from '../types';
@@ -38,8 +39,8 @@ export default function AdminArtworkEditor({ artwork, onClose, onSaved }: {
   return <dialog ref={dialog} className="admin-artwork-editor" aria-labelledby="artwork-edit-title"
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <form onSubmit={event => void save(event)}>
-      <h3 id="artwork-edit-title">작품 수정</h3>
-      <p className="hint-text">원본 컨텐츠와 작품 목록에 반영됩니다. 이미 발송한 수신자별 작품 내용은 유지됩니다.</p>
+      <h3 id="artwork-edit-title">작품 수정
+        <InfoTip label="작품 수정">원본 컨텐츠와 작품 목록에 반영됩니다. 이미 발송한 수신자별 작품 내용은 유지됩니다.</InfoTip></h3>
       {artwork.image && <img className="admin-artwork-edit-preview" src={artwork.image} alt={artwork.title} referrerPolicy="no-referrer" />}
       <fieldset disabled={busy} className="admin-artwork-edit-fields">
         {fields.map(([key, label, maxLength]) => <div className="field" key={key}>
@@ -50,11 +51,11 @@ export default function AdminArtworkEditor({ artwork, onClose, onSaved }: {
               autoFocus={key === 'title'} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} />}
         </div>)}
         {artwork.sourceType === 'URL' && <div className="field artwork-source-field">
-          <label htmlFor="edit-artwork-source">원본 웹페이지 주소</label>
+          <label htmlFor="edit-artwork-source">원본 웹페이지 주소
+            <InfoTip label="원본 웹페이지 주소">같은 컨텐츠에 속한 작품의 출처에 함께 반영됩니다.</InfoTip></label>
           <input id="edit-artwork-source" type="url" maxLength={500}
             value={/^[0-9a-f]{64}$/.test(sourceRef) ? '' : sourceRef} placeholder="https://"
             onChange={event => setSourceRef(event.target.value)} />
-          <small>같은 컨텐츠에 속한 작품의 출처에 함께 반영됩니다.</small>
         </div>}
         <ArtworkPriceFields id="edit-artwork-price" value={price} onChange={setPrice} />
       </fieldset>

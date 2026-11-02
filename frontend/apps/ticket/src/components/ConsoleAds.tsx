@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { mutate } from '@shared/auth';
+import InfoTip from '@shared/components/InfoTip';
 import { shrinkPhoto } from '../ticket/photo';
 import { openLive } from '../ticket/live';
 import { useCoalesced } from '../ticket/coalesce';
@@ -176,8 +177,8 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
 
       {pending.length > 0 && (
         <section className="console-card ad-review" aria-labelledby="ad-review-title">
-          <h3 id="ad-review-title">승인 대기 <span className="count">{pending.length}</span></h3>
-          <p className="console-summary">부스가 올리거나 고친 글이에요. 승인해야 관람객 알림판에 보여요.</p>
+          <h3 id="ad-review-title">승인 대기 <span className="count">{pending.length}</span>
+            <InfoTip label="승인 대기">부스가 올리거나 고친 글이에요. 승인해야 관람객 알림판에 보여요.</InfoTip></h3>
           <ul className="ad-review-list">
             {pending.map(ad => (
               <li key={ad.id}>
@@ -264,7 +265,6 @@ export default function ConsoleAds({ sessionId, booths, onNotice, onError }: {
           </tbody>
         </table>
       </div>
-      <p className="console-foot">부스는 자기 부스 글만 올리고 고칠 수 있고, 올리거나 고친 글은 여기서 승인해야 게시돼요. 운영 글과 운영팀이 고친 글은 바로 게시되고, 맨 위에 고정할 수 있어요.</p>
     </div>
   );
 }

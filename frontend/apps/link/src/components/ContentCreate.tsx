@@ -1,4 +1,5 @@
 import ArtworkPriceFields from './ArtworkPriceFields';
+import InfoTip from '@shared/components/InfoTip';
 import ArtworkPrice from './ArtworkPrice';
 import { priceDraft, type PriceDraft } from '../artworkPrice';
 import Icon from '@shared/components/Icon';
@@ -193,17 +194,19 @@ export default function ContentCreate() {
         <div className="tab-panel import-panel">
           {source === 'url' ? (
             <div className="field">
-              <label htmlFor="import-url">공개 웹페이지 URL</label>
+              <label htmlFor="import-url">공개 웹페이지 URL
+                <InfoTip label="공개 웹페이지 URL">
+                  로그인이 필요하거나 브라우저에서만 생성되는 페이지는 가져오지 못할 수 있어요.
+                </InfoTip></label>
               <input id="import-url" type="url" value={url} onChange={event => setUrl(event.target.value)}
                 placeholder="https://viewing.example.com/exhibition" disabled={busy} />
-              <p className="hint-text">로그인이 필요하거나 브라우저에서만 생성되는 페이지는 가져오지 못할 수 있어요.</p>
             </div>
           ) : (
             <div className="field">
-              <label htmlFor="import-pdf">작품 목록 PDF</label>
+              <label htmlFor="import-pdf">작품 목록 PDF
+                <InfoTip label="작품 목록 PDF">100MB 이하의 텍스트 PDF를 지원합니다. 스캔 문서는 OCR이 필요해요.</InfoTip></label>
               <input id="import-pdf" type="file" accept="application/pdf,.pdf" disabled={busy}
                 onChange={event => setFile(event.target.files?.[0] ?? null)} />
-              <p className="hint-text">100MB 이하의 텍스트 PDF를 지원합니다. 스캔 문서는 OCR이 필요해요.</p>
             </div>
           )}
           <button className="btn-primary" disabled={busy || (source === 'url' ? !url.trim() : !file)}
@@ -307,7 +310,8 @@ export default function ContentCreate() {
                   disabled={uploading !== null}
                   placeholder="https://…/artwork.jpg"
                   onChange={event => update(index, 'image', event.target.value)} />
-                <label htmlFor={`art-upload-${index}`}>또는 이미지 파일 업로드</label>
+                <label htmlFor={`art-upload-${index}`}>또는 이미지 파일 업로드
+                  <InfoTip label="이미지 파일 업로드">JPEG·PNG, 최대 10MB. 업로드 후 컨텐츠를 저장해 주세요.</InfoTip></label>
                 <input id={`art-upload-${index}`} type="file" accept="image/jpeg,image/png"
                   disabled={busy || uploading !== null}
                   onChange={event => {
@@ -316,7 +320,7 @@ export default function ContentCreate() {
                     if (selected) void uploadImage(index, selected);
                   }} />
                 <p className="hint-text" role="status">
-                  {uploading === index ? '이미지를 업로드하는 중…' : 'JPEG·PNG, 최대 10MB. 업로드 후 컨텐츠를 저장해 주세요.'}
+                  {uploading === index ? '이미지를 업로드하는 중…' : ''}
                 </p>
               </div>
               <div className="form-row">

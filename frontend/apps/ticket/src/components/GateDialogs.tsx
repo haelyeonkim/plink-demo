@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import InfoTip from '@shared/components/InfoTip';
 import type { GateRow } from '../console/model';
 
 /** A terminal's name: asked for when one is added, and changeable later from its card. */
@@ -24,7 +25,8 @@ export function GateNameDialog({ title, initial, confirmLabel, busy, onSave, onC
         onSubmit={event => { event.preventDefault(); if (name) onSave(name); }}>
         <h3 id="gate-name-title">{title}</h3>
         <div className="field">
-          <label htmlFor="gate-name-input">이름 <span className="label-note">태블릿과 기록에서 이 이름으로 구분해요</span></label>
+          <label htmlFor="gate-name-input">이름
+            <InfoTip label="이름">태블릿과 기록에서 이 이름으로 구분해요.</InfoTip></label>
           <input id="gate-name-input" ref={input} value={label} maxLength={40} required
             onChange={event => setLabel(event.target.value)} placeholder="예: 계산대 1" />
         </div>

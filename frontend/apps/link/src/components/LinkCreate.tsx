@@ -1,4 +1,5 @@
 import Icon from '@shared/components/Icon';
+import InfoTip from '@shared/components/InfoTip';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createArtworkDelivery, createLink, deadlineInstant, fetchArtworks, fetchContents } from '../api';
@@ -100,6 +101,10 @@ export default function LinkCreate() {
         <Link className="crumb-link" to="/links">링크 관리</Link>
         <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
         <span className="crumb" aria-current="page">링크 추가</span>
+        <InfoTip label="링크 추가">
+          만든 뒤 수신자마다 개인 주소를 하나씩 발급해 전달합니다. 링크를 처음 열고 패스키를 등록한
+          사람에게 귀속되며, 다른 사람에게 전달해도 열리지 않습니다.
+        </InfoTip>
       </h2>
 
       <form className="create-form" onSubmit={submit}>
@@ -123,7 +128,8 @@ export default function LinkCreate() {
           </div>
         ) : target === 'content' ? (
           <div className="field">
-            <label htmlFor="link-content">컨텐츠</label>
+            <label htmlFor="link-content">컨텐츠
+              <InfoTip label="컨텐츠">여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다.</InfoTip></label>
             <select id="link-content" value={contentId} required
               onChange={event => setContentId(event.target.value)}>
               <option value="">컨텐츠를 선택하세요</option>
@@ -132,9 +138,7 @@ export default function LinkCreate() {
               ))}
             </select>
             <p className="hint-text">
-              {contents.length === 0
-                ? '아직 만든 컨텐츠가 없어요. '
-                : '여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다. '}
+              {contents.length === 0 ? '아직 만든 컨텐츠가 없어요. ' : ''}
               <Link to="/links/contents/new">컨텐츠 만들기</Link>
             </p>
           </div>
@@ -167,10 +171,10 @@ export default function LinkCreate() {
           <input id="maxViews" name="maxViews" type="number" min={0} placeholder="0 = 제한 없음" />
         </div>
         <div className="field">
-          <label htmlFor="expiresAt">만료 일시</label>
+          <label htmlFor="expiresAt">만료 일시
+            <InfoTip label="만료 일시">비워 두면 만료되지 않습니다.</InfoTip></label>
           <div className="expiry-input">
             <input id="expiresAt" type="datetime-local" value={expiresAt}
-              aria-describedby="expiry-help"
               onChange={event => setExpiresAt(event.target.value)} />
             <button type="button" className="expiry-clear" aria-label="만료 일시 지우기"
               title="만료 일시 지우기" disabled={!expiresAt}
@@ -178,18 +182,17 @@ export default function LinkCreate() {
               <Icon name="close" />
             </button>
           </div>
-          <p className="hint-text" id="expiry-help">비워 두면 만료되지 않습니다.</p>
         </div>
         <div className="field">
-          <label htmlFor="recipients">수신자 이메일 (선택)</label>
+          <label htmlFor="recipients">수신자 이메일 (선택)
+            <InfoTip label="수신자 이메일">
+              여기에 적으면 링크를 만들면서 <b>사람마다 개인 주소를 하나씩</b> 발급합니다. 비워 두면
+              링크만 만들고 나중에 발급할 수 있어요. 엑셀에서 복사한 표도 붙여넣을 수 있습니다.
+            </InfoTip></label>
           <textarea id="recipients" rows={4} value={recipients}
-            aria-invalid={validation.errors.length > 0} aria-describedby="recipient-help recipient-errors"
+            aria-invalid={validation.errors.length > 0} aria-describedby="recipient-errors"
             placeholder={'한 줄에 한 명씩\nkim@example.com\nlee@example.com'}
             onChange={event => setRecipients(event.target.value)} />
-          <p className="hint-text" id="recipient-help">
-            여기에 적으면 링크를 만들면서 <b>사람마다 개인 주소를 하나씩</b> 발급합니다. 비워 두면
-            링크만 만들고 나중에 발급할 수 있어요. 엑셀에서 복사한 표도 붙여넣을 수 있습니다.
-          </p>
           <div id="recipient-errors" aria-live="polite">
             {validation.errors.length > 0 && <ul className="error-text">
               {validation.errors.map(message => <li key={message}>{message}</li>)}
@@ -203,10 +206,6 @@ export default function LinkCreate() {
             발급하면서 {addresses.length}명에게 메일로 보내기
           </label>
         )}
-        <p className="hint-text">
-          만든 뒤 수신자마다 개인 주소를 하나씩 발급해 전달합니다. 링크를 처음 열고 패스키를 등록한
-          사람에게 귀속되며, 다른 사람에게 전달해도 열리지 않습니다.
-        </p>
         {error && <p className="error-text" role="alert">{error}</p>}
         {issuanceErrors.length > 0 && <ul className="error-text">
           {issuanceErrors.map((message, index) => <li key={index}>{message}</li>)}

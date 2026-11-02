@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { mutate } from '@shared/auth';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
+import InfoTip from '@shared/components/InfoTip';
 import { read, shortTime, type GateRow } from '../console/model';
 import type { BoothManagerRow, ManagerInvited } from '../booth/api';
 
@@ -116,12 +117,11 @@ export default function BoothManagers({ boothId, boothName, terminals, newTermin
 
   return (
     <div className="booth-managers">
-      <h4>관리자</h4>
+      <h4>관리자
+        <InfoTip label="부스 관리자">부스 담당자를 초대하면 자기 휴대폰으로 쿠폰을 만들고, 주고, 사용 처리할 수 있어요.</InfoTip></h4>
       {rows === null ? <p className="console-none">불러오는 중…</p>
         : rows.length === 0 ? (
-          <p className="console-none">
-            아직 관리자가 없어요. 부스 담당자를 초대하면 자기 휴대폰으로 쿠폰을 만들고, 주고, 사용 처리할 수 있어요.
-          </p>
+          <p className="console-none">아직 관리자가 없어요.</p>
         ) : (
           <ul className="booth-manager-list">
             {rows.map(row => {
