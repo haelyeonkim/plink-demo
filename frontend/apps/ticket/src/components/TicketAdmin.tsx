@@ -14,11 +14,11 @@ import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
 import GateSetupQr, { type SetupTarget } from './GateSetupQr';
-import { GateNameDialog } from './GateDialogs';
+import { GateNameDialog, type FirstManager } from './GateDialogs';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
 import ConsoleCoupons from './ConsoleCoupons';
-import BoothManagers from './BoothManagers';
+import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
   BoothRow, DIRECTION_LABEL, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
@@ -451,6 +451,14 @@ export default function TicketAdmin() {
     finally { setPending(value => value - 1); }
   }
 
+  // Booth managers are looked after from the terminal each one runs, so the booth screen
+  // reads them once per booth and every card draws from that.
+  const managerDesk = useBoothManagers({
+    booths, terminals: gates.filter(gate => gate.role === 'BOOTH'),
+    enabled: selected != null && tab === 'booths', busy, act,
+    onNotice: setNotice, onError: setError, onChanged: () => loadSession(selected!),
+  });
+
   const issueTicket = (form: HTMLFormElement) => act(async () => {
     const data = new FormData(form);
     // Every field the organiser defined arrives under its own label.
@@ -638,14 +646,28 @@ export default function TicketAdmin() {
 
   /** A booth's terminal: named after the booth, placed where the booth says it is. */
   /** A booth's terminal under the name staff will tell it by; its QR opens straight away. */
-  const addBoothTerminal = (booth: BoothRow, label: string) => act(async () => {
+  const addBoothTerminal = (booth: BoothRow, label: string, manager?: FirstManager) => act(async () => {
     const terminal = await read(await mutate(`/api/admin/sessions/${selected}/gates`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label, zone: booth.note || booth.name, role: 'BOOTH', boothId: booth.boothId }),
     }));
     setGateSetup(terminal);
     setSetupQr({ name: label, url: terminal.setupUrl, code: terminal.setupCode, expiresAt: terminal.expiresAt ?? null });
+    // The terminal stands whether or not its manager could be invited, so a refusal is
+    // told rather than thrown: the dialog closes, and the card's own invite is there to retry.
+    let refused = '';
+    if (manager) {
+      try {
+        const invited = await managerDesk.invite(booth.boothId, terminal.gateId, manager.email, manager.notify);
+        managerDesk.reveal({ boothId: booth.boothId, managerId: invited.managerId,
+          email: invited.email || manager.email, link: invited.link, mailed: manager.notify });
+      } catch (err) {
+        refused = err instanceof Error ? err.message : '초대하지 못했어요.';
+      }
+    }
     await loadSession(selected!);
+    if (refused) setError(`단말은 만들었지만 ${manager!.email} 님을 초대하지 못했어요. ${refused}`);
+    else if (manager) setNotice(manager.notify ? `${manager.email} 로 초대 메일을 보냈어요.` : `${manager.email} 의 초대 링크를 만들었어요.`);
   });
 
   /** The next free "부스 이름 N", so terminals of one booth never share a name by default. */
@@ -1455,12 +1477,14 @@ export default function TicketAdmin() {
                         : `${gate.grants.length}종${gate.grants.some(grant => grant.auto) ? ` · 입장 시 자동 ${gate.grants.filter(grant => grant.auto).length}` : ''}`}</dd></div>
                       {gate.role === 'BOOTH' && (
                         /* Who answers for it: their phone records as this terminal, and can become it. */
-                        <div className="gate-fact-wide"><dt>담당</dt><dd>{(gate.managers ?? []).length === 0 ? '없음' : (
-                          gate.managers!.map(manager => (
-                            <span key={manager.managerId} className="gate-manager" title={manager.email}>
-                              {manager.email}{manager.status === 'INVITED' ? <small> 초대됨</small> : null}
-                            </span>
-                          )))}</dd></div>
+                        gate.boothId != null && booths.some(booth => booth.boothId === gate.boothId)
+                          ? <TerminalManagers gate={gate} desk={managerDesk} />
+                          : (gate.managers ?? []).length > 0 && (
+                            <div className="gate-fact-wide"><dt>담당</dt><dd>
+                              {gate.managers!.map(manager => (
+                                <span key={manager.managerId} className="gate-manager" title={manager.email}>{manager.email}</span>
+                              ))}</dd></div>
+                          )
                       )}
                       {!gate.boundDevice && gate.setupCode && (
                         <div><dt>인증번호</dt><dd className="mono setup-code">
@@ -1492,6 +1516,9 @@ export default function TicketAdmin() {
                       {/* The same on every card, connected or not: which coupons this terminal
                           hands over is settled before a tablet is, as often as after. */}
                       <button className="btn-secondary" type="button" onClick={() => openGrantSheet(gate)}>쿠폰 부여 설정</button>
+                      {gate.role === 'BOOTH' && gate.boothId != null && booths.some(booth => booth.boothId === gate.boothId) && (
+                        <InviteManagerButton gate={gate} desk={managerDesk} />
+                      )}
                     </div>
                   </article>
           );
@@ -1605,10 +1632,7 @@ export default function TicketAdmin() {
                     ? <div className="gate-grid booth-terminals">{mine.map(card)}</div>
                     : <p className="console-none">아직 단말이 없어요. <b>단말 추가</b>를 누르고 태블릿에서 설정 링크를 열어 주세요.</p>}
                   {setupPanel && mine.some(gate => gate.gateId === gateSetup?.gateId) && setupPanel}
-                  <BoothManagers boothId={booth.boothId} boothName={booth.name}
-                    terminals={terminals.filter(gate => gate.boothId === booth.boothId)}
-                    newTerminalName={nextTerminalName(booth)} busy={busy} act={act}
-                    onNotice={setNotice} onError={setError} onChanged={() => loadSession(selected!)} />
+                  <BoothManagerExtras booth={booth} desk={managerDesk} />
                 </section>
               );
             })}
@@ -2306,14 +2330,16 @@ export default function TicketAdmin() {
         onCancel={() => setConfirmBooth(null)}
       />
 
+      {managerDesk.dialogs}
       {setupQr && <GateSetupQr target={setupQr} onClose={() => setSetupQr(null)} />}
       {naming && (
         <GateNameDialog busy={busy}
           title={'booth' in naming ? `${naming.booth.name} · 단말 추가` : '이름 바꾸기'}
           initial={'booth' in naming ? nextTerminalName(naming.booth) : naming.gate.label || naming.gate.gateId}
           confirmLabel={'booth' in naming ? '추가하고 연결 QR 보기' : '저장'}
-          onSave={label => {
-            const done = 'booth' in naming ? addBoothTerminal(naming.booth, label) : renameGate(naming.gate, label);
+          askManager={'booth' in naming}
+          onSave={(label, manager) => {
+            const done = 'booth' in naming ? addBoothTerminal(naming.booth, label, manager) : renameGate(naming.gate, label);
             void done.then(ok => { if (ok) setNaming(null); });
           }}
           onClose={() => setNaming(null)} />
