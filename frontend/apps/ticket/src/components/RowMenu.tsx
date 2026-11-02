@@ -18,7 +18,11 @@ export interface MenuItem {
  * <p>The list is placed against the viewport rather than inside the row, because the
  * rows live in a scrolling table that would otherwise cut it off.
  */
-export default function RowMenu({ label, items }: { label: string; items: Array<MenuItem | 'separator'> }) {
+export default function RowMenu({ label, items, buttonClassName = 'btn-tiny row-menu-button' }: {
+  label: string; items: Array<MenuItem | 'separator'>;
+  /** For a row on a phone, whose "⋯" needs a whole fingertip rather than the console's small button. */
+  buttonClassName?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [place, setPlace] = useState<{ top: number; right: number; up: boolean } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -65,7 +69,7 @@ export default function RowMenu({ label, items }: { label: string; items: Array<
 
   return (
     <>
-      <button ref={button} type="button" className="btn-tiny row-menu-button" aria-haspopup="menu"
+      <button ref={button} type="button" className={buttonClassName} aria-haspopup="menu"
         aria-expanded={open} aria-label={label} title={label} onClick={() => setOpen(value => !value)}>
         ⋯
       </button>

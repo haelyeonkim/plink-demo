@@ -20,7 +20,7 @@ import { clockText, reducedMotion } from '../motion';
 import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
 import TicketChat from './TicketChat';
 import TicketAds from './TicketAds';
-import TicketGroup, { groupRelevant, groupSummary } from './TicketGroup';
+import TicketGroup, { GiftIcon, GroupTile, groupRelevant } from './TicketGroup';
 
 /**
  * The ticket's own screens, along the bottom once it is registered and open. The group is
@@ -86,6 +86,13 @@ function timeText(value: string): string {
   return new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** "11. 1. (토) 오후 2:00": the day of the week matters to somebody deciding whether they can come. */
+function dayTimeText(value: string): string {
+  const d = new Date(value);
+  return `${d.getMonth() + 1}. ${d.getDate()}. (${'일월화수목금토'[d.getDay()]}) `
+    + d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
+}
+
 export default function TicketPage() {
   const { sessionId = '', token = '' } = useParams<{ sessionId: string; token: string }>();
   const [ticket, setTicket] = useState<TicketView | null>(null);
@@ -120,6 +127,12 @@ export default function TicketPage() {
     setParams(next === 'ticket' ? {} : { view: next });
     window.scrollTo(0, 0);
   }, [setParams]);
+  /** The group, with its invite sheet already up when that is what was tapped. */
+  const openGroup = useCallback((inviting: boolean) => {
+    setParams(inviting ? { view: 'group', invite: '1' } : { view: 'group' });
+    window.scrollTo(0, 0);
+  }, [setParams]);
+  const inviteShown = useCallback(() => setParams({ view: 'group' }, { replace: true }), [setParams]);
   // The room's chat and board: whether they are open to this holder, and a nudge each
   // time something new is said there - one per channel, so a line in the chat does not
   // reload the board. A like carries its counts and is patched in, not reloaded.
@@ -610,6 +623,8 @@ export default function TicketPage() {
     </aside>
   );
 
+  // The group is reached from the ticket and is part of it: the ticket's tab stays lit.
+  const on = (key: View) => view === key || (key === 'ticket' && view === 'group');
   const tabBar = tabs && (
     <nav className="ticket-tabs" aria-label="입장권 메뉴">
       {([
@@ -619,8 +634,8 @@ export default function TicketPage() {
         ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !chatOpen],
         ['ads', '알림판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
       ] as Array<[View, string, string, string | null, boolean]>).map(([key, label, icon, badge, locked]) => (
-        <button key={key} type="button" aria-current={view === key ? 'page' : undefined}
-          className={view === key ? 'on' : ''} disabled={locked}
+        <button key={key} type="button" aria-current={on(key) ? 'page' : undefined}
+          className={on(key) ? 'on' : ''} disabled={locked}
           aria-label={locked ? `${label} · 입장 후 이용` : badge ? `${label} · ${badge === '새' ? '새 소식' : `${badge}장`}` : label}
           onClick={() => go(key)}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -649,7 +664,8 @@ export default function TicketPage() {
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'group' && (invites
-            ? <TicketGroup sessionId={sessionId} token={token} view={invites} onChange={loadInvites} />
+            ? <TicketGroup sessionId={sessionId} token={token} view={invites} onChange={loadInvites}
+                onBack={() => go('ticket')} startInviting={params.get('invite') === '1'} onInviteShown={inviteShown} />
             : invitesFailed
               ? <p className="console-none">일행 정보를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.</p>
               : <p className="loading" role="status">일행 정보를 불러오고 있어요.</p>)}
@@ -658,6 +674,15 @@ export default function TicketPage() {
       </>
     );
   }
+
+  // Only for a ticket that can invite, was invited, or has a group to show.
+  const groupTile = invites && groupRelevant(invites) ? (
+    <GroupTile view={invites} groupSize={ticket.invitation?.groupSize} compact={ticket.presence.inside}
+      onOpen={() => openGroup(false)} onInvite={() => openGroup(true)} />
+  ) : null;
+  // An invitee's link, before they register: the page opens on who asked them along.
+  const invitation = ticket.role === 'HOLDER' ? ticket.invitation ?? null : null;
+  const welcoming = invitation !== null && !ticket.claimed && !ticket.claimExpired;
 
   return (
     <>
@@ -670,6 +695,18 @@ export default function TicketPage() {
           <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
         )}
         {used && !ceremony && !movement && <CouponFlash used={used} spent={false} />}
+        {welcoming && invitation ? (
+          <div className="invite-hero">
+            <span className="invite-hero-icon"><GiftIcon size={28} /></span>
+            <p><b>{invitation.by}</b> 님이 초대했어요</p>
+            <h2>{ticket.event.name}에<br />함께 가요</h2>
+            <dl className="invite-hero-facts">
+              <dt>일시</dt><dd>{dayTimeText(ticket.event.startsAt)}</dd>
+              {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
+              <dt>일행</dt><dd>{invitation.groupSize}명이 함께해요</dd>
+            </dl>
+          </div>
+        ) : (<>
         <p className="eyebrow center"><span></span> {ticket.event.name}</p>
         <h2>
           {ticket.seat ? `${ticket.seat} 좌석` : '입장권'}
@@ -681,8 +718,12 @@ export default function TicketPage() {
             </span>
           )}
         </h2>
+        {invitation && ticket.claimed && (
+          <p className="invite-banner"><GiftIcon /><span><b>{invitation.by}</b> 님이 초대한 입장권이에요</span></p>
+        )}
+        </>)}
 
-        <dl className="ticket-meta">
+        {!welcoming && <dl className="ticket-meta">
           <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
           {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           {ticket.tier && <><dt>등급</dt><dd>{ticket.tier}</dd></>}
@@ -690,7 +731,7 @@ export default function TicketPage() {
           {ticket.presence.reentryRemaining !== null && (
             <><dt>남은 재입장</dt><dd>{ticket.presence.reentryRemaining}회</dd></>
           )}
-        </dl>
+        </dl>}
 
         {inAppBrowser() && (
           <p className="warn-text" role="alert">
@@ -727,6 +768,10 @@ export default function TicketPage() {
               <button className="btn-primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>
             )}
 
+            {/* Before the door the group comes first - who is coming, who has not
+                registered; once inside, the room's news does, and the group is one line. */}
+            {!ticket.presence.inside && groupTile}
+
             {/* The room's channels, one tap from the ticket once the holder is in. */}
             <section className="room-tiles" aria-labelledby="room-title">
               <h3 id="room-title">장내 소식</h3>
@@ -757,16 +802,7 @@ export default function TicketPage() {
               )}
             </section>
 
-            {/* Only for a ticket that can invite, was invited, or has a group to show. */}
-            {invites && groupRelevant(invites) && (
-              <section className="room-tiles" aria-labelledby="group-tile-title">
-                <h3 id="group-tile-title">일행</h3>
-                <button type="button" className="room-tile" onClick={() => go('group')}>
-                  <b>{invites.quota > 0 || invites.invites.length > 0 ? (invites.group ? '초대 · 입장 현황' : '초대') : '입장 현황'}</b>
-                  <small>{groupSummary(invites)}</small>
-                </button>
-              </section>
-            )}
+            {ticket.presence.inside && groupTile}
 
             {/* Folded by default: the door comes first, and the rest is housekeeping. */}
             <button className="manage-toggle" aria-expanded={manage}
@@ -803,9 +839,12 @@ export default function TicketPage() {
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
         ) : (
           <>
-            <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>
+            {!welcoming && <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>}
             <p className="hint-text">
-              {ticket.role === 'RECIPIENT'
+              {welcoming
+                ? skipOtp ? '초대받은 이메일을 적으면 이 휴대폰에 입장권이 등록돼요.'
+                  : '초대받은 이메일로 본인 확인을 한 뒤 이 휴대폰에 입장권이 등록돼요.'
+                : ticket.role === 'RECIPIENT'
                 ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
                 : skipOtp
                   ? '입장권을 받은 이메일 주소를 입력하면 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
@@ -816,7 +855,7 @@ export default function TicketPage() {
                  link that reached the wrong person by mistake. */
               <form onSubmit={e => { e.preventDefault(); claim(); }}>
                 <div className="field">
-                  <label htmlFor="ticket-email">입장권을 받은 이메일</label>
+                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '입장권을 받은 이메일'}</label>
                   <input id="ticket-email" type="email" autoComplete="email" required
                     value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
                 </div>
@@ -829,7 +868,7 @@ export default function TicketPage() {
             {stage === 'email' && (
               <form onSubmit={e => { e.preventDefault(); sendCode(); }}>
                 <div className="field">
-                  <label htmlFor="ticket-email">이메일</label>
+                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '이메일'}</label>
                   <input id="ticket-email" type="email" autoComplete="email" required
                     value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
                 </div>
@@ -855,6 +894,9 @@ export default function TicketPage() {
               </button>
             )}
             </>)}
+            {welcoming && (
+              <p className="invite-hero-foot">이 입장권은 내 이름으로 발급됐어요.<br />등록하면 초대한 분의 일행으로 묶여요.</p>
+            )}
           </>
         )}
       </div>

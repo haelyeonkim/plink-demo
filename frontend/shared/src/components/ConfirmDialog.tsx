@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from 'react';
  * typing is not ceremony: it is what stops a click landing on the wrong row.
  */
 export default function ConfirmDialog({
-  open, title, message, details, requireText, confirmLabel = '삭제', busy = false, tone = 'danger', onConfirm, onCancel,
+  open, title, message, details, requireText, confirmLabel = '삭제', cancelLabel = '취소', busy = false, tone = 'danger',
+  onConfirm, onCancel,
 }: {
   open: boolean;
   title: string;
@@ -16,6 +17,8 @@ export default function ConfirmDialog({
   details?: Array<[string, string | number]>;
   requireText?: string;
   confirmLabel?: string;
+  /** What leaving things as they are is called, where "취소" would read as the action itself. */
+  cancelLabel?: string;
   /** Most confirmations guard a deletion; one that only asks "are you sure" is not red. */
   tone?: 'danger' | 'primary';
   busy?: boolean;
@@ -65,7 +68,7 @@ export default function ConfirmDialog({
         )}
 
         <div className="modal-actions">
-          <button className="btn-secondary" onClick={onCancel} disabled={busy}>취소</button>
+          <button className="btn-secondary" onClick={onCancel} disabled={busy}>{cancelLabel}</button>
           <button className={tone === 'primary' ? 'btn-primary' : 'btn-danger'} onClick={onConfirm} disabled={!ready || busy}>
             {busy ? '처리 중…' : confirmLabel}
           </button>

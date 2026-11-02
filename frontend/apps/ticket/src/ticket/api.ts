@@ -54,6 +54,8 @@ export interface TicketView {
   };
   /** Empty for most events; the screen shows nothing when there is nothing. */
   coupons: TicketCoupon[];
+  /** On an invitee's ticket, even before registering: who invited it (masked), and how many are coming. */
+  invitation?: { by: string; groupSize: number } | null;
 }
 
 export class ApiError extends Error {
@@ -337,41 +339,74 @@ export const AD_CATEGORY: Record<string, string> = { SALE: '할인·혜택', PRO
 
 // ---- Invites, and the group they make ----
 
-/** One ticket this holder invited. The address is masked; nothing else about it is said. */
-export interface InviteRow { ticketId: number; email: string; registered: boolean; revoked: boolean }
-
-/** Someone in the inviter's group, where they are now. {@code since}: inside since, or out since. */
+/**
+ * Someone in the group as this holder may see them. The inviter sees the addresses they
+ * typed in full and gets {@code ticketId} for their own invitees; everyone else is masked.
+ * {@code state} is null when where they are is not shown to this holder, or not yet.
+ */
 export interface GroupMember {
-  email: string;
+  ticketId: number | null;
   role: 'INVITER' | 'GUEST';
   me: boolean;
-  state: 'NOT_ENTERED' | 'INSIDE' | 'OUTSIDE';
+  /** What the inviter calls them; null shows the address. */
+  name: string | null;
+  email: string;
+  registered: boolean;
+  revoked: boolean;
+  state: 'NOT_ENTERED' | 'INSIDE' | 'OUTSIDE' | null;
+  /** Inside since, or out since. */
   since: string | null;
+  /** When the invite went; the inviter's own invitees only. */
+  sentAt: string | null;
+  canResend: boolean;
+  resendsLeft: number;
 }
 
 export interface InviteView {
   quota: number; used: number; remaining: number; canInvite: boolean;
   /** Cancels are capped at the ticket's invite count, so inviting and cancelling cannot loop mail. */
   canCancel: boolean;
+  cancelsLeft: number;
   /** Who in a group sees the others come in, as the event has it. */
   status: 'OFF' | 'INVITER' | 'GROUP';
   /** Set on an invitee's ticket: who invited them, masked. */
   invitedBy: string | null;
-  invites: InviteRow[];
-  /** Null when this holder is not shown the group, or there is nobody else in it. */
-  group: GroupMember[] | null;
+  /** Whether where everyone is is shown to this holder now. */
+  statesShown: boolean;
+  /** The event's first venue day, YYYY-MM-DD: states show from then. */
+  statesFrom: string;
+  beforeDay: boolean;
+  updatedAt: string;
+  /** For the inviter: themselves, then their invitees oldest first. */
+  members: GroupMember[];
 }
 
 const inviteBase = (sessionId: string, token: string) => `${ticketBase(sessionId, token)}/invites`;
+const JSON_BODY = { 'Content-Type': 'application/json' };
 
 export async function fetchInvites(sessionId: string, token: string): Promise<InviteView> {
   return read(await fetch(inviteBase(sessionId, token))) as Promise<InviteView>;
 }
 
-export async function sendInvite(sessionId: string, token: string, email: string): Promise<InviteRow> {
+export async function sendInvite(sessionId: string, token: string, email: string, name: string | null): Promise<GroupMember> {
   return read(await mutate(inviteBase(sessionId, token), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-  })) as Promise<InviteRow>;
+    method: 'POST', headers: JSON_BODY, body: JSON.stringify({ email, name }),
+  })) as Promise<GroupMember>;
+}
+
+/** What the inviter calls one of their invitees; null goes back to the masked address. */
+export async function renameInvite(sessionId: string, token: string, ticketId: number,
+    name: string | null): Promise<GroupMember> {
+  return read(await mutate(`${inviteBase(sessionId, token)}/${ticketId}/name`, {
+    method: 'PUT', headers: JSON_BODY, body: JSON.stringify({ name }),
+  })) as Promise<GroupMember>;
+}
+
+/** Mails the same link again. Refused with 429, saying when, if asked too soon or too often. */
+export async function resendInvite(sessionId: string, token: string,
+    ticketId: number): Promise<GroupMember & { mailed: boolean }> {
+  return read(await mutate(`${inviteBase(sessionId, token)}/${ticketId}/resend`, { method: 'POST' })) as
+    Promise<GroupMember & { mailed: boolean }>;
 }
 
 export async function cancelInvite(sessionId: string, token: string, ticketId: number) {

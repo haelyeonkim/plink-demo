@@ -1618,24 +1618,224 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
   .booth-terminals .setup-code .btn-tiny { padding: 2px 8px; font-size: 12px; }
 }
 
-/* The holder's group: their invites, then where everyone in it is. Clears the tab bar. */
+/* ---- The holder's group: the tile on the ticket, the group screen and its sheets ---- */
+
+/* A light button for what is offered beside the ticket's own action, never competing with it. */
+.btn-soft {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--blue);
+  font: inherit; font-size: 15px; font-weight: 700; min-height: 44px; padding: 0 14px; cursor: pointer;
+}
+.btn-soft:hover { background: #ebe5ff; }
+.btn-soft:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.btn-soft-small { min-height: 40px; font-size: 14px; padding: 0 12px; gap: 4px; border-radius: 10px; }
+
+/* Circles: colour is where the person is, the letter the first of their call name. */
+.group-avatar {
+  flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 800; background: #e7e9ef; color: #5b647a;
+}
+.group-avatar.avatar-sm { width: 30px; height: 30px; font-size: 12px; }
+.group-avatar.avatar-lg { width: 42px; height: 42px; font-size: 14px; }
+.tone-in.group-avatar { background: #2d5bff; color: white; }
+.tone-idle.group-avatar, .tone-out.group-avatar, .tone-more.group-avatar { background: #e7e9ef; color: #5b647a; }
+.tone-pending.group-avatar { background: #ffe7bd; color: #8a5300; }
+.tone-ok.group-avatar { background: #e5fff4; color: #1c8a67; }
+.tone-off.group-avatar { background: #eceef3; color: #8a90a0; }
+
+/* The pill beside each person: the same states as the circles, in words. */
+.group-pill {
+  flex: none; white-space: nowrap; font-size: 12.5px; font-weight: 700; padding: 5px 10px;
+  border-radius: 999px; border: 1.5px solid transparent; line-height: 1.2;
+}
+.group-pill.tone-in { background: #e8f0ff; color: #2d5bff; }
+.group-pill.tone-out { background: white; border-color: #c9cfdc; color: #5b647a; }
+.group-pill.tone-idle { background: #f2f4f8; color: #5b647a; }
+.group-pill.tone-pending { background: #fff3dc; color: #8a5300; }
+.group-pill.tone-ok { background: #e5fff4; color: #1c8a67; }
+.group-pill.tone-off { background: #eceef3; color: #646c7e; }
+.pill-pending { background: #fff3dc; color: #8a5300; }
+
+/* On the ticket: the offer to invite, before anyone is. */
+.group-start {
+  border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: white;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.group-start-text { display: flex; gap: 12px; align-items: center; }
+.group-start-text > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.group-start-text b { font-size: 15px; }
+.group-start-text small { font-size: 13px; color: #3d4663; }
+.group-start-icon {
+  flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft);
+  color: var(--blue); display: grid; place-items: center;
+}
+.group-start-button { width: 100%; }
+
+/* On the ticket: the group once there is one. */
+.group-tile { border: 1px solid var(--line); border-radius: 14px; background: white; display: flex; flex-direction: column; }
+.group-tile-open {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 0; background: none;
+  font: inherit; color: var(--ink); text-align: left; cursor: pointer; border-radius: 14px; min-height: 44px;
+}
+.group-tile-open:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.group-tile.is-compact .group-tile-open { padding: 12px 14px; }
+.group-stack { display: flex; flex: none; }
+.group-stack .group-avatar { width: 34px; height: 34px; border: 2px solid white; }
+.group-stack .group-avatar.avatar-sm { width: 30px; height: 30px; }
+.group-stack .group-avatar + .group-avatar { margin-left: -10px; }
+.group-tile-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.group-tile-text b { font-size: 15px; }
+.group-tile-text small { font-size: 13px; color: #3d4663; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-tile.is-compact .group-tile-text b { font-size: 14px; }
+.group-tile.is-compact .group-tile-text small { font-size: 12.5px; color: var(--muted); }
+.group-chevron { flex: none; color: #9aa1b3; }
+.group-tile-more {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 8px 6px 14px; border-top: 1px solid #eef0f5; font-size: 13px; color: var(--muted);
+}
+
+/* Who invited this ticket, on the ticket itself. */
+.invite-banner {
+  display: flex; align-items: center; justify-content: center; gap: 6px; margin: -4px 0 14px;
+  font-size: 13px; color: #3d4663; background: var(--accent-soft); border-radius: 10px; padding: 8px 10px;
+}
+.invite-banner svg { flex: none; color: var(--blue); }
+/* An invitee's link before they register: who asked them along, then the usual form. */
+.invite-hero { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 18px; }
+.invite-hero-icon {
+  width: 56px; height: 56px; border-radius: 18px; background: var(--accent-soft); color: var(--blue);
+  display: grid; place-items: center;
+}
+.invite-hero > p { margin: 0; font-size: 13px; color: #3d4663; }
+.ticket-page .access-card .invite-hero h2 { display: block; margin: 0; font-size: 24px; letter-spacing: -0.7px; line-height: 1.3; }
+.invite-hero-facts {
+  width: 100%; box-sizing: border-box; margin: 8px 0 0; text-align: left; display: grid;
+  grid-template-columns: 70px minmax(0, 1fr); row-gap: 8px; font-size: 14px; background: var(--bg-section);
+  border-radius: 14px; padding: 14px;
+}
+.invite-hero-facts dt { color: var(--muted); }
+.invite-hero-facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.invite-hero-foot { margin: 4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* The group screen. Clears the tab bar; the toast sits above it. */
 .ticket-tab-group { padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
+body:has(.group-view) .toast-stack { bottom: calc(92px + env(safe-area-inset-bottom)); }
 .group-view { display: flex; flex-direction: column; gap: 14px; text-align: left; }
-.group-view header h2 { font-size: 22px; margin: 0; letter-spacing: -0.6px; }
-.group-view header p { margin: 4px 0 0; font-size: 13.5px; color: #3d4663; }
-.group-card { display: flex; flex-direction: column; gap: 10px; background: white; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
-.group-card h3 { font-size: 15px; margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.group-card h3 b { font-size: 13px; color: var(--blue); }
-.group-card form { display: flex; flex-direction: column; gap: 8px; }
-.group-card .hint-text, .group-card .notice-text, .group-card .error-text { margin: 0; }
-.invite-list, .group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.invite-list li, .group-list li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid #eef0f5; min-width: 0; }
-.invite-email { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.invite-list .pill, .group-list .pill { flex: none; white-space: nowrap; }
-.group-list li > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.group-list b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.group-list small { font-size: 12px; color: var(--muted); }
-.group-list li.is-me b { color: var(--blue); }
+.group-top { display: flex; align-items: center; justify-content: space-between; margin: -6px -8px 0; }
+.group-back {
+  min-height: 44px; padding: 0 10px; display: flex; align-items: center; gap: 2px; border: 0; background: none;
+  font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; border-radius: 10px;
+}
+.group-back:focus-visible { outline: 2px solid var(--blue); }
+.group-updated { font-size: 12px; color: var(--muted); padding-right: 8px; }
+.group-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.group-head > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.group-head h2 { margin: 0; font-size: 26px; letter-spacing: -0.8px; }
+.group-head p { margin: 0; font-size: 13.5px; color: #3d4663; overflow-wrap: anywhere; }
+.group-invite {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; width: auto; margin: 0;
+  min-height: 40px; padding: 0 14px; border-radius: 12px; font-size: 14px; font-weight: 700;
+}
+.group-invite.is-full { background: #eceef3; color: #8a90a0; }
+.group-banner, .group-note {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0; border-radius: 14px; padding: 12px 14px;
+  font-size: 13.5px; line-height: 1.5; color: #3d4663;
+}
+.group-banner { background: var(--accent-soft); }
+.group-banner svg { flex: none; color: var(--blue); margin-top: 1px; }
+.group-note { background: var(--bg-section); font-size: 13px; }
+.group-lock {
+  background: white; border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+}
+.group-lock b { font-size: 16px; }
+.group-lock > span:last-child { font-size: 13.5px; color: #3d4663; line-height: 1.55; }
+.group-lock-icon { width: 48px; height: 48px; border-radius: 16px; background: #f2f4f8; color: var(--muted); display: grid; place-items: center; }
+.group-members {
+  list-style: none; margin: 0; padding: 0; background: white; border: 1px solid var(--line); border-radius: 16px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.group-members li { display: flex; align-items: center; gap: 12px; padding: 14px; min-width: 0; }
+.group-members li + li { border-top: 1px solid #eef0f5; }
+.group-members li.has-menu { padding-right: 6px; }
+.group-members li.is-me { background: #faf9ff; }
+.group-members li.is-off { opacity: .55; }
+.group-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.group-who b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-who small { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-me-tag { font-weight: 500; color: var(--muted); font-size: 13px; }
+.group-menu-button {
+  flex: none; width: 40px; height: 40px; border: 0; background: none; border-radius: 10px; color: var(--muted);
+  font-size: 20px; line-height: 1; letter-spacing: 1px; cursor: pointer;
+}
+.group-menu-button:hover, .group-menu-button[aria-expanded="true"] { background: var(--bg-section); color: var(--ink); }
+.group-menu-button:focus-visible { outline: 2px solid var(--blue); }
+.group-foot { margin: 0; padding: 0 4px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 360px) {
+  .group-members li { gap: 10px; padding: 12px; }
+  .group-pill { padding: 4px 8px; font-size: 12px; }
+}
+
+/* The group's sheets: inviting, and naming someone. The tab bar steps aside for them. */
+.group-scrim { z-index: 45; }
+body:has(.group-scrim) .ticket-tabs { display: none; }
+.group-sheet {
+  width: 100%; max-width: 560px; margin: 0 auto; box-sizing: border-box; background: white; border-radius: 22px 22px 0 0;
+  padding: 10px 20px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 16px; text-align: left;
+  max-height: 92dvh; overflow-y: auto; box-shadow: 0 -10px 30px rgba(18, 33, 69, .18); outline: none;
+}
+.group-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.group-sheet-head.is-person { align-items: center; }
+.group-sheet-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.group-sheet-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.5px; }
+.group-sheet-head h2.group-sheet-who { font-size: 16px; letter-spacing: 0; overflow-wrap: anywhere; }
+.group-sheet-head p { margin: 0; font-size: 13.5px; color: #3d4663; }
+.sheet-x {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: #f2f4f8; color: #5b647a;
+  display: grid; place-items: center; cursor: pointer;
+}
+.sheet-x:focus-visible { outline: 2px solid var(--blue); }
+.group-sheet-form { display: flex; flex-direction: column; gap: 16px; }
+.group-sheet-form .field { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.group-sheet-form .field label { font-size: 14px; font-weight: 700; }
+.group-sheet-form input {
+  height: 50px; box-sizing: border-box; width: 100%; border: 1px solid #d9dcea; border-radius: 14px; padding: 0 14px;
+  font: inherit; font-size: 16px; color: var(--ink); background: white;
+}
+.group-sheet-form input:focus { outline: none; border: 1.5px solid var(--blue); }
+.group-sheet-form input[aria-invalid="true"] { border: 1.5px solid #c0392b; background: #fffafa; }
+.field-optional { font-weight: 500; color: var(--muted); font-size: 13px; }
+.group-field-hint { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.group-field-error { font-size: 13px; color: #b3362b; display: flex; gap: 6px; align-items: flex-start; line-height: 1.45; }
+.group-field-error svg { flex: none; margin-top: 1px; }
+.group-sheet-note { margin: 0; font-size: 13px; color: #3d4663; background: var(--bg-section); border-radius: 12px; padding: 10px 12px; line-height: 1.5; }
+.group-sheet-form .btn-primary, .group-sheet-form .btn-secondary { width: 100%; margin: 0; min-height: 52px; font-size: 16px; }
+.group-sheet-form .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+.group-count-input { position: relative; display: flex; }
+.group-count-input input { padding-right: 70px; }
+.group-count-input span { position: absolute; right: 14px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12.5px; color: var(--muted); }
+.group-sheet-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.group-sheet-pair .btn-primary, .group-sheet-pair .btn-secondary { font-size: 15px; padding: 0 8px; }
+
+/* The console's group, in a ticket's detail: each row opens that ticket. */
+.console-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.console-group-head h4 { margin: 0 !important; color: var(--ink) !important; font-size: 14px !important; }
+.console-group-head small { font-size: 12.5px; color: var(--muted); }
+.console-group-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.console-group-list li + li { border-top: 1px solid #eef0f5; }
+.console-group-list li.is-current { background: #faf9ff; }
+.console-group-list li.is-off { opacity: .55; }
+.console-group-list button {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 0;
+  background: none; font: inherit; font-size: 13.5px; color: var(--ink); text-align: left; cursor: pointer;
+}
+.console-group-list button:disabled { cursor: default; }
+.console-group-list button:not(:disabled):hover { background: var(--bg-section); }
+.console-group-list button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.console-group-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.console-group-who b { overflow-wrap: anywhere; }
+.console-group-who small { font-size: 12px; color: var(--muted); }
+.console-group .hint-text { margin: 8px 0 0; font-size: 12.5px; }
 
 /* A ticket's invites beside its address in the console list; on a phone, a line of its own. */
 .ticket-list .invite-note { overflow: hidden; text-overflow: ellipsis; }
