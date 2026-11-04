@@ -244,7 +244,7 @@ plink-demo/
 ```
 
 - [상세 문서 목록](docs/README.md)
-- [기존 기능·운영 기록](docs/development-reference.md): 과거 설명을 보존한 참고 자료
+- [설계와 의도](docs/design.md): 주요 설계 결정, 이유와 제약
 - [얼굴 서비스](face-service/README.md)
 - [협업 및 리뷰 규칙](AGENTS.md)
 
