@@ -6,7 +6,8 @@ import { mutate } from '@shared/auth';
 import IssuedLink from './IssuedLink';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
 import CatalogEditor from './CatalogEditor';
-import BulkImport from '@shared/components/BulkImport';
+import type { ImportResult } from '@shared/components/BulkImport';
+import IssuePanel, { type IssueInput, type IssueMode, type MailedResult } from './IssuePanel';
 import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
@@ -459,31 +460,43 @@ export default function TicketAdmin() {
     onNotice: setNotice, onError: setError, onChanged: () => loadSession(selected!),
   });
 
-  const issueTicket = (form: HTMLFormElement) => act(async () => {
-    const data = new FormData(form);
-    // Every field the organiser defined arrives under its own label.
-    const values: Record<string, string> = {};
-    for (const [key, value] of data.entries()) {
-      if (key.startsWith('field:') && String(value).trim()) values[key.slice(6)] = String(value).trim();
-    }
+  const issueTicket = (input: IssueInput) => act(async () => {
     const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: data.get('email'), phone: data.get('phone'), values }),
+      body: JSON.stringify({ email: input.email, phone: input.phone, values: input.values, notify: input.notify }),
     }));
-    form.reset();
-    setIssued({ ...(result as IssuedTicket), from: 'issue' });
-    setNotice(`${result.ticketRef} 발급 완료 (${result.deliveredVia}).`);
+    // The result card says what happened, so no toast repeats it.
+    setIssued({ ...(result as IssuedTicket), from: 'issue', values: input.values, notify: input.notify });
     await loadSession(selected!);
   });
 
-  const issueBulk = async (rows: Array<Record<string, string>>, notify: boolean) => {
+  const issueBulk = async (rows: Array<Record<string, string>>, notify: boolean): Promise<ImportResult> => {
     const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/bulk`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notify, rows }),
     }));
-    setNotice(`${result.issued}건 발급했어요${result.failed ? ` · ${result.failed}건 실패` : ''}.`);
     await loadSession(selected!);
     return result;
+  };
+
+  /** Mails a list issued without mail, once the operator has looked at it. */
+  const mailIssued = async (ticketIds: number[]): Promise<MailedResult> => {
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/resend`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, first: true }),
+    }));
+    await loadSession(selected!);
+    return result as MailedResult;
+  };
+
+  /** 발급 or 일괄 발급 is chosen in the address, so a reload stays on it. */
+  const issueMode: IssueMode = params.get('mode') === 'bulk' ? 'bulk' : 'single';
+  const setIssueMode = (next: IssueMode) => setParams(next === 'bulk' ? { tab: 'issue', mode: 'bulk' } : { tab: 'issue' });
+
+  /** From the issue screen to the list, with the ticket just issued open when there is one. */
+  const showIssued = (ticket?: { ticketId: number; ticketRef: string }) => {
+    setParams({ tab: 'tickets' });
+    if (ticket) void openById(ticket.ticketId, ticket.ticketRef);
   };
 
   /** Sends the chosen tickets their existing links again; nothing is rotated. */
@@ -1126,86 +1139,10 @@ export default function TicketAdmin() {
           )}
 
       {session && tab === 'issue' && (
-        <div className="console-split">
-          {/* The list is the usual way in; the form beside it is for the one late addition. */}
-          <section className="console-card issue-bulk" aria-label="명단으로 여러 장 발급">
-            <BulkImport
-              fields={[
-                { key: 'email', label: '이메일', match: ['email', '이메일', '메일'], required: true },
-                ...fieldList.map(field => ({
-                  key: field.label,
-                  label: field.label,
-                  match: [field.label, ...(field.kind === 'SEAT' ? ['seat', '좌석']
-                    : field.kind === 'TIER' ? ['tier', '등급', '권종'] : [])],
-                })),
-                { key: 'phone', label: '휴대폰', match: ['phone', '휴대폰', '전화', '연락처'] },
-              ]}
-              sampleName="입장권-발급-양식.csv"
-              notifyLabel="발급하면서 수신자에게 메일·문자 보내기"
-              onSubmit={issueBulk} checkTaken={checkTaken} />
-          </section>
-          <aside className="console-aside">
-            <form className="console-card" onSubmit={e => { e.preventDefault(); issueTicket(e.currentTarget); }}>
-              <h3>한 장 발급</h3>
-              <div className="field">
-                <label htmlFor="ticket-to">수신 이메일</label>
-                <input id="ticket-to" name="email" type="email" required />
-              </div>
-              {/* One input per field the organiser defined. A field with a list is a
-                  choice; one without takes whatever is typed. */}
-              {fieldList.length > 0 && (
-                <div className="form-row">
-                  {fieldList.map(field => (
-                    <div className="field" key={field.id}>
-                      <label htmlFor={`field-${field.id}`}>{field.label}</label>
-                      {field.values.length > 0 ? (
-                        <select id={`field-${field.id}`} name={`field:${field.label}`} defaultValue="">
-                          <option value="">선택 안 함</option>
-                          {field.values.map(value => {
-                            const taken = field.kind === 'SEAT' && takenSeats.has(value);
-                            return (
-                              <option key={value} value={value} disabled={taken}>
-                                {value}{taken ? ' · 발급됨' : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      ) : (
-                        <input id={`field-${field.id}`} name={`field:${field.label}`} placeholder="직접 입력" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {fieldList.length === 0 && (
-                <p className="hint-text form-note">
-                  발급 항목이 없습니다. 설정 <Icon name="arrow-right" /> 발급 항목에서 좌석·등급이든 원하는 이름이든 추가하면
-                  여기에서 고를 수 있어요.
-                </p>
-              )}
-              <div className="field">
-                <label htmlFor="ticket-phone">휴대폰 (선택 · 문자 발송)</label>
-                <input id="ticket-phone" name="phone" inputMode="tel" placeholder="01012345678" />
-              </div>
-              <button className="btn-secondary" type="submit" disabled={busy}>한 장 발급하기</button>
-              {issued?.from === 'issue' && (
-                <IssuedLink url={issued.url}
-                  note={`${issued.ticketRef} · 이 링크는 지금만 보여집니다. 다시 보려면 새로 발급해야 해요.`} />
-              )}
-            </form>
-            <div className="console-card">
-              <h3>이 이벤트</h3>
-              <dl className="ticket-meta">
-              <dt>발급</dt><dd>{counts.all.toLocaleString()}장</dd>
-              <dt>등록 완료</dt><dd>{counts.bound.toLocaleString()}장</dd>
-              <dt>남은 좌석</dt>
-              <dd>{session.seats.length > 0 ? `${session.seats.length - takenSeats.size}석` : '제한 없음'}</dd>
-              <dt>발급 항목</dt>
-              <dd>{fieldList.length === 0 ? '없음' : fieldList.map(f => f.label).join(' · ')}</dd>
-              </dl>
-            </div>
-          </aside>
-        </div>
+        <IssuePanel session={session} fields={fieldList} takenSeats={takenSeats} counts={counts} busy={busy}
+          mode={issueMode} onMode={setIssueMode}
+          issued={issued?.from === 'issue' ? issued : null} onIssue={issueTicket} onContinue={() => setIssued(null)}
+          onBulk={issueBulk} onMail={mailIssued} checkTaken={checkTaken} onShowTickets={showIssued} />
       )}
 
       {session && tab === 'tickets' && (() => {

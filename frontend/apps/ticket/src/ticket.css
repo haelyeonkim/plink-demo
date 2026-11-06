@@ -1872,3 +1872,214 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .fixed-field .hint-text { margin: 0; }
 .fixed-field > .btn-tiny { align-self: flex-start; }
 .fields-subhead { font-size: 15px; margin: 18px 0 4px; }
+
+/* ---- 입장권 발급: one person, or a list in three steps ---- */
+.issue-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.issue-page [role="tabpanel"] { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.issue-page [role="tabpanel"][hidden] { display: none; }
+.issue-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: -6px 0 0; font-size: 13.5px; color: #3d4663; }
+.issue-stats-sep { color: #c9cfdc; }
+.issue-stats a { font-weight: 700; color: var(--blue); }
+
+.issue-tabs { display: inline-flex; align-self: flex-start; gap: 4px; padding: 4px; background: #f2f3f8; border-radius: 12px; max-width: 100%; }
+.issue-tabs button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px;
+  border: 0; border-radius: 9px; background: none; font: inherit; font-size: 14px; font-weight: 600; color: #5b647a; cursor: pointer;
+}
+.issue-tabs button:hover { color: var(--ink); }
+.issue-tabs button[aria-selected="true"] { background: white; color: var(--ink); font-weight: 700; box-shadow: 0 1px 3px rgba(18, 33, 69, .12); }
+.issue-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+/* One person */
+.issue-form { max-width: 760px; padding: 24px 26px; display: flex; flex-direction: column; gap: 18px; }
+.issue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.issue-grid .field { margin: 0; min-width: 0; }
+.issue-grid .issue-wide { grid-column: 1 / -1; }
+.issue-grid .field label { font-size: 14px; color: var(--ink); }
+.issue-grid .field input, .issue-grid .field select { height: 46px; padding: 0 14px; font-size: 15px; background: white; border-radius: 12px; border: 1px solid #d9dcea; }
+.issue-optional { font-weight: 500; color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+.issue-submit { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; border-top: 1px solid #eef0f5; padding-top: 16px; }
+.issue-submit .btn-primary { min-width: 120px; }
+.issue-notify { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer; }
+.issue-notify input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; margin: 0; }
+.issue-foot { margin: 0; font-size: 12.5px; color: var(--muted); max-width: 760px; }
+.issue-foot a { color: var(--blue); font-weight: 600; }
+
+/* What was just issued */
+.issue-done { max-width: 760px; padding: 24px 26px; display: flex; gap: 26px; border-color: #cdeedd; }
+.issue-done-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.issue-done-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.issue-done-mark { width: 34px; height: 34px; border-radius: 50%; background: #e5fff4; color: #1c8a67; display: grid; place-items: center; flex: none; }
+.issue-done-head h3 { margin: 0; font-size: 19px; overflow-wrap: anywhere; }
+.issue-done-head h3:focus { outline: none; }
+.issue-done-head h3:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.issue-done-warn { margin: 0; font-size: 13px; color: #8a5300; background: #fff4dc; border-radius: 10px; padding: 8px 12px; }
+.issue-done-facts { margin: 0; display: grid; grid-template-columns: 90px minmax(0, 1fr); row-gap: 8px; font-size: 14px; }
+.issue-done-facts dt { color: var(--muted); }
+.issue-done-facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.issue-done-link { display: flex; align-items: center; gap: 8px; background: var(--bg-section); border-radius: 12px; padding: 8px 8px 8px 12px; min-width: 0; }
+.issue-done-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: #3d4663; }
+.issue-done-link .btn-tiny { margin: 0; height: 36px; padding: 0 12px; border-radius: 9px; background: white; font-size: 13px; font-weight: 700; flex: none; }
+.issue-done-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.issue-done-actions .btn-secondary { margin: 0; }
+.issue-done-qr { width: 170px; flex: none; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.issue-done-qr-box { width: 150px; height: 150px; border: 1px solid var(--line); border-radius: 12px; padding: 6px; display: grid; place-items: center; background: white; box-sizing: content-box; }
+.issue-done-qr-box img { display: block; width: 150px; height: 150px; image-rendering: pixelated; }
+.issue-done-qr figcaption { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+
+/* A list: where it is in the three steps */
+.issue-bulk-step { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.issue-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; font-size: 13.5px; color: var(--muted); }
+.issue-steps li { display: flex; align-items: center; gap: 8px; }
+.issue-steps-gap { color: #c9cfdc; }
+.issue-steps-n { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid #c9cfdc; display: grid; place-items: center; font-size: 12px; box-sizing: border-box; }
+.issue-steps li.on { color: var(--blue); font-weight: 700; }
+.issue-steps li.on .issue-steps-n { background: var(--blue); border-color: var(--blue); color: white; }
+.issue-steps li.done { color: #1c8a67; font-weight: 600; }
+.issue-steps li.done .issue-steps-n { background: #e5fff4; border-color: #e5fff4; }
+.issue-steps-short { display: none; margin: 0; font-size: 13px; color: var(--muted); }
+.issue-steps-short b { color: var(--blue); margin-right: 4px; }
+
+/* ① Put the list in */
+.issue-start { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; max-width: 980px; align-items: start; }
+.issue-start-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.issue-drop {
+  position: relative; border: 2px dashed #c9c2f5; border-radius: 16px; background: #faf9ff; padding: 30px 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; cursor: pointer; color: var(--ink);
+}
+.issue-drop svg { color: var(--blue); }
+.issue-drop b { font-size: 16px; }
+.issue-drop span { font-size: 13px; color: var(--muted); }
+.issue-drop:hover, .issue-drop.is-over { border-color: var(--blue); background: var(--accent-soft); }
+.issue-drop:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.issue-or { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.issue-or::before, .issue-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.issue-start-main .bulk-text { font-size: 13px; border-radius: 12px; border-color: #d9dcea; }
+.issue-start-main .error-text { margin: 0; }
+.issue-start-next { display: flex; align-items: center; justify-content: flex-end; gap: 12px; font-size: 13px; }
+.issue-columns { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.issue-columns h3 { margin: 0; font-size: 15px; }
+.issue-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.issue-chips li { font-size: 13px; font-weight: 600; padding: 5px 10px; border-radius: 99px; background: #f2f3f8; }
+.issue-chips li.on { background: var(--blue); color: white; font-weight: 700; }
+.issue-columns-hint { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.issue-sample { margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; padding: 10px 14px; }
+
+/* ② Check, then issue */
+.issue-check-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: 980px; }
+.issue-check-head h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.issue-check-head h3:focus, .issue-result h3:focus { outline: none; }
+.issue-check-head h3:focus-visible, .issue-result h3:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.issue-check-head .link-button { margin-left: auto; font-size: 13.5px; font-weight: 700; text-decoration: none; }
+.issue-tally { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.issue-tally li { font-size: 13px; font-weight: 700; padding: 5px 11px; border-radius: 99px; }
+.issue-tally .ok { background: #e5fff4; color: #1c8a67; }
+.issue-tally .warn { background: #fff3dc; color: #8a5300; }
+.issue-tally .bad { background: #fdeeee; color: #b3362b; }
+.issue-rows { padding: 0; overflow: hidden; max-width: 980px; }
+.issue-filter { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #eef0f5; }
+.issue-filter button { border: 0; background: none; font: inherit; font-size: 13px; color: #5b647a; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+.issue-filter button[aria-pressed="true"] { background: #f2f3f8; color: var(--ink); font-weight: 700; }
+.issue-rows-none { padding: 16px; }
+.issue-table { max-height: 420px; overflow: auto; }
+.issue-table tr.row-warn td { background: #fffaf0; }
+.issue-table tr.row-bad td { background: #fff7f7; }
+.issue-row-why.warn { color: #8a5300; font-weight: 700; }
+.issue-row-why.bad { color: #b3362b; font-weight: 700; }
+.issue-cards { display: none; list-style: none; margin: 0; padding: 0; }
+.issue-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; max-width: 980px; border-top: 1px solid #eef0f5; padding-top: 16px; }
+.issue-bar-buttons { display: flex; gap: 8px; }
+.issue-bar .btn-secondary { margin: 0; }
+.issue-check .error-text { margin: 0; }
+
+/* ③ What came of it */
+.issue-result { max-width: 980px; padding: 24px 26px; display: flex; flex-direction: column; gap: 18px; }
+.issue-result h3 { margin: 0; font-size: 20px; }
+.issue-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.issue-numbers > div { border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.issue-numbers span { font-size: 13px; }
+.issue-numbers b { font-size: 26px; font-variant-numeric: tabular-nums; }
+.issue-numbers .ok { background: #e5fff4; color: #1c6b52; }
+.issue-numbers .ok b { color: #1c8a67; }
+.issue-numbers .warn { background: #fff3dc; color: #6e4300; }
+.issue-numbers .warn b { color: #8a5300; }
+.issue-numbers .bad { background: #fdeeee; color: #8f2a20; }
+.issue-numbers .bad b { color: #b3362b; }
+.issue-notdone { display: flex; flex-direction: column; gap: 8px; }
+.issue-notdone > b { font-size: 14px; }
+.issue-notdone ul { list-style: none; margin: 0; padding: 0; border: 1px solid #eef0f5; border-radius: 12px; font-size: 14px; max-height: 360px; overflow-y: auto; }
+.issue-notdone li { display: flex; gap: 12px; padding: 10px 14px; }
+.issue-notdone li + li { border-top: 1px solid #eef0f5; }
+.issue-row-n { color: var(--muted); width: 48px; flex: none; }
+.issue-row-email { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.issue-notdone .issue-row-why { font-weight: 500; text-align: right; }
+.issue-result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.issue-result-actions .btn-secondary { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.issue-result-actions .btn-primary { margin-left: auto; }
+
+@media (max-width: 900px) {
+  .issue-start { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* A phone: inputs a phone will not zoom into, the two tabs side by side, and step ② as a
+   list of cards with its two buttons kept at the bottom of the screen. */
+@media (max-width: 620px) {
+  .issue-tab-wide { display: none; }
+  .issue-page { gap: 14px; }
+  .issue-stats-seats { display: none; }
+  .issue-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-self: stretch; }
+  .issue-tabs button { height: 42px; padding: 0 8px; }
+  .issue-tabs svg { display: none; }
+  .issue-form, .issue-done, .issue-result { padding: 18px 16px; }
+  .issue-grid { gap: 14px 10px; }
+  .issue-grid .issue-phone { grid-column: 1 / -1; }
+  .issue-grid .field input, .issue-grid .field select { height: 50px; font-size: 16px; padding: 0 12px; }
+  .issue-start-main .bulk-text { font-size: 16px; }
+  .issue-submit { flex-direction: column; align-items: stretch; padding-top: 14px; }
+  .issue-submit .btn-primary { height: 52px; font-size: 16px; border-radius: 14px; }
+  .issue-notify input { width: 20px; height: 20px; }
+  .issue-done { flex-direction: column; gap: 18px; }
+  .issue-done-qr { width: auto; }
+  .issue-done-actions > * { flex: 1 1 auto; }
+  .issue-steps { display: none; }
+  .issue-steps-short { display: block; }
+  .issue-drop { padding: 22px 16px; }
+  .issue-table { display: none; }
+  .issue-cards { display: block; }
+  .issue-cards li { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; font-size: 12.5px; }
+  .issue-cards li + li { border-top: 1px solid #eef0f5; }
+  .issue-cards li.row-warn { background: #fffaf0; }
+  .issue-cards li.row-bad { background: #fff7f7; }
+  .issue-card-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; min-width: 0; }
+  .issue-card-top b { overflow-wrap: anywhere; min-width: 0; }
+  .issue-card-more { color: #3d4663; overflow-wrap: anywhere; }
+  .issue-check-head .link-button { margin-left: 0; }
+  /* The bar leaves room for itself under the list. */
+  .issue-check { padding-bottom: 130px; }
+  .issue-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-width: none; flex-direction: column; align-items: stretch; gap: 10px;
+    background: white; border-top: 1px solid var(--line); padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 24px rgba(18, 33, 69, .08);
+  }
+  .issue-bar-buttons { display: grid; grid-template-columns: 1fr 2fr; }
+  .issue-bar-buttons > * { height: 50px; padding: 0 8px; border-radius: 14px; font-size: 15px; }
+  .issue-bar .btn-primary { font-size: 16px; }
+  .issue-numbers { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .issue-numbers > div { flex-direction: row; justify-content: space-between; align-items: baseline; padding: 10px 14px; }
+  .issue-numbers b { font-size: 22px; }
+  .issue-notdone li { flex-wrap: wrap; gap: 2px 10px; }
+  .issue-notdone .issue-row-why { flex-basis: 100%; text-align: left; padding-left: 58px; }
+  .issue-result-actions > * { flex: 1 1 100%; justify-content: center; }
+  .issue-result-actions .btn-primary { margin-left: 0; }
+  /* While that bar is on screen, an answer appears above it rather than over its buttons,
+     and the page's foot is not hidden under it. */
+  body:has(#issue-panel-bulk:not([hidden]) .issue-bar) .toast-stack { bottom: calc(140px + env(safe-area-inset-bottom)); }
+  body:has(#issue-panel-bulk:not([hidden]) .issue-bar) .footer { padding-bottom: 140px; }
+}
+
+/* A list issued without mail: the send is its own step, on the result. */
+.issue-mail { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: #f4f1ff; border-radius: 12px; padding: 12px 14px; font-size: 14px; color: #3d4663; }
+.issue-mail .btn-primary { width: auto; margin: 0; }
+.issue-mail.is-done { background: #e5fff4; color: #1c6b52; flex-direction: column; align-items: flex-start; }
+.issue-mail ul { margin: 0; padding-left: 18px; font-size: 13px; color: #8a5300; }

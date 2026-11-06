@@ -1,5 +1,7 @@
 package com.plink.ticket.controller;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.face.FaceService;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.service.EmailOtpService;
@@ -54,7 +56,13 @@ public class TicketController {
     public Map<String, Object> view(@PathVariable long sessionId, @PathVariable String token,
             HttpServletRequest request) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        return tickets.view(resolved, passkeyService.canView(request.getSession(false), resolved.ticket));
+        boolean viewer = passkeyService.canView(request.getSession(false), resolved.ticket);
+        ActivityLog.emit(Activity.of(Activity.VIEW, "ticket.page").session(sessionId).ticket(resolved.ticket.id)
+            .result(resolved.viaTransfer() ? "transfer_link" : resolved.ticket.claimed() ? (viewer ? "holder" : "locked")
+                : "unclaimed")
+            .summary(resolved.ticket.ticketRef).put("status", resolved.ticket.status)
+            .put("viaTransfer", resolved.viaTransfer()).put("viewer", viewer));
+        return tickets.view(resolved, viewer);
     }
 
     /** A registered ticket's details are for the browser that answered its passkey. */

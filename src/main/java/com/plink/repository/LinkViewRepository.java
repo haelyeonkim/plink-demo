@@ -1,5 +1,7 @@
 package com.plink.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.model.LinkView;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -38,6 +40,8 @@ public class LinkViewRepository {
     public void save(Long linkId, Long recipientId, String viewerName, String eventType) {
         jdbc.update("INSERT INTO link_view (link_id, recipient_id, viewer_name, event_type) "
                 + "VALUES (?, ?, ?, ?)", linkId, recipientId, viewerName, eventType);
+        ActivityLog.emit(Activity.of(Activity.LINK, "link." + String.valueOf(eventType).toLowerCase())
+            .summary(viewerName).put("link", linkId).put("recipient", recipientId).put("viewer", viewerName));
     }
 
     /**

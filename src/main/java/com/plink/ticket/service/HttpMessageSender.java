@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +48,7 @@ public class HttpMessageSender implements MessageSender {
     public boolean send(String phone, String text) {
         if (!configured()) {
             log.warn("No SMS provider is configured; nothing was delivered to {}.", mask(phone));
+            record(phone, text, false, "not_configured", null);
             return false;
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -57,11 +60,20 @@ public class HttpMessageSender implements MessageSender {
             if (!token.isBlank()) request = request.header("Authorization", "Bearer " + token);
             request.body(body).retrieve().toBodilessEntity();
             log.info("Sent an SMS to {}", mask(phone));
+            record(phone, text, true, "sent", null);
             return true;
         } catch (Exception failure) {
             log.warn("SMS delivery to {} failed: {}", mask(phone), failure.getMessage());
+            record(phone, text, false, "failed", failure.getMessage());
             return false;
         }
+    }
+
+    /** The message's text carries a link, so the row keeps its length, not its words. */
+    private static void record(String phone, String text, boolean sent, String result, String error) {
+        ActivityLog.emit(Activity.of(Activity.DELIVERY, "sms.send").ok(sent).result(result)
+            .summary(phone).put("to", phone).put("length", text == null ? 0 : text.length())
+            .put("error", error).always());
     }
 
     /** Phone numbers are personal data; logs carry only enough to trace a delivery. */

@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Gate;
 import com.plink.ticket.repository.GateRepository;
@@ -67,6 +69,8 @@ public class GateSetupService {
         Timestamp expiresAt = Timestamp.from(Instant.now().plus(Duration.ofHours(properties.getGateSetupHours())));
         gates.saveSetup(gate.id, hashToken(token), cipher.seal(token),
             hashCode(gate.id, code), cipher.seal(code), expiresAt);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "gate.setup_opened").session(gate.sessionId).gate(gate.id)
+            .summary(gate.label).put("expiresAt", expiresAt));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("gateId", gate.id);
@@ -112,9 +116,13 @@ public class GateSetupService {
         }
         if (code == null || !code.trim().matches("\\d{6}")
                 || !Secrets.constantEquals(gate.setupCodeHash, hashCode(gate.id, code.trim()))) {
+            ActivityLog.emit(Activity.of(Activity.AUTH, "gate.setup_code").failed("wrong_code").session(gate.sessionId)
+                .gate(gate.id).put("device", deviceId).always());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "인증번호가 일치하지 않아요.");
         }
         gates.refundSetupAttempt(gate.id);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "gate.setup_completed").session(gate.sessionId).gate(gate.id)
+            .summary(gate.label).put("device", deviceId));
         return handTo(gate, deviceId,
             "이 게이트는 다른 단말에서 사용 중이에요. 관리 화면에서 연결을 해제한 뒤 다시 시도해 주세요.");
     }

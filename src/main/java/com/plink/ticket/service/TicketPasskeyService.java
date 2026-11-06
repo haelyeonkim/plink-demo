@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.EventSession;
@@ -318,9 +320,23 @@ public class TicketPasskeyService {
         Ticket locked = tickets.lockById(ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
 
-        Map<String, Object> result = pending.registration != null
-            ? register(locked, pending, resolved, credential)
-            : authenticate(locked, pending, resolved, credential, ip, userAgent);
+        String ceremony = pending.registration != null ? "register" : String.valueOf(pending.intent).toLowerCase();
+        Map<String, Object> result;
+        try {
+            result = pending.registration != null
+                ? register(locked, pending, resolved, credential)
+                : authenticate(locked, pending, resolved, credential, ip, userAgent);
+        } catch (ResponseStatusException refused) {
+            ActivityLog.emit(Activity.of(Activity.TICKET, "passkey." + ceremony)
+                .failed(String.valueOf(refused.getStatusCode().value())).session(ticket.sessionId)
+                .ticket(ticket.id).summary(refused.getReason()).put("email", pending.email)
+                .put("viaTransfer", resolved.viaTransfer()).always());
+            throw refused;
+        }
+        ActivityLog.emit(Activity.of(Activity.TICKET, "passkey." + ceremony).session(ticket.sessionId)
+            .ticket(ticket.id).summary(pending.email).put("email", pending.email)
+            .put("viaTransfer", resolved.viaTransfer()).put("direction", pending.direction)
+            .put("claimed", result.get("claimed")));
         // Whatever the ceremony was for, it proved this browser holds the ticket - as it is
         // bound now, which a claim or an accepted transfer has just changed.
         tickets.findById(ticket.id).filter(Ticket::claimed).ifPresent(bound -> markViewer(session, bound));
@@ -371,6 +387,9 @@ public class TicketPasskeyService {
         } else {
             tickets.bind(ticket.id, pending.holderId, pending.email);
         }
+        ActivityLog.emit(Activity.of(Activity.TICKET, resolved.viaTransfer() ? "transfer.accepted" : "ticket.bound")
+            .session(ticket.sessionId).ticket(ticket.id).summary(pending.email)
+            .put("email", pending.email).put("ticketRef", ticket.ticketRef).put("issuedTo", ticket.issuedToEmail));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("claimed", true);

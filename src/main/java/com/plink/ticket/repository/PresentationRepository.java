@@ -1,5 +1,7 @@
 package com.plink.ticket.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.model.Grant;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -35,6 +37,12 @@ public class PresentationRepository {
             + "expires_at, geo_ok, geo_distance_meters, coupon_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             grant.id, grant.ticketId, grant.direction, grant.secret, grant.uv, grant.issuedAt,
             grant.expiresAt, grant.geoOk, grant.geoDistanceMeters, grant.couponId);
+        ActivityLog.emit(Activity.of(Activity.TICKET, grant.couponId == null ? "ticket.qr_shown" : "coupon.qr_shown")
+            .ok(grant.geoOk == null || grant.geoOk).result(grant.geoOk == null ? null : grant.geoOk ? "geo_ok" : "geo_far")
+            .ticket(grant.ticketId).summary(grant.direction)
+            .put("presentation", grant.id).put("direction", grant.direction).put("geoOk", grant.geoOk)
+            .put("geoMeters", grant.geoDistanceMeters).put("coupon", grant.couponId)
+            .put("expiresAt", grant.expiresAt));
     }
 
     /** Grants opened away from the venue, the signal that a link is being worked remotely. */

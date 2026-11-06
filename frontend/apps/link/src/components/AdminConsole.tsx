@@ -1,6 +1,6 @@
 import Icon from '@shared/components/Icon';
 import InfoTip from '@shared/components/InfoTip';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { mutate } from '@shared/auth';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
@@ -35,7 +35,9 @@ const TABS: Array<[Tab, string]> = [
  * lock everyone out: the last owner, and your own account.
  */
 export default function AdminConsole() {
-  const [tab, setTab] = useState<Tab>('accounts');
+  // ?tab=mail: the data screens link back to a tab by its address.
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'mail' ? 'mail' : 'accounts');
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [me, setMe] = useState<string>('');
   const [pending, setPending] = useState<AccountRow | null>(null);
@@ -135,6 +137,8 @@ export default function AdminConsole() {
           <button key={key} role="tab" aria-selected={tab === key}
             className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{name}</button>
         ))}
+        {/* Its own screens, at their own addresses. */}
+        <Link to="/admin/data">데이터</Link>
       </div>
 
       {tab === 'accounts' && (

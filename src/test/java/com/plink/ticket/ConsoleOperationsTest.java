@@ -529,6 +529,37 @@ class ConsoleOperationsTest {
         assertEquals(1, mailbox.sent.size());
     }
 
+    @Test void aSingleIssueSendsUnlessToldNotTo() {
+        long sessionId = newSession();
+        mailbox.clear();
+        Map<String, Object> quiet = adminController.issueTicket(sessionId,
+            Map.of("email", "desk@example.com", "notify", false));
+        assertTrue(mailbox.sent.isEmpty(), "보내지 않기로 했으면 메일이 나가면 안 됩니다");
+        assertEquals("LINK", quiet.get("deliveredVia"));
+        assertTrue(String.valueOf(quiet.get("url")).contains("/tickets/"), "링크는 그대로 돌려줘야 합니다");
+
+        adminController.issueTicket(sessionId, Map.of("email", "usual@example.com"));
+        assertEquals(1, mailbox.sent.size(), "notify를 빼면 예전처럼 보냅니다");
+    }
+
+    @Test void aListIssuedQuietlyIsMailedLaterAsTheTicketArriving() {
+        long sessionId = newSession();
+        mailbox.clear();
+        Map<String, Object> done = adminController.issueTickets(sessionId, Map.of("notify", false,
+            "rows", java.util.List.of(Map.of("email", "list1@example.com"), Map.of("email", "list2@example.com"))));
+        assertTrue(mailbox.sent.isEmpty(), "명단 발급은 메일 없이 끝나야 합니다");
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (Object row : (java.util.List<?>) done.get("results")) {
+            ids.add(((Number) ((Map<?, ?>) row).get("ticketId")).longValue());
+        }
+        assertEquals(2, ids.size());
+
+        Map<String, Object> sent = adminController.resendLinks(sessionId, Map.of("ticketIds", ids, "first", true));
+        assertEquals(2, sent.get("sent"));
+        assertEquals(2, mailbox.sent.size());
+        assertTrue(mailbox.sent.get(0)[1].endsWith("입장권이 발급되었어요"), mailbox.sent.get(0)[1]);
+    }
+
     /**
      * One address, one ticket. Two links to the same inbox cannot both be used - the
      * second device to register wins and the other link is dead mail - so the console

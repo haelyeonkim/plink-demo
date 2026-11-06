@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
@@ -162,6 +164,9 @@ public class TransferService {
         }
         AfterCommit.run(() -> mail.send(transfer.toEmail, "입장권 양도가 취소되었어요",
             "보낸 사람이 양도를 취소했습니다. 받은 링크는 더 이상 사용할 수 없어요."));
+        ActivityLog.emit(Activity.of(Activity.INVITE, "transfer.cancelled").session(locked.sessionId).ticket(locked.id)
+            .summary(transfer.fromEmail + " → " + transfer.toEmail).put("from", transfer.fromEmail)
+            .put("to", transfer.toEmail));
         return Map.of("status", "CANCELLED");
     }
 
@@ -238,6 +243,10 @@ public class TransferService {
             }
             AfterCommit.run(() -> mail.send(transfer.fromEmail, "입장권 양도가 만료되었어요",
                 "상대가 기한 안에 등록하지 않아 입장권이 회원님에게 돌아왔습니다."));
+            ActivityLog.emit(Activity.of(Activity.INVITE, "transfer.expired").ticket(transfer.ticketId)
+                .session(ticket == null ? null : ticket.sessionId)
+                .summary(transfer.fromEmail + " → " + transfer.toEmail).put("from", transfer.fromEmail)
+                .put("to", transfer.toEmail));
             closed++;
         }
         return closed;

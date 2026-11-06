@@ -83,6 +83,10 @@ export interface IssuedTicket {
   ticketId: number; ticketRef: string; url: string; deliveredVia: string;
   /** Where the link should appear: under the issue form, or in the row it came from. */
   from: 'issue' | 'row';
+  /** What a fresh issue returns besides: who it went to and until when it can be registered. */
+  issuedToEmail?: string; claimExpiresAt?: string;
+  /** What the issue form sent, by field label, and whether it asked for the link to be sent. */
+  values?: Record<string, string>; notify?: boolean;
 }
 
 export interface GateRow {

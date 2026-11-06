@@ -1,5 +1,8 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityContext;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Gate;
 import com.plink.ticket.repository.GateRepository;
@@ -56,6 +59,18 @@ public class GateAuthService {
      * first has been silent for {@link #TAKEOVER_AFTER} or an operator releases it.
      */
     public Gate authenticate(String gateId, String token, String deviceId) {
+        try {
+            Gate gate = check(gateId, token, deviceId);
+            ActivityContext.gate(gate.id, gate.sessionId);
+            return gate;
+        } catch (ResponseStatusException refused) {
+            ActivityLog.emit(Activity.of(Activity.AUTH, "gate.auth").failed(String.valueOf(refused.getStatusCode().value()))
+                .gate(gateId).summary(refused.getReason()).put("device", deviceId).always());
+            throw refused;
+        }
+    }
+
+    private Gate check(String gateId, String token, String deviceId) {
         Gate gate = gates.findById(gateId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "등록되지 않은 단말이에요."));
         if (token == null || !Secrets.constantEquals(gate.tokenHmac, hash(token))) {
@@ -78,6 +93,8 @@ public class GateAuthService {
         if (gate.boundDevice == null) {
             gates.bindDevice(gateId, deviceId);
             gate.boundDevice = deviceId;
+            ActivityLog.emit(Activity.of(Activity.BOOTH, "gate.device_bound").session(gate.sessionId).gate(gateId)
+                .put("device", deviceId));
             return gate;
         }
         if (gate.boundDevice.equals(deviceId)) {
@@ -90,6 +107,8 @@ public class GateAuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "이 게이트는 다른 단말에서 사용 중이에요. 관리 화면에서 연결을 해제한 뒤 다시 시도해 주세요.");
         }
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "gate.device_taken_over").session(gate.sessionId).gate(gateId)
+            .put("device", deviceId).put("previous", gate.boundDevice));
         gates.bindDevice(gateId, deviceId);
         gate.boundDevice = deviceId;
         return gate;

@@ -13,35 +13,28 @@ export interface ImportField {
 export interface ImportResult {
   issued: number;
   failed: number;
-  results: Array<{ row: number; email: string; ok: boolean; error?: string }>;
+  results: Array<{ row: number; email: string; ok: boolean; error?: string; ticketId?: number; ticketRef?: string }>;
+}
+
+/** Why a row will be set aside before anything is sent. */
+export type RowProblem = '필수 값 없음' | '이메일 형식 확인' | '파일 안에서 중복' | '이미 있는 주소';
+
+export interface ImportRows {
+  /** Each data row, keyed by field, in file order. */
+  rows: Array<Record<string, string>>;
+  /** For each row, why it will not be sent, or null when it will. */
+  problems: Array<RowProblem | null>;
+  invalid: Array<Record<string, string>>;
+  tally: Partial<Record<RowProblem, number>>;
 }
 
 /**
- * Bulk issue from a spreadsheet.
- *
- * <p>Nothing is sent until the operator has seen the table the way we read it: a file
- * that was saved with the wrong delimiter or a column in an unexpected order shows up
- * as visibly wrong rows, not as two hundred surprise emails.
+ * A pasted or chosen table read the way it will be sent: columns matched to fields by
+ * their header (or taken in field order when there is none), and every row that will be
+ * set aside named with its reason.
  */
-export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, checkTaken }: {
-  fields: ImportField[];
-  sampleName: string;
-  notifyLabel: string;
-  onSubmit: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
-  /**
-   * Which of these addresses already hold one, lower-cased. Given, rows for them are
-   * set aside before anything is sent, instead of coming back as failures.
-   */
-  checkTaken?: (emails: string[]) => Promise<Set<string>>;
-}) {
-  const [text, setText] = useState('');
-  const [fileName, setFileName] = useState('');
-  const [notify, setNotify] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const file = useRef<HTMLInputElement>(null);
-
+export function useImportRows(text: string, fields: ImportField[],
+    checkTaken?: (emails: string[]) => Promise<Set<string>>): ImportRows {
   const table = parseTable(text);
   const mapping = columnIndexes(table.headers, Object.fromEntries(fields.map(f => [f.key, f.match])));
   // With no header row the columns are taken in the order the fields are declared.
@@ -75,23 +68,74 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, 
   // Why a row will not be sent, said before sending: empty, malformed, twice in the
   // file, or already holding one.
   const seen = new Set<string>();
-  const problems = rows.map(row => {
+  const problems = rows.map((row): RowProblem | null => {
     if (required.some(key => !row[key])) return '필수 값 없음';
     // Only an upload that can ask the server checks addresses here; others keep the
     // server's own per-row answer.
     if (!hasEmail || !checkTaken) return null;
     const email = row.email.toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return '이메일 형식 오류';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return '이메일 형식 확인';
     if (seen.has(email)) return '파일 안에서 중복';
     seen.add(email);
-    if (taken.has(email)) return '이미 발급됨';
+    if (taken.has(email)) return '이미 있는 주소';
     return null;
   });
   const invalid = rows.filter((_, index) => problems[index] !== null);
-  const tally = problems.reduce<Record<string, number>>((sum, problem) => {
+  const tally = problems.reduce<Partial<Record<RowProblem, number>>>((sum, problem) => {
     if (problem) sum[problem] = (sum[problem] ?? 0) + 1;
     return sum;
   }, {});
+
+  return { rows, problems, invalid, tally };
+}
+
+/** Saves rows as a CSV the operator can open in Excel and upload again. */
+export function downloadCsv(name: string, header: string[], rows: string[][]) {
+  const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  const lines = [header, ...rows].map(line => line.map(cell).join(','));
+  const blob = new Blob(['\ufeff' + lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** The empty form: the header row and one example line. */
+export function downloadSample(name: string, fields: ImportField[]) {
+  downloadCsv(name, fields.map(f => f.label), [fields.map(f => (f.key === 'email' ? 'name@example.com' : ''))]);
+}
+
+/**
+ * Bulk issue from a spreadsheet.
+ *
+ * <p>Nothing is sent until the operator has seen the table the way we read it: a file
+ * that was saved with the wrong delimiter or a column in an unexpected order shows up
+ * as visibly wrong rows, not as two hundred surprise emails.
+ */
+export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, checkTaken }: {
+  fields: ImportField[];
+  sampleName: string;
+  notifyLabel: string;
+  onSubmit: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
+  /**
+   * Which of these addresses already hold one, lower-cased. Given, rows for them are
+   * set aside before anything is sent, instead of coming back as failures.
+   */
+  checkTaken?: (emails: string[]) => Promise<Set<string>>;
+}) {
+  const [text, setText] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [notify, setNotify] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const file = useRef<HTMLInputElement>(null);
+
+  const { rows, problems, invalid, tally } = useImportRows(text, fields, checkTaken);
 
   async function read(files: FileList | null) {
     const chosen = files?.[0];
@@ -115,18 +159,6 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, 
     }
   }
 
-  function downloadSample() {
-    const header = fields.map(f => f.label).join(',');
-    const example = fields.map(f => (f.key === 'email' ? 'name@example.com' : '')).join(',');
-    const blob = new Blob(['﻿' + header + '\n' + example + '\n'], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = sampleName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="bulk-import">
       <h3>CSV 일괄 발급
@@ -144,7 +176,7 @@ export default function BulkImport({ fields, sampleName, notifyLabel, onSubmit, 
           CSV 파일 선택
         </label>
         <span className="file-name">{fileName || '선택한 파일 없음'}</span>
-        <button type="button" className="btn-tiny" onClick={downloadSample}>양식 내려받기</button>
+        <button type="button" className="btn-tiny" onClick={() => downloadSample(sampleName, fields)}>양식 내려받기</button>
       </div>
 
       <textarea className="bulk-text" rows={4} value={text} disabled={busy}

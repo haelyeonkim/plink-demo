@@ -178,12 +178,16 @@ public class TicketAdminController {
      * Issues a ticket, mails the personal URL and, when a phone number is given, sends it
      * by SMS as well. The URL comes back once here: only its keyed hash is stored, so
      * this is the only moment it can be shown without minting a new one.
+     *
+     * <p>{@code "notify": false} sends nothing, for the operator handing the link over in
+     * person - by its QR code at the desk. Left out, the ticket is sent as it always was.
      */
     @PostMapping("/sessions/{id}/tickets")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> issueTicket(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        boolean notify = !"false".equalsIgnoreCase(String.valueOf(body.get("notify")));
         return ticketService.issue(id, text(body.get("email"), null), blankToNull(body.get("seat")),
-            blankToNull(body.get("tier")), blankToNull(body.get("phone")), true, fieldValues(id, body));
+            blankToNull(body.get("tier")), blankToNull(body.get("phone")), notify, fieldValues(id, body));
     }
 
     /**
@@ -236,6 +240,7 @@ public class TicketAdminController {
                     blankToNull(row.get("seat")), blankToNull(row.get("tier")),
                     blankToNull(row.get("phone")), notify, fieldValues(id, row));
                 outcome.put("ok", true);
+                outcome.put("ticketId", ticket.get("ticketId"));
                 outcome.put("ticketRef", ticket.get("ticketRef"));
                 outcome.put("deliveredVia", ticket.get("deliveredVia"));
                 issued++;
@@ -285,7 +290,9 @@ public class TicketAdminController {
     /** Sends the chosen tickets their existing links again, without minting new ones. */
     @PostMapping("/sessions/{id}/tickets/resend")
     public Map<String, Object> resendLinks(@PathVariable long id, @RequestBody Map<String, Object> body) {
-        return ticketService.resendLinks(id, ticketIds(body));
+        // "first": the list was issued without mail and is being sent now, so it reads as
+        // the ticket arriving rather than as a reminder.
+        return ticketService.resendLinks(id, ticketIds(body), body != null && Boolean.TRUE.equals(body.get("first")));
     }
 
     /** Switches the chosen tickets off, or back on; ones already that way are left alone. */

@@ -1,5 +1,7 @@
 package com.plink.ticket.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.model.Presence;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -39,6 +41,7 @@ public class AdmissionRepository {
         jdbc.update("INSERT INTO admission_event (ticket_id, session_id, direction, gate_id, method, result, "
             + "reason, presentation_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             ticketId, sessionId, direction, gateId, method, result, reason, grantId);
+        record(ticketId, sessionId, direction, gateId, method, result, reason, grantId, null, false, false);
     }
 
     /** Ledger row with the extra provenance the field tools need. */
@@ -48,6 +51,19 @@ public class AdmissionRepository {
             + "reason, presentation_session_id, operator, offline, flagged) "
             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ticketId, sessionId, direction, gateId, method, result, reason, grantId, operator, offline, flagged);
+        record(ticketId, sessionId, direction, gateId, method, result, reason, grantId, operator, offline, flagged);
+    }
+
+    /** The same movement on the service's one time line. */
+    private static void record(Long ticketId, Long sessionId, String direction, String gateId, String method,
+            String result, String reason, String grantId, String operator, boolean offline, boolean flagged) {
+        boolean ok = "ADMITTED".equals(result) || "EXITED".equals(result) || "TRANSFERRED".equals(result);
+        ActivityLog.emit(Activity.of(Activity.ADMISSION, "admission." + String.valueOf(direction).toLowerCase())
+            .ok(ok).result(result).session(sessionId).ticket(ticketId).gate(gateId)
+            .summary(reason)
+            .put("direction", direction).put("method", method).put("reason", reason)
+            .put("presentation", grantId).put("operator", operator)
+            .put("offline", offline ? true : null).put("flagged", flagged ? true : null));
     }
 
     /** Movements a terminal recorded while it could not reach the presence state. */
