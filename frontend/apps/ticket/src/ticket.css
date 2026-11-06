@@ -2083,3 +2083,210 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .issue-mail .btn-primary { width: auto; margin: 0; }
 .issue-mail.is-done { background: #e5fff4; color: #1c6b52; flex-direction: column; align-items: flex-start; }
 .issue-mail ul { margin: 0; padding-left: 18px; font-size: 13px; color: #8a5300; }
+
+/* The holder's bar has four or five buttons, depending on whether the venue tab is up. */
+.ticket-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+
+/* ---- The venue tab ---- */
+.venue { display: flex; flex-direction: column; gap: 16px; text-align: left; }
+.venue-title { display: flex; flex-direction: column; gap: 2px; }
+.venue-title span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.venue-title h2 { margin: 0; font-size: 24px; }
+.venue-head { display: flex; align-items: center; gap: 2px; margin-left: -10px; }
+.venue-head h2 { margin: 0; font-size: 20px; }
+.venue-back {
+  width: 44px; height: 44px; border: 0; background: none; color: var(--ink); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; border-radius: 10px;
+}
+.venue-address {
+  display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  background: white; border: 1px solid var(--line); border-radius: 14px;
+}
+.venue-address b { font-size: 16px; }
+.venue-address .button-row { display: flex; gap: 8px; margin: 0; }
+.venue-address .button-row > * {
+  flex: 1 1 0; width: auto; margin: 0; min-height: 44px; display: inline-flex; align-items: center;
+  justify-content: center; text-decoration: none;
+}
+.venue-now {
+  display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; font: inherit; color: var(--ink);
+  background: var(--accent-soft); border: 0; border-radius: 14px; padding: 16px; cursor: pointer;
+}
+.venue-now-head { display: flex; justify-content: space-between; align-items: center; }
+.venue-now-all { font-size: 13px; font-weight: 700; color: var(--blue); }
+.venue-now-item { display: flex; flex-direction: column; gap: 2px; }
+.venue-now-item b { font-size: 16px; }
+.venue-now-item small, .venue-now-next { font-size: 13px; color: #4b5470; }
+.venue-now-next { border-top: 1px solid #d9e2ff; padding-top: 8px; }
+.venue-live, .venue-soon { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: #14855f; }
+.venue-live::before { content: ''; width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+.venue-soon { color: var(--blue); }
+.venue-list {
+  display: flex; flex-direction: column; background: white; border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden;
+}
+.venue-list > a, .venue-list > button {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; min-height: 44px; width: 100%;
+  border: 0; border-bottom: 1px solid #eef0f5; background: none; font: inherit; color: var(--ink);
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.venue-list > :last-child { border-bottom: 0; }
+.venue-list > * > svg:last-child { color: #9aa1b3; flex-shrink: 0; }
+.venue-list-icon {
+  width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--blue);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.venue-list-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.venue-list-main b { font-size: 15px; }
+.venue-list-main small { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.venue-text { margin: 0; white-space: pre-line; line-height: 1.75; font-size: 15px; color: #33405e; }
+
+.venue-segment {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px;
+  background: #f0f2f7; border-radius: 12px; padding: 4px;
+}
+.venue-segment button {
+  min-height: 40px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: 14px;
+  font-weight: 700; color: var(--muted); cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.venue-segment button small { font-size: 11px; font-weight: 500; }
+.venue-segment button.on { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(18, 33, 69, 0.12); }
+.venue-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.venue-chips button {
+  min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: white;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--ink); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.venue-chips button.on { background: var(--ink); border-color: var(--ink); color: white; }
+.venue-dot { width: 8px; height: 8px; border-radius: 999px; }
+
+.venue-map { display: flex; flex-direction: column; gap: 12px; }
+.venue-plan-box { border-radius: 14px; border: 1px solid #e0e4ed; background: #eef1f6; overflow: auto; }
+.venue-plan { position: relative; width: 100%; }
+.venue-plan-box.zoomed .venue-plan { width: 220%; }
+.venue-plan img { display: block; width: 100%; height: auto; }
+.venue-pin {
+  position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; padding: 0; border-radius: 999px;
+  border: 2px solid white; color: white; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(18, 33, 69, 0.35);
+}
+/* A larger hit area than the dot it draws. */
+.venue-pin::after { content: ''; position: absolute; inset: -8px; }
+.venue-pin.on { transform: scale(1.2); box-shadow: 0 0 0 4px rgba(49, 92, 244, 0.3); }
+.venue-zoom { align-self: flex-end; }
+.venue-picked {
+  display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px;
+  background: white; border: 1px solid var(--line); border-radius: 14px;
+}
+.venue-picked > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.venue-picked small { font-size: 12px; font-weight: 700; }
+.venue-picked b { font-size: 16px; }
+.venue-picked > span:last-child > span { font-size: 13px; color: var(--muted); }
+.venue-pin-mark {
+  width: 34px; height: 34px; border-radius: 999px; color: white; font-size: 12px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+.venue-places { display: flex; flex-direction: column; gap: 12px; }
+.venue-place-group { display: flex; flex-direction: column; gap: 8px; }
+.venue-place-group h3 { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.venue-place {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 14px 16px;
+  background: white; border: 1px solid var(--line); border-radius: 14px;
+}
+.venue-place > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.venue-place b { font-size: 16px; }
+.venue-place > div > span:not(.venue-tags) { font-size: 13px; color: var(--muted); }
+.venue-place .btn-tiny { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; min-height: 36px; }
+.venue-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.venue-tags small { font-size: 12px; font-weight: 700; color: #4b5470; background: #f3f5f9; border-radius: 6px; padding: 2px 8px; }
+
+.venue-timetable { display: flex; flex-direction: column; gap: 12px; }
+.venue-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.venue-items li { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 12px; }
+.venue-item-time { display: flex; flex-direction: column; align-items: flex-end; padding-top: 14px; }
+.venue-item-time b { font-size: 14px; }
+.venue-item-time small { font-size: 11px; color: #8b93a7; }
+.venue-item-card {
+  margin: 6px 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: white;
+  display: flex; flex-direction: column; gap: 4px; position: relative;
+}
+.venue-item-card > b { font-size: 15px; }
+.venue-item-card > span:last-child:not(.venue-item-tags) { font-size: 13px; color: var(--muted); }
+.venue-item-tags { display: flex; gap: 6px; align-items: center; }
+.venue-item-tags:empty { display: none; }
+.venue-stage { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; background: var(--accent-soft); color: #2447c9; }
+.venue-items li.is-now .venue-item-time b { color: #14855f; }
+.venue-items li.is-now .venue-item-card { background: #f2fbf7; border-color: #bfe8d6; }
+.venue-items li.is-done { opacity: 0.55; }
+
+/* ---- The console's venue tab ---- */
+.venue-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
+.venue-kinds button {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; min-height: 64px;
+  border: 1px solid var(--line); border-radius: 12px; background: white; font: inherit; color: var(--ink); cursor: pointer;
+}
+.venue-kinds button:hover { border-color: var(--blue); }
+.venue-kinds small { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.venue-visible { margin: 0; }
+.venue-note { font-size: 12.5px; line-height: 1.6; margin: 0; }
+.venue-editor { display: flex; flex-direction: column; gap: 14px; }
+.venue-editor h4 { margin: 6px 0 0; font-size: 14px; display: flex; align-items: center; gap: 4px; }
+.venue-editor .button-row { display: flex; gap: 8px; }
+.venue-editor input, .venue-editor select, .venue-editor textarea { font: inherit; }
+
+.venue-floors { display: flex; flex-direction: column; gap: 10px; }
+.venue-floor { display: flex; gap: 14px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.venue-floor img, .venue-floor-empty {
+  width: 160px; height: 110px; object-fit: contain; background: #f3f5f9; border-radius: 8px; flex-shrink: 0;
+}
+.venue-floor-empty { display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--muted); }
+.venue-floor-fields { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; }
+.venue-floor-fields label:first-child { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; }
+.venue-floor-fields input:not([type=file]) { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; max-width: 240px; }
+.venue-floor-fields .btn-tiny { cursor: pointer; }
+
+.venue-places-grid { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.venue-pin-board { flex: 1 1 380px; max-width: 560px; display: flex; flex-direction: column; gap: 8px; position: sticky; top: 12px; }
+.venue-pin-plan {
+  position: relative; display: block; width: 100%; padding: 0; border: 2px solid var(--line); border-radius: 12px;
+  background: #eef1f6; overflow: hidden; cursor: default; font: inherit;
+}
+.venue-pin-plan:disabled { opacity: 1; }
+.venue-pin-plan.pinning { border-color: #ad6500; cursor: crosshair; }
+.venue-pin-plan img { display: block; width: 100%; height: auto; pointer-events: none; }
+.venue-pin-dot {
+  position: absolute; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 999px; background: var(--blue);
+  color: white; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  border: 2px solid white; box-shadow: 0 1px 4px rgba(18, 33, 69, 0.3); pointer-events: none;
+}
+.venue-pin-dot.on { background: #ad6500; }
+.venue-pin-hint { margin: 0; font-size: 13px; }
+.venue-pin-hint.on { color: #8a5000; font-weight: 700; }
+.venue-place-rows { flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.venue-place-row {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: white;
+}
+.venue-place-row.pinning { border-color: #f3c77a; background: #fffaf0; }
+.venue-place-row.unpinned { border-color: #f2c9c5; }
+.venue-place-row input:not([type=checkbox]) { height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; min-width: 0; }
+.venue-place-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.venue-place-line > input { flex: 1 1 auto; }
+.venue-place-line .console-switch { margin: 0; font-size: 13px; }
+.venue-pin-num {
+  width: 24px; height: 24px; border-radius: 999px; background: var(--blue); color: white; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+.venue-timetable-editor { display: flex; flex-direction: column; gap: 10px; }
+.venue-day-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.venue-day-row input { height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; }
+.venue-items-table input, .venue-items-table select {
+  height: 34px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; width: 100%; box-sizing: border-box;
+}
+/* The select keeps the base stylesheet's right padding, which is where its arrow is drawn. */
+.venue-items-table input { padding: 0 8px; }
+.venue-items-table select { padding-left: 8px; padding-top: 0; padding-bottom: 0; min-width: 120px; }
+.venue-items-table td { min-width: 80px; }
+.venue-timetable-editor > .btn-tiny { align-self: flex-start; }

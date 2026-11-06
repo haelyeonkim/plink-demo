@@ -1,7 +1,7 @@
 import ConsoleNav, { NAV_ICONS, type ConsoleNavEntry } from '@shared/components/ConsoleNav';
 import { dayTime, eventWhen, type SessionRow } from '../console/model';
 
-export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'settings';
+export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'venue' | 'settings';
 
 const WHEN_LABEL = { today: '오늘 진행', upcoming: '예정', past: '종료' } as const;
 
@@ -37,6 +37,7 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
       { key: 'ads', label: '알림판', icon: NAV_ICONS.ads,
         ...(adsPending > 0 ? { badge: adsPending.toLocaleString(), badgeLabel: `승인 대기 ${adsPending}건`, warn: true } : {}) },
     ]],
+    ['관람객 안내', [{ key: 'venue', label: '행사장 정보', icon: NAV_ICONS.venue }]],
     ['설정', [{ key: 'settings', label: '이벤트 설정', icon: NAV_ICONS.settings }]],
   ];
   return (

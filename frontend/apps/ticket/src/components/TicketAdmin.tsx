@@ -18,6 +18,7 @@ import GateSetupQr, { type SetupTarget } from './GateSetupQr';
 import { GateNameDialog, type FirstManager } from './GateDialogs';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
+import ConsoleVenue from './ConsoleVenue';
 import ConsoleCoupons from './ConsoleCoupons';
 import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
@@ -31,7 +32,7 @@ const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', po
 
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
-  gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', settings: '이벤트 설정',
+  gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', venue: '행사장 정보', settings: '이벤트 설정',
 };
 /** What a screen's actions mean, behind an "i" beside its title. */
 const TAB_HELP: Partial<Record<Tab, ReactNode>> = {
@@ -1149,6 +1150,9 @@ export default function TicketAdmin() {
           )}
           {tab === 'ads' && (
             <ConsoleAds sessionId={session.id} booths={booths} tick={roomTick} onNotice={setNotice} onError={setError} />
+          )}
+          {tab === 'venue' && (
+            <ConsoleVenue sessionId={session.id} onNotice={setNotice} onError={setError} />
           )}
 
       {session && tab === 'issue' && (
