@@ -7,15 +7,13 @@ These rules apply to Codex, Claude, and any other coding agent, including docume
 1. Before editing, check `git status --short` and `git branch --show-current`. Preserve existing user changes. Never edit or commit directly on `main`.
 2. Create a dedicated branch from an up-to-date `main` before starting a new task, using a descriptive name such as `docs/getting-started` or `fix/ticket-login`. If the task already has a branch, continue there. Do not discard changes or switch away from unrelated work to update `main`; use an isolated worktree when necessary.
 3. Implement the change, review the diff, and complete the applicable verification. Do not include secrets or unrelated changes in commits.
-4. Commit and push only the task branch. Open a PR with `main` as the base and the task branch as the head. Describe the behavior, verification results, and any configuration or schema changes.
-5. Wait for a human review and **Approve**. Agents must not approve their own PR, use another agent as a substitute for human approval, or treat silence or passing checks as approval. Address review feedback on the same branch. Changes after approval require renewed human approval of the updated changes.
-6. Merge only after human approval, required checks have passed, and the user has explicitly authorized merging that PR. Permission to implement, commit, push, or open a PR is not permission to merge. Until then, report the PR and leave it open for review.
+4. Commit and push only the task branch. Open a PR with the intended destination branch as the base and the task branch as the head; use `main` as the base when delivering changes to `main`. Describe the behavior, verification results, and any configuration or schema changes.
+5. Human **Approve** is not required for PRs targeting any branch, including `main`. After applicable verification and required checks pass, agents may merge PRs as part of the authorized task without separate merge authorization.
+6. Changes to `main` must go through a PR. Never edit, commit, or push directly to `main`, force-push `main`, or bypass branch protection.
 
-Required order: **task branch → changes and verification → PR → human Approve → authorized merge**.
+Required order: **task branch → changes and verification → PR → merge**.
 
-Never push directly to `main`, force-push `main`, bypass branch protection, or enable auto-merge to avoid the approval step. A PR targeting `main` is expected; direct changes to `main` are prohibited.
-
-Repository administrators should also protect `main` on GitHub: require a pull request, at least one human approval, dismissal of stale approvals after new commits, and applicable status checks; prevent bypasses, force pushes, and deletion. These Markdown instructions do not configure GitHub protection. Do not claim protection is enabled without checking the repository settings.
+Repository administrators should protect `main` on GitHub by requiring a pull request, with zero required approving reviews and no last-push or code-owner approval requirement. Enforce protection for administrators and prevent force pushes and deletion. These Markdown instructions do not configure GitHub protection. Do not claim protection is enabled without checking the repository settings.
 
 ## Project Structure & Module Organization
 

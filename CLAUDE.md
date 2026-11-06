@@ -6,8 +6,8 @@ For every change, including documentation:
 
 - Check the working tree and current branch before editing. Preserve existing user changes.
 - Create or use a dedicated task branch; never edit, commit, or push directly on `main`.
-- Implement and verify the change, then commit and push the task branch and open a PR targeting `main`.
-- Wait for a human **Approve** of the current changes and successful required checks.
-- Merge only when the user explicitly authorizes merging that PR. Do not self-approve, bypass protection, or use auto-merge to skip review.
+- Implement and verify the change, then commit and push the task branch and open a PR targeting the intended destination branch.
+- Human **Approve** is not required, including for PRs targeting `main`. After verification and required checks pass, agents may merge PRs as part of the authorized task without separate merge authorization.
+- Changes to `main` must go through a PR. Never push directly to `main` or bypass protection.
 
-**Task branch → PR → human Approve → authorized merge** is mandatory. See [AGENTS.md](AGENTS.md) for the complete rules.
+**Task branch → changes and verification → PR → merge** is mandatory for changes to `main`. See [AGENTS.md](AGENTS.md) for the complete rules.
