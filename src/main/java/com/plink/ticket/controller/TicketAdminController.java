@@ -1120,10 +1120,19 @@ public class TicketAdminController {
     /**
      * Staff correction. The ledger is append-only, so a fix is a new entry carrying who
      * made it and why - never an edit of what the gate recorded.
+     *
+     * <p>Only a test event takes it from the console. In a rehearsal there may be no
+     * terminal at all, and walking a tester in by hand is how the rest gets tried; in a
+     * real event a door that nobody passed through is not something to write down.
      */
     @PostMapping("/tickets/{ticketId}/movement")
     public Map<String, Object> staffMovement(@PathVariable long ticketId,
             @RequestBody Map<String, String> body, Authentication operator) {
+        Ticket ticket = tickets.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
+        if (!ticketService.requireSession(ticket.sessionId).testEvent) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "콘솔 입·퇴장 처리는 테스트 이벤트에서만 할 수 있어요.");
+        }
         String direction = required(body.get("direction"), "방향을 지정해 주세요.").toUpperCase(java.util.Locale.ROOT);
         if (!List.of("IN", "OUT").contains(direction)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "방향은 IN 또는 OUT이어야 해요.");

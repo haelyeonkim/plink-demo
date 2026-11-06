@@ -315,6 +315,24 @@ class ConsoleOperationsTest {
         assertEquals(true, adminController.updateSession(sessionId, details).get("testEvent"));
     }
 
+    /** Walking someone in from the console is for rehearsals; a real event's door is the gate. */
+    @Test void onlyATestEventAdmitsFromTheConsole() {
+        long sessionId = newSession();
+        long ticketId = ((Number) tickets.issue(sessionId, "tester02@example.com", "A-1", null, null)
+            .get("ticketId")).longValue();
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> adminController.staffMovement(ticketId, Map.of("direction", "IN", "reason", "테스트"), null));
+        assertEquals(HttpStatus.FORBIDDEN, refused.getStatusCode());
+        assertEquals(Boolean.FALSE, rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).get(0).get("inside"));
+
+        sessions.updateTestEvent(sessionId, true);
+        assertEquals(true, adminController.staffMovement(ticketId,
+            Map.of("direction", "IN", "reason", "테스트"), null).get("inside"));
+        assertEquals(Boolean.TRUE, rows(adminController.listTickets(sessionId, 0, 50, null, "ALL")).get(0).get("inside"));
+        assertEquals(false, adminController.staffMovement(ticketId,
+            Map.of("direction", "OUT", "reason", "테스트"), null).get("inside"));
+    }
+
     @Test void theTicketListComesAPageAtATime() {
         long sessionId = newSession();
         for (int i = 1; i <= 7; i++) tickets.issue(sessionId, "p" + i + "@example.com", "B-" + i, null, null);

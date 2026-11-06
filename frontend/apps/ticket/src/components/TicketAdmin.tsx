@@ -559,6 +559,19 @@ export default function TicketAdmin() {
   });
 
   /**
+   * Walks a ticket in or out by hand. Only a test event offers it: a rehearsal may have
+   * no terminal yet, and the server refuses it anywhere else.
+   */
+  const staffMove = (row: TicketRow, direction: 'IN' | 'OUT') => act(async () => {
+    await read(await mutate(`/api/admin/tickets/${row.ticketId}/movement`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction, reason: direction === 'IN' ? '콘솔 입장 처리 (테스트)' : '콘솔 퇴장 처리 (테스트)' }),
+    }));
+    setNotice(direction === 'IN' ? `${row.ticketRef} 입장 처리했어요.` : `${row.ticketRef} 퇴장 처리했어요.`);
+    await loadSession(selected!);
+  });
+
+  /**
    * Removes a ticket outright. A ticket that has been through a gate takes its ledger
    * rows with it, so that one is only sent with the operator's explicit say-so.
    */
@@ -1337,6 +1350,14 @@ export default function TicketAdmin() {
                   <button type="button" className="btn-secondary" onClick={() => showLink(open.ticketId)}>링크 보기</button>
                   <button type="button" className="btn-secondary" disabled={open.status === 'REVOKED'}
                     onClick={() => resendLinks([open.ticketId])}>링크 다시 보내기</button>
+                  {session.testEvent && (open.inside ? (
+                    <button type="button" className="btn-secondary" disabled={busy}
+                      onClick={() => staffMove(open, 'OUT')}>퇴장 처리</button>
+                  ) : (
+                    <button type="button" className="btn-secondary"
+                      disabled={busy || open.status === 'REVOKED' || open.status === 'TRANSFER_PENDING'}
+                      onClick={() => staffMove(open, 'IN')}>입장 처리</button>
+                  ))}
                   {givingBooths.length > 0 && open.status !== 'REVOKED' && (
                     <button type="button" className="btn-secondary" onClick={() => openCouponSheet(open)}>쿠폰 주기</button>
                   )}
@@ -1657,8 +1678,8 @@ export default function TicketAdmin() {
                 <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
                 테스트 이벤트
                 <InfoTip label="테스트 이벤트">
-                  테스트 이벤트는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여줍니다. 실제 관람객
-                  명단이 들어간 이벤트에는 켜지 마세요.
+                  테스트 이벤트는 발급 현황과 쿠폰 목록에서 이메일을 가리지 않고 전부 보여주고, 입장권 상세에서
+                  게이트 없이 입장·퇴장 처리를 할 수 있습니다. 실제 관람객 명단이 들어간 이벤트에는 켜지 마세요.
                 </InfoTip>
               </label>
             </form>
@@ -2025,7 +2046,8 @@ export default function TicketAdmin() {
       <ConfirmDialog
         open={confirmTest != null}
         title="테스트 이벤트로 바꿀까요?"
-        message={`발급 현황과 쿠폰 목록에 받는 사람의 이메일이 가리지 않고 전부 보입니다. `
+        message={`발급 현황과 쿠폰 목록에 받는 사람의 이메일이 가리지 않고 전부 보이고, `
+          + `콘솔에서 게이트 없이 입장·퇴장 처리를 할 수 있게 됩니다. `
           + `실제 관람객 명단이 들어 있는 이벤트라면 취소하세요.`
           + (session?.ticketCount ? ` 지금 입장권 ${session.ticketCount.toLocaleString()}장이 발급되어 있어요.` : '')}
         confirmLabel="테스트 이벤트로 저장"
