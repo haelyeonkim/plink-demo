@@ -14,6 +14,13 @@ import AdminArtworkList from './components/AdminArtworkList';
 import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
 import Footer from '@shared/components/Footer';
+import { Tracker } from '@shared/track';
+import DataLayout from './components/data/DataLayout';
+import DataOverview from './components/data/DataOverview';
+import DataExplore from './components/data/DataExplore';
+import DataExports from './components/data/DataExports';
+import DataExportNew from './components/data/DataExportNew';
+import ExportRecipient from './components/ExportRecipient';
 
 /** Old per-link bookmarks still open the link, now inside the console's list tab. */
 function LegacyLinkDetail() {
@@ -40,12 +47,20 @@ export default function App() {
     <AppScope value="link">
     <AuthProvider>
     <BrowserRouter>
+      <Tracker app="link" />
       <Header />
       <main>
         <Routes>
           {/* Passlink: what it is, and what belongs to the site rather than to either tool. */}
           <Route path="/" element={<Home />} />
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
+          {/* Service logs, statistics and the files sent to organisers. */}
+          <Route path="/admin/data" element={<RequireAdmin scope="canAccounts"><DataLayout /></RequireAdmin>}>
+            <Route index element={<DataOverview />} />
+            <Route path="logs" element={<DataExplore />} />
+            <Route path="exports" element={<DataExports />} />
+          </Route>
+          <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/guide" element={<Guide />} />
           <Route path="/login" element={<Login />} />
@@ -61,6 +76,8 @@ export default function App() {
           {/* What a recipient opens: issued addresses never move. /s/{issuer}/{code} is namespaced. */}
           <Route path="/s/:shortCode" element={<AccessLink />} />
           <Route path="/s/:slug/:shortCode" element={<AccessLink />} />
+          {/* An organiser's contact opens the data sent to them; no account. */}
+          <Route path="/x/:token" element={<ExportRecipient />} />
           {/* Older addresses. */}
           <Route path="/links/admin" element={<Moved to={() => '/links'} />} />
           <Route path="/links/admin/:linkId" element={<Moved to={p => `/links/${p.linkId}`} />} />

@@ -1,5 +1,8 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityContext;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Booth;
 import com.plink.ticket.model.BoothManager;
@@ -96,6 +99,7 @@ public class BoothManagerService {
             throw new ResponseStatusException(HttpStatus.GONE, "관리자 권한이 해지된 링크예요. 주최 측에 문의해 주세요.");
         }
         if (booths.findById(manager.boothId).isEmpty()) throw notFound();
+        ActivityContext.booth(manager.id, manager.email, manager.sessionId, manager.boothId);
         return manager;
     }
 
@@ -191,6 +195,9 @@ public class BoothManagerService {
         managers.setGate(id, terminal);
         String link = linkFor(token);
         if (notify) sendInvite(booth, email, link, false);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "booth.manager_invited").session(booth.sessionId).booth(booth.id)
+            .gate(terminal).summary(email).put("manager", id).put("email", email).put("notify", notify)
+            .put("newTerminal", newTerminalLabel).put("again", existing != null));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("managerId", id);
         result.put("email", email);
@@ -218,6 +225,8 @@ public class BoothManagerService {
         managers.reopen(manager.id, tokenHash(token), Timestamp.from(Instant.now()));
         String link = linkFor(token);
         if (notify) sendInvite(booth, manager.email, link, true);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "booth.manager_reissued").session(booth.sessionId).booth(booth.id)
+            .summary(manager.email).put("manager", manager.id).put("email", manager.email).put("notify", notify));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("managerId", manager.id);
         result.put("status", "INVITED");
@@ -236,6 +245,9 @@ public class BoothManagerService {
         BoothManager manager = managers.findById(managerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "부스 관리자를 찾을 수 없어요."));
         managers.revoke(manager.id);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "booth.manager_revoked").session(manager.sessionId)
+            .booth(manager.boothId).gate(manager.gateId).summary(manager.email).put("manager", manager.id)
+            .put("email", manager.email));
         return Map.of("managerId", manager.id, "status", "REVOKED");
     }
 
@@ -254,6 +266,9 @@ public class BoothManagerService {
         Gate gate = gateId == null || gateId.isBlank() ? null : ownTerminal(booth, gateId);
         if (gate != null && !gate.id.equals(manager.gateId)) refuseIfStaffed(gate, manager.id);
         managers.setGate(manager.id, gate == null ? null : gate.id);
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "booth.manager_assigned").session(manager.sessionId)
+            .booth(manager.boothId).gate(gate == null ? null : gate.id).summary(manager.email)
+            .put("manager", manager.id).put("before", manager.gateId));
         manager.gateId = gate == null ? null : gate.id;
         return row(manager, gate);
     }
@@ -276,6 +291,8 @@ public class BoothManagerService {
         Map<String, Object> result = new LinkedHashMap<>(gateSetup.handTo(gate, deviceId,
             "이 단말은 다른 기기에서 사용 중이에요. 주최 측에 연결 해제를 요청해 주세요."));
         result.remove("direction");
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "booth.terminal_connected").session(manager.sessionId)
+            .booth(manager.boothId).gate(gate.id).summary(manager.email).put("device", deviceId));
         return result;
     }
 

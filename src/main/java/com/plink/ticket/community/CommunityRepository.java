@@ -1,5 +1,7 @@
 package com.plink.ticket.community;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -73,7 +75,12 @@ public class CommunityRepository {
             ps.setTimestamp(9, createdAt);
             return ps;
         }, keys);
-        return keys.getKey().longValue();
+        long id = keys.getKey().longValue();
+        ActivityLog.emit(Activity.of(Activity.CHAT, staff ? (notice ? "chat.notice" : "chat.staff_message") : "chat.message")
+            .session(sessionId).ticket(ticketId).summary(body)
+            .put("message", id).put("body", body).put("replyTo", replyTo)
+            .put("pinnedUntil", pinnedUntil).put("alertUntil", alertUntil));
+        return id;
     }
 
     public Optional<Message> findMessage(long id) {
@@ -195,6 +202,13 @@ public class CommunityRepository {
      * removed. Callers run this inside a transaction, which is what keeps the hold.
      */
     private boolean toggle(String table, String count, String otherTable, String otherCount, long messageId, long ticketId) {
+        boolean added = toggleRow(table, count, otherTable, otherCount, messageId, ticketId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "chat_like".equals(table) ? "chat.like" : "chat.dislike")
+            .ticket(ticketId).result(added ? "added" : "removed").put("message", messageId));
+        return added;
+    }
+
+    private boolean toggleRow(String table, String count, String otherTable, String otherCount, long messageId, long ticketId) {
         lockMessage(messageId);
         int removed = jdbc.update("DELETE FROM " + table + " WHERE message_id = ? AND ticket_id = ?", messageId, ticketId);
         if (removed > 0) {
@@ -228,9 +242,11 @@ public class CommunityRepository {
     /** Counts one report per ticket; a second report from the same ticket changes nothing. */
     public boolean report(long messageId, long ticketId) {
         lockMessage(messageId);
-        if (!insertOnce("chat_report", messageId, ticketId)) return false;
-        jdbc.update("UPDATE chat_message SET report_count = report_count + 1 WHERE id = ?", messageId);
-        return true;
+        boolean added = insertOnce("chat_report", messageId, ticketId);
+        if (added) jdbc.update("UPDATE chat_message SET report_count = report_count + 1 WHERE id = ?", messageId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "chat.report").ticket(ticketId)
+            .result(added ? "added" : "again").put("message", messageId));
+        return added;
     }
 
     /**
@@ -240,20 +256,26 @@ public class CommunityRepository {
     public void clearReports(long messageId) {
         jdbc.update("DELETE FROM chat_report WHERE message_id = ?", messageId);
         jdbc.update("UPDATE chat_message SET report_count = 0 WHERE id = ?", messageId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "chat.reports_cleared").put("message", messageId));
     }
 
     public void setHidden(long messageId, boolean hidden) {
         jdbc.update("UPDATE chat_message SET hidden = ? WHERE id = ?", hidden, messageId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, hidden ? "chat.hidden" : "chat.unhidden").put("message", messageId));
     }
 
     public void setPinnedUntil(long messageId, Timestamp until) {
         jdbc.update("UPDATE chat_message SET pinned_until = ? WHERE id = ?", until, messageId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, until == null ? "chat.unpinned" : "chat.pinned")
+            .put("message", messageId).put("until", until));
     }
 
     /** Pins a popular line once: a line that has had its turn at the top does not come back. */
     public boolean pinIfNeverPinned(long messageId, Timestamp until) {
-        return jdbc.update("UPDATE chat_message SET pinned_until = ? WHERE id = ? AND pinned_until IS NULL",
+        boolean pinned = jdbc.update("UPDATE chat_message SET pinned_until = ? WHERE id = ? AND pinned_until IS NULL",
             until, messageId) > 0;
+        if (pinned) ActivityLog.emit(Activity.of(Activity.CHAT, "chat.hot_pinned").put("message", messageId).put("until", until));
+        return pinned;
     }
 
     public boolean muted(long sessionId, long ticketId) {
@@ -270,6 +292,7 @@ public class CommunityRepository {
     public void setMuted(long sessionId, long ticketId, boolean muted) {
         jdbc.update("DELETE FROM chat_mute WHERE session_id = ? AND ticket_id = ?", sessionId, ticketId);
         if (muted) jdbc.update("INSERT INTO chat_mute (session_id, ticket_id) VALUES (?, ?)", sessionId, ticketId);
+        ActivityLog.emit(Activity.of(Activity.CHAT, muted ? "chat.muted" : "chat.unmuted").session(sessionId).ticket(ticketId));
     }
 
     public boolean banned(long sessionId, long ticketId) {
@@ -280,6 +303,13 @@ public class CommunityRepository {
 
     /** Bans or lifts the ban, and says whether anything changed. */
     public boolean setBanned(long sessionId, long ticketId, boolean banned) {
+        boolean changed = applyBan(sessionId, ticketId, banned);
+        ActivityLog.emit(Activity.of(Activity.CHAT, banned ? "chat.banned" : "chat.unbanned").session(sessionId)
+            .ticket(ticketId).result(changed ? "changed" : "unchanged"));
+        return changed;
+    }
+
+    private boolean applyBan(long sessionId, long ticketId, boolean banned) {
         if (!banned) return jdbc.update("DELETE FROM chat_ban WHERE session_id = ? AND ticket_id = ?", sessionId, ticketId) > 0;
         return jdbc.update("INSERT INTO chat_ban (session_id, ticket_id) SELECT CAST(? AS BIGINT), CAST(? AS BIGINT) "
             + "WHERE NOT EXISTS (SELECT 1 FROM chat_ban WHERE session_id = ? AND ticket_id = ?)",
@@ -440,7 +470,12 @@ public class CommunityRepository {
             ps.setString(15, requestedBy);
             return ps;
         }, keys);
-        return keys.getKey().longValue();
+        long id = keys.getKey().longValue();
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.created").session(sessionId).booth(boothId).result(review)
+            .summary(title).put("ad", id).put("category", category).put("title", title).put("body", body)
+            .put("place", place).put("startsAt", startsAt).put("endsAt", endsAt).put("pinned", pinned)
+            .put("requestedBy", requestedBy));
+        return id;
     }
 
     public void updateAd(long id, String category, String title, String body, String place, Timestamp startsAt,
@@ -460,24 +495,30 @@ public class CommunityRepository {
         Timestamp decided = PENDING.equals(review) ? null : Timestamp.from(java.time.Instant.now());
         jdbc.update("UPDATE ad_post SET review_status = ?, reject_reason = ?, reviewed_at = ?, "
             + "requested_by = COALESCE(?, requested_by) WHERE id = ?", review, reason, decided, requestedBy, id);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.review").result(review).summary(reason)
+            .put("ad", id).put("reason", reason).put("requestedBy", requestedBy));
     }
 
     public void setAdHidden(long id, boolean hidden) {
         jdbc.update("UPDATE ad_post SET hidden = ?, updated_at = ? WHERE id = ?",
             hidden, Timestamp.from(java.time.Instant.now()), id);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.hidden").put("ad", id).put("hidden", hidden));
     }
 
     public void endAd(long id) {
         Timestamp now = Timestamp.from(java.time.Instant.now());
         jdbc.update("UPDATE ad_post SET ends_at = ?, updated_at = ? WHERE id = ?", now, now, id);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.ended").put("ad", id));
     }
 
     public void deleteAd(long id) {
         jdbc.update("DELETE FROM ad_post WHERE id = ?", id);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.deleted").put("ad", id));
     }
 
     public void countView(long id) {
         jdbc.update("UPDATE ad_post SET view_count = view_count + 1 WHERE id = ?", id);
+        ActivityLog.emit(Activity.of(Activity.CHAT, "ad.view").put("ad", id));
     }
 
     // ---- Photos on the board ----

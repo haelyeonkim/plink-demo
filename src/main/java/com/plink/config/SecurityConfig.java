@@ -1,5 +1,7 @@
 package com.plink.config;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.account.AdminAccountRepository;
 import com.plink.account.AdminPrincipal;
 import com.plink.account.AdminSessionCheck;
@@ -94,6 +96,9 @@ public class SecurityConfig {
                     .access(scope(AdminPrincipal.ACCOUNTS, false))
                 .requestMatchers("/api/admin/artworks", "/api/admin/artworks/**")
                     .access(scope(AdminPrincipal.ACCOUNTS, false))
+                // The service's own records: every event's people, so owners only.
+                .requestMatchers("/api/admin/data", "/api/admin/data/**")
+                    .access(scope(AdminPrincipal.ACCOUNTS, false))
                 .requestMatchers("/api/admin/**").access(scope(AdminPrincipal.TICKETS, true))
                 .requestMatchers("/api/links", "/api/links/**").access(scope(AdminPrincipal.LINKS, true))
                 // Content is written by whoever may issue links; it exists only for them.
@@ -112,12 +117,22 @@ public class SecurityConfig {
             .logout(logout -> logout.logoutUrl("/api/auth/logout")
                 .invalidateHttpSession(true).clearAuthentication(true)
                 .deleteCookies("JSESSIONID")
+                .addLogoutHandler((request, response, authentication) -> {
+                    // Before the session goes: afterwards nobody is left to say who it was.
+                    Activity row = Activity.of(Activity.AUTH, "logout").always();
+                    if (authentication != null && authentication.getPrincipal() instanceof AdminPrincipal admin) {
+                        row.actor("ADMIN", String.valueOf(admin.id), admin.email).summary(admin.email);
+                    }
+                    ActivityLog.emit(row);
+                })
                 .logoutSuccessHandler((request, response, authentication) -> response.setStatus(204)));
         // CSRF remains enabled, including logout and link mutations.
         // The H2 console is denied above, so it needs no CSRF or frame-options exemption.
         // Gate terminals carry no session cookie: their authority is the X-Gate-Token
         // header, which a cross-site page cannot set, so CSRF adds nothing there.
-        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/gates/**", "/ws/**"));
+        // The browser beacon is sent by sendBeacon, which cannot carry the header; it
+        // changes nothing but adds a log row, which is all a forged one could do too.
+        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/gates/**", "/ws/**", "/api/log/**"));
         // Before any authorisation decision: a session reflects the account as it is now.
         http.addFilterAfter(new AdminSessionCheck(accounts), SecurityContextHolderFilter.class);
         if (!clientId.trim().isEmpty() && !clientSecret.trim().isEmpty()) {
@@ -140,7 +155,12 @@ public class SecurityConfig {
             OidcUserService oidcUsers = new OidcUserService();
             OAuth2UserService<OidcUserRequest, OidcUser> allowListed = request -> {
                 OidcUser user = oidcUsers.loadUser(request);
-                if (!access.allows(user)) {
+                boolean allowed = access.allows(user);
+                ActivityLog.emit(Activity.of(Activity.AUTH, "google.login").ok(allowed)
+                    .result(allowed ? null : "not_allowed").summary(user.getEmail())
+                    .actor(allowed ? "ADMIN" : "ANON", "google:" + user.getSubject(), user.getEmail())
+                    .put("email", user.getEmail()).put("domain", user.getClaimAsString("hd")).always());
+                if (!allowed) {
                     throw new OAuth2AuthenticationException(new OAuth2Error(GOOGLE_DENIED,
                         "This Google account is not allowed to sign in here.", null));
                 }
@@ -153,10 +173,14 @@ public class SecurityConfig {
                 .loginPage(baseUrl + "/login")
                 .defaultSuccessUrl(baseUrl + "/", true)
                 // A refused account is told so; anything else is a sign-in that failed.
-                .failureHandler((request, response, error) -> response.sendRedirect(baseUrl + "/login?error="
+                .failureHandler((request, response, error) -> {
+                    ActivityLog.emit(Activity.of(Activity.AUTH, "google.login_failed")
+                        .failed(error.getClass().getSimpleName()).summary(error.getMessage()).always());
+                    response.sendRedirect(baseUrl + "/login?error="
                     + (error instanceof OAuth2AuthenticationException oauthError
                         && GOOGLE_DENIED.equals(oauthError.getError().getErrorCode())
-                        ? "google-denied" : "google"))));
+                        ? "google-denied" : "google"));
+                }));
         }
         return http.build();
     }

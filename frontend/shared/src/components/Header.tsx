@@ -33,6 +33,8 @@ export function isStandalone(pathname: string): boolean {
   if (pathname === '/tickets/gate') return true;
   // /s/{code} and /s/{issuer}/{code} - what a link's recipient opens.
   if (/^\/s\/[^/]+/.test(pathname)) return true;
+  // /x/{token} - the data an organiser's contact was sent.
+  if (/^\/x\/[^/]+/.test(pathname)) return true;
   // Operator screens live under /tickets too, and they keep the site's navigation.
   if (pathname.startsWith('/tickets/admin') || pathname.startsWith('/tickets/sessions')) return false;
   // /tickets/{sessionId}/{token} - the holder's own page - and /tickets/booth/{token},

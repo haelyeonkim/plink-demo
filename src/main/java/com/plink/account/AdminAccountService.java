@@ -1,5 +1,7 @@
 package com.plink.account;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +83,8 @@ public class AdminAccountService {
         String anyAccount = "admin-client:" + client;
         if (limiter.blocked(pair, MAX_FAILURES)
                 || (maxClientFailures > 0 && limiter.blocked(anyAccount, maxClientFailures))) {
+            ActivityLog.emit(Activity.of(Activity.AUTH, "admin.login").failed("locked").summary(email)
+                .actor("ANON", null, email).put("email", email).always());
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "로그인 시도가 많아 잠시 잠겼어요. 15분 후에 다시 시도해 주세요.");
         }
@@ -91,10 +95,16 @@ public class AdminAccountService {
             if (maxClientFailures > 0) limiter.fail(anyAccount, LOCKOUT);
             // Still counted on the row, for the record, but no longer a lock on it.
             if (account != null) accounts.recordFailure(account.id, null);
+            ActivityLog.emit(Activity.of(Activity.AUTH, "admin.login")
+                .failed(account == null ? "unknown_account" : "wrong_password").summary(email)
+                .actor("ANON", account == null ? null : String.valueOf(account.id), email).put("email", email).always());
             throw refuse();
         }
         limiter.clear(pair);
         accounts.recordSuccess(account.id);
+        ActivityLog.emit(Activity.of(Activity.AUTH, "admin.login").summary(email)
+            .actor("ADMIN", String.valueOf(account.id), email).put("email", email)
+            .put("owner", account.owner).put("canLinks", account.canLinks).put("canTickets", account.canTickets));
 
         // A fresh session id on sign-in, so a session fixed before login cannot be reused.
         // Changing the id rather than invalidating keeps everything else in the session.

@@ -1,5 +1,7 @@
 package com.plink.ticket.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -58,6 +60,8 @@ public class FaceRepository {
     public void recordConsent(long ticketId, String email, String version, String purposes, Timestamp retainUntil) {
         jdbc.update("INSERT INTO face_consent (ticket_id, email, consent_version, purposes, retain_until) "
             + "VALUES (?, ?, ?, ?, ?)", ticketId, email, version, purposes, retainUntil);
+        ActivityLog.emit(Activity.of(Activity.FACE, "face.consent").ticket(ticketId).summary(email)
+            .put("email", email).put("version", version).put("purposes", purposes).put("retainUntil", retainUntil));
     }
 
     public Optional<Consent> activeConsent(long ticketId) {
@@ -76,6 +80,10 @@ public class FaceRepository {
         jdbc.update("INSERT INTO face_template (ticket_id, session_id, algo_version, dimensions, quality, "
             + "vector, purge_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
             ticketId, sessionId, algoVersion, dimensions, quality, vector, purgeAfter);
+        // The vector itself is biometric and stays where it is.
+        ActivityLog.emit(Activity.of(Activity.FACE, "face.template_saved").session(sessionId).ticket(ticketId)
+            .put("algo", algoVersion).put("dimensions", dimensions).put("quality", quality)
+            .put("purgeAfter", purgeAfter));
     }
 
     public Optional<Template> findByTicket(long ticketId) {
@@ -123,6 +131,11 @@ public class FaceRepository {
         jdbc.update("INSERT INTO face_attempt (session_id, ticket_id, gate_id, stage, result, score, "
             + "runner_up, liveness, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             sessionId, ticketId, gateId, stage, result, score, runnerUp, liveness, reason);
+        ActivityLog.emit(Activity.of(Activity.FACE, "face." + String.valueOf(stage).toLowerCase())
+            .ok("MATCHED".equals(result) || "ENROLLED".equals(result) || "DELETED".equals(result))
+            .result(result).session(sessionId).ticket(ticketId).gate(gateId).summary(reason)
+            .put("stage", stage).put("score", score).put("runnerUp", runnerUp).put("liveness", liveness)
+            .put("reason", reason));
     }
 
     public List<java.util.Map<String, Object>> recentAttempts(long sessionId, int limit) {

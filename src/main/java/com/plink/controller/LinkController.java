@@ -1,5 +1,7 @@
 package com.plink.controller;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.model.LinkRecipient;
 import com.plink.model.LinkView;
 import com.plink.model.ProtectedLink;
@@ -335,6 +337,11 @@ public class LinkController {
         // Opening the address is itself worth recording: it tells the sender the message
         // arrived, which the passkey event alone cannot.
         linkService.recordOpen(link.getId(), recipient.id);
+        // Every open, not only the first one the table above keeps.
+        ActivityLog.emit(Activity.of(Activity.LINK, "link.opened").summary(link.getTitle())
+            .actor("ANON", null, recipient.email).put("link", link.getId()).put("recipient", recipient.id)
+            .put("email", recipient.email).put("claimed", recipient.claimed())
+            .put("expired", link.isExpired() || recipient.revoked()).put("viewCount", link.getViewCount()));
         Map<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("shortCode", recipient.shortCode);
         // What the visitor must type to claim it, and how much of it we are willing to show.

@@ -3,6 +3,7 @@ import { AuthProvider } from '@shared/auth';
 import { AppScope } from '@shared/scope';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Header from '@shared/components/Header';
+import { Tracker } from '@shared/track';
 import Footer from '@shared/components/Footer';
 import TicketPage from './components/TicketPage';
 import GateScanner from './components/GateScanner';
@@ -24,6 +25,7 @@ export default function App() {
     <AppScope value="ticket">
     <AuthProvider>
     <BrowserRouter>
+      <Tracker app="ticket" />
       <Header />
       <main>
         <Routes>

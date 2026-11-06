@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.repository.EmailOtpRepository;
 import org.springframework.http.HttpStatus;
@@ -55,12 +57,26 @@ public class EmailOtpService {
         String code = String.format("%06d", random.nextInt(1_000_000));
         repository.insert(email, purpose, hash(email, purpose, code),
             Timestamp.from(Instant.now().plus(TTL)));
+        ActivityLog.emit(Activity.of(Activity.AUTH, "otp.sent").summary(email).put("email", email)
+            .put("purpose", purpose));
         mail.send(email, subject, intro + "\n\n인증번호: " + code + "\n\n"
             + TTL.toMinutes() + "분 안에 입력해 주세요. 요청하지 않았다면 이 메일을 무시하세요.");
     }
 
     /** Consumes the code on success; counts the attempt on failure. */
     public void verify(String email, String purpose, String code) {
+        try {
+            check(email, purpose, code);
+        } catch (ResponseStatusException refused) {
+            ActivityLog.emit(Activity.of(Activity.AUTH, "otp.verify").failed(String.valueOf(refused.getStatusCode().value()))
+                .summary(email + " · " + refused.getReason()).put("email", email).put("purpose", purpose).always());
+            throw refused;
+        }
+        ActivityLog.emit(Activity.of(Activity.AUTH, "otp.verify").summary(email).put("email", email)
+            .put("purpose", purpose));
+    }
+
+    private void check(String email, String purpose, String code) {
         if (code == null || !code.trim().matches("\\d{6}")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "6자리 인증번호를 입력해 주세요.");
         }

@@ -1,5 +1,7 @@
 package com.plink.ticket.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.model.Transfer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -39,6 +41,9 @@ public class TransferRepository {
             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ticketId, fromEmail, toEmail, toTokenHmac, toTokenCipher, policySnapshot, ip, userAgent,
             expiresAt);
+        ActivityLog.emit(Activity.of(Activity.INVITE, "transfer.requested").ticket(ticketId)
+            .summary(fromEmail + " → " + toEmail).put("from", fromEmail).put("to", toEmail)
+            .put("expiresAt", expiresAt));
     }
 
     public Optional<Transfer> findPendingByTicket(long ticketId) {

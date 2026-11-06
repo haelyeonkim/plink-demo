@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -32,6 +34,7 @@ public class MailEmailSender implements EmailSender {
         if (sender == null) {
             log.warn("SMTP is not configured; mail was not delivered.\n  to: {}\n  subject: {}\n  body:\n{}",
                 to, subject, body);
+            record(to, subject, false, "not_configured", null);
             return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -45,10 +48,18 @@ public class MailEmailSender implements EmailSender {
             // A relay that is down must not lose the ticket that was just issued: the
             // link exists, and the console says it has to be delivered by hand.
             log.error("SMTP refused a message to {}: {}", to, refused.getMessage());
+            record(to, subject, false, "refused", refused.getMessage());
             return false;
         }
         log.info("Sent \"{}\" to {}", subject, to);
+        record(to, subject, true, "sent", null);
         return true;
+    }
+
+    /** Every message, delivered or not. Bodies carry personal links, so they stay out. */
+    private static void record(String to, String subject, boolean sent, String result, String error) {
+        ActivityLog.emit(Activity.of(Activity.DELIVERY, "mail.send").ok(sent).result(result)
+            .summary(to + " · " + subject).put("to", to).put("subject", subject).put("error", error).always());
     }
 
     @Override public boolean configured() { return mailer.getIfAvailable() != null; }

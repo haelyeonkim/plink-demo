@@ -1,5 +1,7 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
@@ -112,6 +114,8 @@ public class InviteService {
                 "초대받은 입장권은 다시 초대할 수 없어서 초대 인원을 정할 수 없어요.");
         }
         ticketRows.updateInviteQuota(ticket.id, quota);
+        ActivityLog.emit(Activity.of(Activity.INVITE, "invite.quota_set").session(ticket.sessionId).ticket(ticket.id)
+            .put("quota", quota).put("before", ticket.inviteQuota));
         ticket.inviteQuota = quota;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketId", ticket.id);
@@ -135,6 +139,9 @@ public class InviteService {
             ticketRows.updateInviteQuota(ticket.id, quota);
             changed++;
         }
+        ActivityLog.emit(Activity.of(Activity.INVITE, "invite.quotas_set").session(sessionId)
+            .summary(changed + "장 변경").put("quota", quota).put("tickets", ticketIds).put("changed", changed)
+            .put("skipped", skipped));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("changed", changed);
         result.put("skipped", skipped);
@@ -345,6 +352,8 @@ public class InviteService {
         String callName = callName(name);
         Ticket invited = ownInvite(holder, ticketId);
         ticketRows.updateInviteName(invited.id, callName);
+        ActivityLog.emit(Activity.of(Activity.INVITE, "invite.renamed").session(holder.sessionId).ticket(holder.id)
+            .summary(callName).put("invited", invited.id).put("name", callName).put("before", invited.inviteName));
         return member(holder, ticketRows.findById(invited.id).orElseThrow(), holder, null, false);
     }
 
@@ -455,6 +464,9 @@ public class InviteService {
         }
         tickets.delete(invited.id, false);
         ticketRows.countInviteCancelled(ticket.id);
+        ActivityLog.emit(Activity.of(Activity.INVITE, "invite.cancelled").session(ticket.sessionId).ticket(ticket.id)
+            .summary(address(invited)).put("invited", invited.id).put("email", address(invited))
+            .put("cancelledBefore", ticket.invitesCancelled));
         String recipient = address(invited);
         String eventName = tickets.requireSession(invited.sessionId).name;
         AfterCommit.run(() -> mail.send(recipient, "[" + eventName + "] 초대가 취소되었어요",

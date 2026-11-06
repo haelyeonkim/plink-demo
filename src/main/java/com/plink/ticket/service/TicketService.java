@@ -1,5 +1,8 @@
 package com.plink.ticket.service;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityContext;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
@@ -159,6 +162,15 @@ public class TicketService {
                 invitation.inviterMasked() + "님이 초대했어요.\n\n"
                 + "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + issued.url + claimNote);
         tickets.recordDelivery(issued.id, delivered);
+        ActivityLog.emit(Activity.of(invitation == null ? Activity.TICKET : Activity.INVITE,
+                invitation == null ? "ticket.issued" : "invite.issued")
+            .session(sessionId).ticket(issued.id).result(delivered).summary(issued.recipient)
+            .put("ticketRef", issued.ref).put("email", issued.recipient).put("phone", issued.phone)
+            .put("seat", issued.seat).put("tier", tier).put("values", values.isEmpty() ? null : values)
+            .put("notify", notify).put("deliveredVia", delivered)
+            .put("inviter", invitation == null ? null : invitation.inviterId())
+            .put("inviteName", invitation == null ? null : invitation.name())
+            .put("claimExpiresAt", issued.claimExpiresAt));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketId", issued.id);
@@ -201,6 +213,8 @@ public class TicketService {
             + "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다. 처음 받은 링크와 같은 링크예요.\n\n"
             + url + claimNote());
         if (mailed) tickets.recordDelivery(invited.id, "EMAIL");
+        ActivityLog.emit(Activity.of(Activity.INVITE, "invite.resent").ok(mailed).session(invited.sessionId)
+            .ticket(invited.id).summary(invited.issuedToEmail).put("email", invited.issuedToEmail));
         return mailed;
     }
 
@@ -293,6 +307,9 @@ public class TicketService {
             "아래 링크를 휴대폰에서 열고 등록해 주세요. 이전 링크는 더 이상 사용할 수 없습니다.\n\n" + reissued.url)
             : "LINK";
         tickets.recordDelivery(ticket.id, delivered);
+        ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.reissued_by_console").session(ticket.sessionId)
+            .ticket(ticket.id).result(delivered).summary(reissued.recipient)
+            .put("ticketRef", ticket.ticketRef).put("email", reissued.recipient).put("notify", notify));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketId", ticket.id);
@@ -371,10 +388,16 @@ public class TicketService {
                 if (mailed || texted) {
                     tickets.recordDelivery(ticket.id, mailed && texted ? "EMAIL+SMS" : mailed ? "EMAIL" : "SMS");
                     sent++;
+                    ActivityLog.emit(Activity.of(Activity.TICKET, first ? "ticket.mailed_first" : "ticket.resent")
+                        .session(sessionId).ticket(ticket.id).summary(recipient)
+                        .put("ticketRef", ticket.ticketRef).put("email", recipient).put("mailed", mailed)
+                        .put("texted", texted));
                     continue;
                 }
                 reason = "메일·문자를 보내지 못했어요.";
             }
+            ActivityLog.emit(Activity.of(Activity.TICKET, first ? "ticket.mailed_first" : "ticket.resent")
+                .failed("skipped").session(sessionId).ticket(ticketId).summary(reason).put("reason", reason));
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("ticketId", ticketId);
             row.put("ticketRef", ticket == null ? null : ticket.ticketRef);
@@ -449,6 +472,10 @@ public class TicketService {
             "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
             + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요."));
 
+        ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.reissued_by_holder").session(ticket.sessionId)
+            .ticket(ticket.id).summary(recipient).put("email", recipient)
+            .put("reissueCount", ticket.reissueCount + 1));
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reissued", true);
         result.put("sentTo", mask(recipient));
@@ -476,6 +503,10 @@ public class TicketService {
         }
         presentations.revokeFor(ticket.id);
         tickets.delete(ticket.id);
+        ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.deleted").session(ticket.sessionId).ticket(ticket.id)
+            .summary(ticket.issuedToEmail).put("ticketRef", ticket.ticketRef).put("email", ticket.issuedToEmail)
+            .put("holder", ticket.holderEmail).put("status", ticket.status).put("seat", ticket.seat)
+            .put("tier", ticket.tier).put("movements", movements).put("force", force));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("deleted", true);
         result.put("ticketId", ticket.id);
@@ -511,6 +542,9 @@ public class TicketService {
                 transferring ? "TRANSFER_PENDING" : ticket.claimed() ? "BOUND" : "ISSUED");
         }
         Ticket updated = tickets.findById(ticketId).orElseThrow();
+        ActivityLog.emit(Activity.of(Activity.TICKET, revoked ? "ticket.revoked" : "ticket.restored")
+            .session(updated.sessionId).ticket(updated.id).result(updated.status)
+            .put("ticketRef", updated.ticketRef).put("before", ticket.status));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ticketId", updated.id);
         result.put("ticketRef", updated.ticketRef);
@@ -548,6 +582,8 @@ public class TicketService {
             ticket = tickets.findById(claim.ticketId).orElseThrow(this::notFound);
         }
         if (ticket.sessionId != sessionId) throw notFound();
+        ActivityContext.holder(ticket.id, ticket.sessionId,
+            claim != null ? claim.toEmail : ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail);
         if (ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
         }

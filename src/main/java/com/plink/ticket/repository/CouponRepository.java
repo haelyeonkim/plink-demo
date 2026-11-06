@@ -1,5 +1,7 @@
 package com.plink.ticket.repository;
 
+import com.plink.activity.Activity;
+import com.plink.activity.ActivityLog;
 import com.plink.ticket.model.Coupon;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -41,6 +43,13 @@ public class CouponRepository {
         }
         jdbc.batchUpdate("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
             + "VALUES (?, ?, ?, ?, ?, ?)", rows);
+        issued(sessionId, boothId, offerId, ticketId, title, count);
+    }
+
+    private static void issued(long sessionId, long boothId, long offerId, long ticketId, String title, int count) {
+        ActivityLog.emit(Activity.of(Activity.BOOTH, "coupon.issued").session(sessionId).booth(boothId)
+            .ticket(ticketId).summary(title + " × " + count).put("offer", offerId).put("title", title)
+            .put("count", count));
     }
 
     /** One row to add: which ticket, and how many of the offer. */
@@ -58,6 +67,9 @@ public class CouponRepository {
         if (rows.isEmpty()) return;
         jdbc.batchUpdate("INSERT INTO coupon (session_id, booth_id, offer_id, ticket_id, title, detail) "
             + "VALUES (?, ?, ?, ?, ?, ?)", rows);
+        for (Grant grant : grants) {
+            if (grant.count() > 0) issued(sessionId, boothId, offerId, grant.ticketId(), title, grant.count());
+        }
     }
 
     /**
@@ -141,8 +153,10 @@ public class CouponRepository {
 
     /** Marked used by the organiser rather than read at a booth: no terminal to name. */
     public boolean redeemByStaff(long id, Timestamp at) {
-        return jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = ?, redeemed_gate = NULL "
+        boolean changed = jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = ?, redeemed_gate = NULL "
             + "WHERE id = ? AND status = 'ISSUED'", at, id) > 0;
+        changed(id, "coupon.redeemed_by_staff", changed, null);
+        return changed;
     }
 
     public long count(long sessionId, CouponFilter filter) {
@@ -207,22 +221,37 @@ public class CouponRepository {
 
     /** Voids a coupon that is not void yet; false when there was nothing to change. */
     public boolean voidCoupon(long id) {
-        return jdbc.update("UPDATE coupon SET status = 'VOID' WHERE id = ? AND status <> 'VOID'", id) > 0;
+        boolean changed = jdbc.update("UPDATE coupon SET status = 'VOID' WHERE id = ? AND status <> 'VOID'", id) > 0;
+        changed(id, "coupon.voided", changed, null);
+        return changed;
     }
 
     /** Gives a void coupon back as unused, with no trace of a hand-over it no longer stands for. */
     public boolean restore(long id) {
-        return jdbc.update("UPDATE coupon SET status = 'ISSUED', redeemed_at = NULL, redeemed_gate = NULL "
+        boolean changed = jdbc.update("UPDATE coupon SET status = 'ISSUED', redeemed_at = NULL, redeemed_gate = NULL "
             + "WHERE id = ? AND status = 'VOID'", id) > 0;
+        changed(id, "coupon.restored", changed, null);
+        return changed;
     }
 
     public void redeem(long id, String gateId, Timestamp at) {
-        jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = ?, redeemed_gate = ? "
-            + "WHERE id = ? AND status = 'ISSUED'", at, gateId, id);
+        boolean changed = jdbc.update("UPDATE coupon SET status = 'REDEEMED', redeemed_at = ?, redeemed_gate = ? "
+            + "WHERE id = ? AND status = 'ISSUED'", at, gateId, id) > 0;
+        changed(id, "coupon.redeemed", changed, gateId);
     }
 
     public void delete(long id) {
+        changed(id, "coupon.deleted", true, null);
         jdbc.update("DELETE FROM coupon WHERE id = ?", id);
+    }
+
+    /** A coupon's turn, with what the coupon was, read while it is still there. */
+    private void changed(long id, String action, boolean changed, String gateId) {
+        Activity row = Activity.of(Activity.BOOTH, action).ok(changed).result(changed ? null : "unchanged")
+            .gate(gateId).put("coupon", id);
+        findById(id).ifPresent(c -> row.session(c.sessionId).booth(c.boothId).ticket(c.ticketId)
+            .summary(c.title).put("title", c.title).put("status", c.status));
+        ActivityLog.emit(row);
     }
 
 }
