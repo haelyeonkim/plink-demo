@@ -126,7 +126,9 @@ bash scripts/run-dev.sh
 
 ## 6. 수정한 내용을 PR로 올리기
 
-이 저장소는 **작업 브랜치 생성 → 수정·검증 → PR → 사람의 Approve → merge** 순서로 작업합니다. `main`에 직접 커밋하거나 push하지 않습니다. Codex와 Claude에도 같은 규칙이 적용됩니다.
+이 저장소에서 `main`으로 병합할 때는 **작업 브랜치 생성 → 수정·검증 → PR → 사람의 Approve → merge** 순서로 작업합니다. `main`에 직접 커밋하거나 push하지 않습니다. Codex와 Claude에도 같은 규칙이 적용됩니다.
+
+PR의 대상(base) 브랜치가 `main`이 아닌 경우에는 검증과 필수 체크를 통과하면 사람의 Approve나 별도의 병합 허가 없이 요청받은 작업 범위에서 병합할 수 있습니다. 이 조건은 작업 브랜치 이름이 아니라 변경을 받는 대상 브랜치를 기준으로 적용합니다.
 
 | 용어 | 의미 |
 | --- | --- |
@@ -169,8 +171,8 @@ GitHub 저장소에서 **Compare & pull request** 또는 **Pull requests → New
 
 1. `base`는 `main`, `compare`는 자신이 만든 작업 브랜치로 지정합니다.
 2. 변경 이유, 변경 내용, 검증 결과를 작성하고 PR을 만듭니다.
-3. 사람에게 리뷰를 받고 **Approve**를 기다립니다. 수정 요청이 있으면 같은 브랜치에 추가 커밋을 push합니다.
-4. 승인과 필요한 검증이 완료된 뒤 병합 권한이 있는 사람이 merge합니다. AI는 명시적인 병합 허가 없이 merge하지 않습니다.
+3. `main` 대상 PR은 사람에게 리뷰를 받고 **Approve**를 기다립니다. 수정 요청이 있으면 같은 브랜치에 추가 커밋을 push합니다.
+4. `main` 대상 PR은 승인과 필요한 검증이 완료된 뒤 병합 권한이 있는 사람이 merge합니다. AI는 `main` 대상 PR을 명시적인 병합 허가 없이 merge하지 않습니다.
 5. 병합 후 로컬에서 `git switch main`, `git pull --ff-only origin main`으로 결과를 받습니다.
 
 세부 협업 규칙은 [AGENTS.md](AGENTS.md), Claude의 진입 문서는 [CLAUDE.md](CLAUDE.md)를 참고하세요.
