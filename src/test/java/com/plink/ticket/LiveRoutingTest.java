@@ -133,4 +133,105 @@ class LiveRoutingTest {
             events.destroy();
         }
     }
+
+    /** Stands in for the database: whatever one copy sends, every started copy hears, itself included. */
+    private static final class SharedRelay {
+        final java.util.List<java.util.function.Consumer<String>> receivers = new java.util.ArrayList<>();
+
+        com.plink.ticket.live.LiveRelay copy() {
+            return new com.plink.ticket.live.LiveRelay() {
+                @Override public void start(java.util.function.Consumer<String> receiver) { receivers.add(receiver); }
+                @Override public void send(String message) { receivers.forEach(receiver -> receiver.accept(message)); }
+            };
+        }
+    }
+
+    @Test
+    void aScanOnOneCopyReachesThePhoneConnectedToAnother() throws Exception {
+        SharedRelay relay = new SharedRelay();
+        LiveEvents gateSide = new LiveEvents(Runnable::run);
+        LiveEvents phoneSide = new LiveEvents(Runnable::run);
+        gateSide.setRelay(relay.copy());
+        phoneSide.setRelay(relay.copy());
+        WebSocketSession consoleHere = socket(null);
+        WebSocketSession mine = socket(7L);
+        WebSocketSession somebodyElse = socket(9L);
+        gateSide.join(1L, consoleHere);
+        phoneSide.join(1L, mine);
+        phoneSide.join(1L, somebodyElse);
+
+        gateSide.publishForTicket(1L, 7L, "MOVEMENT", Map.of("ticketRef", "AAAA-BBBB"));
+
+        verify(mine).sendMessage(argThat((TextMessage m) -> m.getPayload().contains("\"type\":\"MOVEMENT\"")
+            && m.getPayload().contains("AAAA-BBBB")));
+        verify(somebodyElse, never()).sendMessage(any(TextMessage.class));
+        // Its own message comes back through the relay and is not delivered twice.
+        verify(consoleHere, times(1)).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void aBroadcastReachesEveryCopyButOnlyItsOwnEvent() throws Exception {
+        SharedRelay relay = new SharedRelay();
+        LiveEvents one = new LiveEvents(Runnable::run);
+        LiveEvents two = new LiveEvents(Runnable::run);
+        one.setRelay(relay.copy());
+        two.setRelay(relay.copy());
+        WebSocketSession there = socket(7L);
+        WebSocketSession otherEvent = socket(8L);
+        two.join(1L, there);
+        two.join(2L, otherEvent);
+
+        one.publish(1L, "CHAT", Map.of("lastId", 3));
+
+        verify(there).sendMessage(any(TextMessage.class));
+        verify(otherEvent, never()).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void aTicketThatChangedHandsIsCutOffOnEveryCopy() throws Exception {
+        SharedRelay relay = new SharedRelay();
+        LiveEvents one = new LiveEvents(Runnable::run);
+        LiveEvents two = new LiveEvents(Runnable::run);
+        one.setRelay(relay.copy());
+        two.setRelay(relay.copy());
+        WebSocketSession oldPhone = socket(7L);
+        WebSocketSession keep = socket(9L);
+        two.join(1L, oldPhone);
+        two.join(1L, keep);
+
+        one.dropTicket(7L);
+
+        verify(oldPhone).close();
+        verify(keep, never()).close();
+    }
+
+    @Test
+    void nothingIsDeliveredTwiceWhenARelayedMessageWaitsForACommit() throws Exception {
+        SharedRelay relay = new SharedRelay();
+        LiveEvents one = new LiveEvents(Runnable::run);
+        LiveEvents two = new LiveEvents(Runnable::run);
+        one.setRelay(relay.copy());
+        two.setRelay(relay.copy());
+        WebSocketSession there = socket(7L);
+        two.join(1L, there);
+        begin();
+        try {
+            one.publish(1L, "CHAT", Map.of("lastId", 3));
+            verify(there, never()).sendMessage(any(TextMessage.class));
+            TransactionSynchronizationUtils.triggerAfterCommit();
+        } finally {
+            end();
+        }
+        verify(there, times(1)).sendMessage(any(TextMessage.class));
+    }
+
+    /** Stage and production share a database; NOTIFY does not know about schemas. */
+    @Test
+    void eachSchemaListensOnItsOwnChannel() {
+        org.junit.jupiter.api.Assertions.assertEquals("plink_live_public",
+            com.plink.ticket.live.PostgresLiveRelay.channelFor("public"));
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+            com.plink.ticket.live.PostgresLiveRelay.channelFor("public"),
+            com.plink.ticket.live.PostgresLiveRelay.channelFor("stage"));
+    }
 }

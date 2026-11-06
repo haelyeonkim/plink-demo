@@ -115,10 +115,9 @@
             <scope>runtime</scope>
         </dependency>
         <dependency>
-            <!-- Supabase is managed PostgreSQL. -->
+            <!-- Supabase is managed PostgreSQL. Compile scope for the live relay's LISTEN. -->
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
     </dependencies>
 
