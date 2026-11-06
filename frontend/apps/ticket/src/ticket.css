@@ -2092,21 +2092,12 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .venue-title { display: flex; flex-direction: column; gap: 2px; }
 .venue-title span { font-size: 13px; color: var(--muted); font-weight: 600; }
 .venue-title h2 { margin: 0; font-size: 24px; }
+.venue-title p { margin: 2px 0 0; font-size: 14px; color: var(--muted); }
 .venue-head { display: flex; align-items: center; gap: 2px; margin-left: -10px; }
 .venue-head h2 { margin: 0; font-size: 20px; }
 .venue-back {
   width: 44px; height: 44px; border: 0; background: none; color: var(--ink); cursor: pointer;
   display: flex; align-items: center; justify-content: center; border-radius: 10px;
-}
-.venue-address {
-  display: flex; flex-direction: column; gap: 12px; padding: 16px;
-  background: white; border: 1px solid var(--line); border-radius: 14px;
-}
-.venue-address b { font-size: 16px; }
-.venue-address .button-row { display: flex; gap: 8px; margin: 0; }
-.venue-address .button-row > * {
-  flex: 1 1 0; width: auto; margin: 0; min-height: 44px; display: inline-flex; align-items: center;
-  justify-content: center; text-decoration: none;
 }
 .venue-now {
   display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; font: inherit; color: var(--ink);
