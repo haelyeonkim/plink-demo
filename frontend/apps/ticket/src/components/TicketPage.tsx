@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, presentTicket, reissueTicket, requestOtp, verifyOtp,
-  type CommunitySummary, type InviteView, type TicketCoupon, type TicketView,
+  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket, requestOtp, verifyOtp,
+  type CommunitySummary, type InviteView, type TicketCoupon, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
@@ -20,15 +20,17 @@ import { clockText, reducedMotion } from '../motion';
 import CeremonySeal, { type Ceremony, type SealState } from './CeremonySeal';
 import TicketChat from './TicketChat';
 import TicketAds from './TicketAds';
+import TicketVenue from './TicketVenue';
 import TicketGroup, { GiftIcon, GroupTile, groupRelevant } from './TicketGroup';
 
 /**
  * The ticket's own screens, along the bottom once it is registered and open. The group is
  * opened from its tile on the ticket rather than a tab: most tickets have none, and the
- * bar keeps four buttons that fit a phone.
+ * bar keeps to the buttons that fit a phone. The venue tab is there only when the
+ * organiser has shown something on it.
  */
-type View = 'ticket' | 'coupons' | 'chat' | 'ads' | 'group';
-const VIEWS: View[] = ['ticket', 'coupons', 'chat', 'ads', 'group'];
+type View = 'ticket' | 'coupons' | 'chat' | 'ads' | 'venue' | 'group';
+const VIEWS: View[] = ['ticket', 'coupons', 'chat', 'ads', 'venue', 'group'];
 
 /** What this phone has already read, so the tabs can say when there is more. */
 interface Seen { chat: number; ads: number; alert: number }
@@ -141,6 +143,10 @@ export default function TicketPage() {
   const [chatTick, setChatTick] = useState(0);
   const [adsTick, setAdsTick] = useState(0);
   const [counts, setCounts] = useState<ChatCounts | null>(null);
+  // The venue tab: read once the ticket is open here, and again when the organiser changes it.
+  const [venue, setVenue] = useState<VenueView | null>(null);
+  const [venueTick, setVenueTick] = useState(0);
+  const nudgeVenue = useCoalesced(useCallback(() => setVenueTick(value => value + 1), []), 400, 400);
   const nudgeRoom = useCoalesced(useCallback(() => setRoomTick(value => value + 1), []), 400, 400);
   const nudgeChat = useCoalesced(useCallback(() => setChatTick(value => value + 1), []), 400, 400);
   const nudgeAds = useCoalesced(useCallback(() => setAdsTick(value => value + 1), []), 400, 400);
@@ -228,9 +234,20 @@ export default function TicketPage() {
       if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE'].includes(message.type)) nudgeChat();
       if (message.type === 'ADS') nudgeAds();
       if (['CHAT', 'CHAT_LIKE', 'CHAT_HIDE', 'ADS', 'ALERT'].includes(message.type)) nudgeRoom();
+      if (message.type === 'VENUE') nudgeVenue();
     });
     return () => live.close();
-  }, [sessionId, token, showing, nudgeTicket, nudgeChat, nudgeAds, nudgeRoom]);
+  }, [sessionId, token, showing, nudgeTicket, nudgeChat, nudgeAds, nudgeRoom, nudgeVenue]);
+
+  // Only the latest read may land, as with the room's summary.
+  const venueSeq = useRef(0);
+  useEffect(() => {
+    if (!showing) return;
+    const seq = ++venueSeq.current;
+    fetchVenue(sessionId, token)
+      .then(next => { if (seq === venueSeq.current) setVenue(next); })
+      .catch(() => { if (seq === venueSeq.current) setVenue(null); });
+  }, [sessionId, token, showing, venueTick]);
 
   const presenceKey = ticket?.presence ? `${ticket.presence.inside}` : '';
   // Only the latest summary may land: an older one arriving late would bring back a
@@ -623,6 +640,7 @@ export default function TicketPage() {
     </aside>
   );
 
+  const venueShown = (venue?.sections.length ?? 0) > 0;
   // The group is reached from the ticket and is part of it: the ticket's tab stays lit.
   const on = (key: View) => view === key || (key === 'ticket' && view === 'group');
   const tabBar = tabs && (
@@ -633,6 +651,8 @@ export default function TicketPage() {
           liveCoupons > 0 ? String(liveCoupons) : null, false],
         ['chat', '채팅', 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z', newChat ? '새' : null, !chatOpen],
         ['ads', '알림판', 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8', newAds ? '새' : null, !entered],
+        // Open from registration, not entry: the way there and parking are needed first.
+        ...(venueShown ? [['venue', '행사장', 'M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z', null, false]] : []),
       ] as Array<[View, string, string, string | null, boolean]>).map(([key, label, icon, badge, locked]) => (
         <button key={key} type="button" aria-current={on(key) ? 'page' : undefined}
           className={on(key) ? 'on' : ''} disabled={locked}
@@ -663,6 +683,9 @@ export default function TicketPage() {
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
+          {view === 'venue' && (venueShown
+            ? <TicketVenue sessionId={sessionId} token={token} eventName={ticket.event.name} view={venue!} />
+            : <p className="console-none">{venue ? '아직 준비된 행사장 안내가 없어요.' : '행사장 안내를 불러오고 있어요.'}</p>)}
           {view === 'group' && (invites
             ? <TicketGroup sessionId={sessionId} token={token} view={invites} onChange={loadInvites}
                 onBack={() => go('ticket')} startInviting={params.get('invite') === '1'} onInviteShown={inviteShown} />

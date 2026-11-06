@@ -412,3 +412,35 @@ export async function resendInvite(sessionId: string, token: string,
 export async function cancelInvite(sessionId: string, token: string, ticketId: number) {
   return read(await mutate(`${inviteBase(sessionId, token)}/${ticketId}`, { method: 'DELETE' }));
 }
+
+// ---- The venue tab ----
+
+export interface VenueFloor { name: string; imageId: string | null }
+export interface VenuePlace {
+  name: string; where: string; floor: number | null; x: number | null; y: number | null; tags: string[];
+}
+export interface VenueDay { label: string; date: string | null }
+export interface VenueItem {
+  day: number; start: string; end: string | null; stage: number | null; title: string; note: string;
+}
+
+/** One section of the venue tab; what `content` holds depends on its kind. */
+export type VenueSection = { id: number; title: string } & (
+  | { kind: 'MAP'; content: { floors: VenueFloor[] } }
+  | { kind: 'PLACES'; content: { mapId: number | null; tags: string[]; places: VenuePlace[] } }
+  | { kind: 'TEXT'; content: { body: string } }
+  | { kind: 'TIMETABLE'; content: { days: VenueDay[]; stages: string[]; items: VenueItem[] } }
+  | { kind: 'LINK'; content: { url: string; description: string } }
+);
+
+export interface VenueView { venue: string | null; sections: VenueSection[] }
+
+const venueBase = (sessionId: string, token: string) => `${ticketBase(sessionId, token)}/venue`;
+
+export async function fetchVenue(sessionId: string, token: string): Promise<VenueView> {
+  return read(await fetch(venueBase(sessionId, token))) as Promise<VenueView>;
+}
+
+export function venueImageUrl(sessionId: string, token: string, imageId: string): string {
+  return `${venueBase(sessionId, token)}/images/${imageId}`;
+}

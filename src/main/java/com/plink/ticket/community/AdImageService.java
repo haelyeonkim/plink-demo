@@ -56,21 +56,7 @@ public class AdImageService {
 
     /** Stores a photo for the console ({@code boothId} null) or for one booth's terminal. */
     public String upload(long sessionId, Long boothId, MultipartFile file) {
-        if (file == null || file.isEmpty() || file.getSize() > MAX_UPLOAD) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사진은 15MB 이하의 JPEG 또는 PNG로 올려 주세요.");
-        }
-        byte[] bytes;
-        try {
-            if (!drawing.tryAcquire(15, TimeUnit.SECONDS)) {
-                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "사진을 올리는 사람이 많아요. 잠시 뒤에 다시 올려 주세요.");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "사진을 올리지 못했어요. 다시 올려 주세요.");
-        }
-        try { bytes = redraw(file.getBytes()); }
-        catch (IOException e) { throw unreadable(); }
-        finally { drawing.release(); }
+        byte[] bytes = draw(file, MAX_EDGE);
         String id = UUID.randomUUID().toString();
         String key = id + ".jpg";
         storage.put(key, bytes, "image/jpeg");
@@ -83,7 +69,31 @@ public class AdImageService {
         return id;
     }
 
-    private byte[] redraw(byte[] original) throws IOException {
+    /**
+     * An uploaded picture drawn again as a JPEG no longer than {@code maxEdge} on its long
+     * side: only pixels survive. Shared with the venue's floor plans, which need more detail
+     * than a board photo but the same stripping.
+     */
+    public byte[] draw(MultipartFile file, int maxEdge) {
+        if (file == null || file.isEmpty() || file.getSize() > MAX_UPLOAD) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "사진은 15MB 이하의 JPEG 또는 PNG로 올려 주세요.");
+        }
+        byte[] bytes;
+        try {
+            if (!drawing.tryAcquire(15, TimeUnit.SECONDS)) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "사진을 올리는 사람이 많아요. 잠시 뒤에 다시 올려 주세요.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "사진을 올리지 못했어요. 다시 올려 주세요.");
+        }
+        try { bytes = redraw(file.getBytes(), maxEdge); }
+        catch (IOException e) { throw unreadable(); }
+        finally { drawing.release(); }
+        return bytes;
+    }
+
+    private byte[] redraw(byte[] original, int maxEdge) throws IOException {
         try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(original))) {
             var readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext()) throw unreadable();
@@ -98,13 +108,13 @@ public class AdImageService {
                 }
                 // Read every n-th pixel when the photo is at least twice what is kept: a 40MP
                 // picture decoded whole is 160MB of pixels to throw nearly all of away. The
-                // step leaves the long edge at or above MAX_EDGE, so the final scale still
+                // step leaves the long edge at or above maxEdge, so the final scale still
                 // draws down rather than up.
                 ImageReadParam read = reader.getDefaultReadParam();
-                int step = Math.max(1, Math.max(width, height) / MAX_EDGE);
+                int step = Math.max(1, Math.max(width, height) / maxEdge);
                 if (step > 1) read.setSourceSubsampling(step, step, 0, 0);
                 BufferedImage source = reader.read(0, read);
-                double scale = Math.min(1.0, (double) MAX_EDGE / Math.max(width, height));
+                double scale = Math.min(1.0, (double) maxEdge / Math.max(width, height));
                 int w = Math.max(1, (int) Math.round(width * scale)), h = Math.max(1, (int) Math.round(height * scale));
                 BufferedImage target = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
                 Graphics2D g = target.createGraphics();
