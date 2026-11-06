@@ -13,7 +13,7 @@ export interface ImportField {
 export interface ImportResult {
   issued: number;
   failed: number;
-  results: Array<{ row: number; email: string; ok: boolean; error?: string; ticketRef?: string }>;
+  results: Array<{ row: number; email: string; ok: boolean; error?: string; ticketId?: number; ticketRef?: string }>;
 }
 
 /** Why a row will be set aside before anything is sent. */

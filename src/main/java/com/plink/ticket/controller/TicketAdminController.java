@@ -240,6 +240,7 @@ public class TicketAdminController {
                     blankToNull(row.get("seat")), blankToNull(row.get("tier")),
                     blankToNull(row.get("phone")), notify, fieldValues(id, row));
                 outcome.put("ok", true);
+                outcome.put("ticketId", ticket.get("ticketId"));
                 outcome.put("ticketRef", ticket.get("ticketRef"));
                 outcome.put("deliveredVia", ticket.get("deliveredVia"));
                 issued++;
@@ -289,7 +290,9 @@ public class TicketAdminController {
     /** Sends the chosen tickets their existing links again, without minting new ones. */
     @PostMapping("/sessions/{id}/tickets/resend")
     public Map<String, Object> resendLinks(@PathVariable long id, @RequestBody Map<String, Object> body) {
-        return ticketService.resendLinks(id, ticketIds(body));
+        // "first": the list was issued without mail and is being sent now, so it reads as
+        // the ticket arriving rather than as a reminder.
+        return ticketService.resendLinks(id, ticketIds(body), body != null && Boolean.TRUE.equals(body.get("first")));
     }
 
     /** Switches the chosen tickets off, or back on; ones already that way are left alone. */

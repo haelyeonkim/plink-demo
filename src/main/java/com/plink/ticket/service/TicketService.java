@@ -340,6 +340,11 @@ public class TicketService {
      * that is off, or was issued before links were kept, is skipped and said so.
      */
     public Map<String, Object> resendLinks(long sessionId, java.util.List<Long> ticketIds) {
+        return resendLinks(sessionId, ticketIds, false);
+    }
+
+    /** @param first the tickets were issued without mail and this is their first: worded as the ticket arriving. */
+    public Map<String, Object> resendLinks(long sessionId, java.util.List<Long> ticketIds, boolean first) {
         EventSession session = requireSession(sessionId);
         int sent = 0;
         java.util.List<Map<String, Object>> skipped = new java.util.ArrayList<>();
@@ -355,9 +360,13 @@ public class TicketService {
             if (reason == null) {
                 String url = urlFor(sessionId, token);
                 String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
-                boolean mailed = mail.send(recipient, "[" + session.name + "] 입장권 링크를 다시 보내 드려요",
-                    "아래 링크를 휴대폰에서 열어 주세요. 처음 받은 링크와 같은 링크입니다.\n\n" + url
-                    + "\n\n링크를 다른 사람에게 전달하지 마세요.");
+                boolean mailed = first
+                    ? mail.send(recipient, "[" + session.name + "] 입장권이 발급되었어요",
+                        "아래 링크를 휴대폰에서 열고 본인 확인을 마치면 입장권이 활성화됩니다.\n\n" + url
+                        + "\n\n링크를 다른 사람에게 전달하지 마세요.")
+                    : mail.send(recipient, "[" + session.name + "] 입장권 링크를 다시 보내 드려요",
+                        "아래 링크를 휴대폰에서 열어 주세요. 처음 받은 링크와 같은 링크입니다.\n\n" + url
+                        + "\n\n링크를 다른 사람에게 전달하지 마세요.");
                 boolean texted = ticket.phone != null && sms.send(ticket.phone, smsText(session, url));
                 if (mailed || texted) {
                     tickets.recordDelivery(ticket.id, mailed && texted ? "EMAIL+SMS" : mailed ? "EMAIL" : "SMS");

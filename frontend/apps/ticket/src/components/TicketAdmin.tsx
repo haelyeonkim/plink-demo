@@ -7,7 +7,7 @@ import IssuedLink from './IssuedLink';
 import ConfirmDialog from '@shared/components/ConfirmDialog';
 import CatalogEditor from './CatalogEditor';
 import type { ImportResult } from '@shared/components/BulkImport';
-import IssuePanel, { type IssueInput, type IssueMode } from './IssuePanel';
+import IssuePanel, { type IssueInput, type IssueMode, type MailedResult } from './IssuePanel';
 import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
@@ -477,6 +477,16 @@ export default function TicketAdmin() {
     }));
     await loadSession(selected!);
     return result;
+  };
+
+  /** Mails a list issued without mail, once the operator has looked at it. */
+  const mailIssued = async (ticketIds: number[]): Promise<MailedResult> => {
+    const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets/resend`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, first: true }),
+    }));
+    await loadSession(selected!);
+    return result as MailedResult;
   };
 
   /** 발급 or 일괄 발급 is chosen in the address, so a reload stays on it. */
@@ -1132,7 +1142,7 @@ export default function TicketAdmin() {
         <IssuePanel session={session} fields={fieldList} takenSeats={takenSeats} counts={counts} busy={busy}
           mode={issueMode} onMode={setIssueMode}
           issued={issued?.from === 'issue' ? issued : null} onIssue={issueTicket} onContinue={() => setIssued(null)}
-          onBulk={issueBulk} checkTaken={checkTaken} onShowTickets={showIssued} />
+          onBulk={issueBulk} onMail={mailIssued} checkTaken={checkTaken} onShowTickets={showIssued} />
       )}
 
       {session && tab === 'tickets' && (() => {

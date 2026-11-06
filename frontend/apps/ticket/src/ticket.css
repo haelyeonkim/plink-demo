@@ -2076,3 +2076,10 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
   body:has(#issue-panel-bulk:not([hidden]) .issue-bar) .toast-stack { bottom: calc(140px + env(safe-area-inset-bottom)); }
   body:has(#issue-panel-bulk:not([hidden]) .issue-bar) .footer { padding-bottom: 140px; }
 }
+
+/* A list issued without mail: the send is its own step, on the result. */
+.issue-mail { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: #f4f1ff; border-radius: 12px; padding: 12px 14px; font-size: 14px; color: #3d4663; }
+.issue-mail .btn-primary { width: auto; margin: 0; }
+.issue-mail.is-done { background: #e5fff4; color: #1c6b52; flex-direction: column; align-items: flex-start; }
+.issue-mail ul { margin: 0; padding-left: 18px; font-size: 13px; color: #8a5300; }

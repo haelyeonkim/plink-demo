@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
 import InfoTip from '@shared/components/InfoTip';
+import ConfirmDialog from '@shared/components/ConfirmDialog';
 import {
   downloadCsv, downloadSample, useImportRows, type ImportField, type ImportResult, type RowProblem,
 } from '@shared/components/BulkImport';
@@ -19,7 +20,7 @@ export interface IssueInput {
  * is open lives in the address, so a reload or a shared link lands on the same one.
  */
 export default function IssuePanel({
-  session, fields, takenSeats, counts, busy, mode, onMode, issued, onIssue, onContinue, onBulk, checkTaken, onShowTickets,
+  session, fields, takenSeats, counts, busy, mode, onMode, issued, onIssue, onContinue, onBulk, onMail, checkTaken, onShowTickets,
 }: {
   session: SessionRow;
   fields: TicketFieldRow[];
@@ -33,6 +34,7 @@ export default function IssuePanel({
   onIssue: (input: IssueInput) => Promise<boolean>;
   onContinue: () => void;
   onBulk: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
+  onMail: (ticketIds: number[]) => Promise<MailedResult>;
   checkTaken: (emails: string[]) => Promise<Set<string>>;
   onShowTickets: (ticket?: { ticketId: number; ticketRef: string }) => void;
 }) {
@@ -89,7 +91,7 @@ export default function IssuePanel({
           : <SingleForm fields={fields} takenSeats={takenSeats} busy={busy} onIssue={onIssue} />}
       </div>
       <div role="tabpanel" id="issue-panel-bulk" aria-labelledby="issue-tab-bulk" hidden={mode !== 'bulk'}>
-        <BulkIssue fields={fields} onBulk={onBulk} checkTaken={checkTaken} onShowTickets={() => onShowTickets()} />
+        <BulkIssue fields={fields} onBulk={onBulk} onMail={onMail} checkTaken={checkTaken} onShowTickets={() => onShowTickets()} />
       </div>
     </div>
   );
@@ -301,16 +303,19 @@ function Steps({ step }: { step: Step }) {
 }
 
 interface NotDone { index: number; row: Record<string, string>; reason: string; tone: 'warn' | 'bad'; failed: boolean }
-interface BulkOutcome { issued: number; notify: boolean; skipped: number; failed: number; notDone: NotDone[] }
+interface BulkOutcome { issued: number; issuedIds: number[]; skipped: number; failed: number; notDone: NotDone[] }
+/** What mailing a list issued without mail came to. */
+export interface MailedResult { sent: number; skipped: Array<{ ticketId: number; ticketRef: string | null; reason: string }> }
 
 /**
  * A list in three steps: put it in, see how it was read and what will be set aside, and
  * then what came of it - with the rows that did not go out ready to fix and upload again.
  * The validation and the request are BulkImport's; only the screens are arranged here.
  */
-function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
+function BulkIssue({ fields, onBulk, onMail, checkTaken, onShowTickets }: {
   fields: TicketFieldRow[];
   onBulk: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
+  onMail: (ticketIds: number[]) => Promise<MailedResult>;
   checkTaken: (emails: string[]) => Promise<Set<string>>;
   onShowTickets: () => void;
 }) {
@@ -327,7 +332,10 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [notify, setNotify] = useState(false);
+  // A list is issued without mail; it is sent from the result, once looked over, so a
+  // wrong file never reaches hundreds of inboxes.
+  const [confirmMail, setConfirmMail] = useState(false);
+  const [mailed, setMailed] = useState<MailedResult | null>(null);
   const [filter, setFilter] = useState<'auto' | 'skip' | 'all'>('auto');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -364,7 +372,7 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
     const sent = problems.flatMap((problem, index) => (problem === null ? [index] : []));
     setBusy(true); setError('');
     try {
-      const result = await onBulk(sent.map(index => rows[index]), notify);
+      const result = await onBulk(sent.map(index => rows[index]), false);
       // The server numbers the rows it was sent; the operator knows them by the file's.
       const failures: NotDone[] = result.results.filter(row => !row.ok).map(row => {
         const index = sent[row.row - 1] ?? -1;
@@ -373,7 +381,8 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
       const skipped: NotDone[] = problems.flatMap((problem, index) => (problem === null ? []
         : [{ index, row: rows[index], reason: problem, tone: PROBLEM_TONE[problem], failed: false }]));
       setOutcome({
-        issued: result.issued, notify, skipped: skipped.length, failed: failures.length,
+        issued: result.issued, skipped: skipped.length, failed: failures.length,
+        issuedIds: result.results.flatMap(row => (row.ok && row.ticketId != null ? [row.ticketId] : [])),
         notDone: [...skipped, ...failures].sort((a, b) => a.index - b.index),
       });
       setStep(3);
@@ -384,8 +393,22 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
     }
   }
 
+  async function sendMail() {
+    if (!outcome) return;
+    setBusy(true); setError('');
+    try {
+      setMailed(await onMail(outcome.issuedIds));
+      setConfirmMail(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '메일을 보내지 못했어요.');
+      setConfirmMail(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function startOver() {
-    setText(''); setFileName(''); setOutcome(null); setError(''); setFilter('auto'); setStep(1);
+    setText(''); setFileName(''); setOutcome(null); setMailed(null); setError(''); setFilter('auto'); setStep(1);
   }
 
   function downloadNotDone() {
@@ -457,10 +480,25 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
           <h3 id="issue-result-title" ref={doneHeading} tabIndex={-1}>
             {outcome.issued > 0 ? `${outcome.issued.toLocaleString()}장 발급했어요` : '한 장도 발급하지 못했어요'}</h3>
           <div className="issue-numbers">
-            <div className="ok"><span>{outcome.notify ? '발급 · 메일 보냄' : '발급 · 링크만 만듦'}</span><b>{outcome.issued.toLocaleString()}</b></div>
+            <div className="ok"><span>{mailed ? '발급 · 메일 보냄' : '발급 · 아직 안 보냄'}</span><b>{outcome.issued.toLocaleString()}</b></div>
             <div className="warn"><span>미리 건너뜀</span><b>{outcome.skipped.toLocaleString()}</b></div>
             <div className="bad"><span>발급 중 실패</span><b>{outcome.failed.toLocaleString()}</b></div>
           </div>
+          {outcome.issuedIds.length > 0 && (
+            <div className={`issue-mail${mailed ? ' is-done' : ''}`} role="status">
+              {mailed ? (<>
+                <b>{mailed.sent.toLocaleString()}명에게 메일을 보냈어요{mailed.skipped.length > 0 ? ` · ${mailed.skipped.length.toLocaleString()}명은 못 보냈어요` : ''}</b>
+                {mailed.skipped.length > 0 && (
+                  <ul>{mailed.skipped.map(row => <li key={row.ticketId}>{row.ticketRef ?? row.ticketId} - {row.reason}</li>)}</ul>
+                )}
+              </>) : (<>
+                <span><b>아직 메일을 보내지 않았어요.</b> 명단이 맞는지 본 뒤 보내세요. 발급 현황에서 나중에 보낼 수도 있어요.</span>
+                <button type="button" className="btn-primary" disabled={busy} onClick={() => setConfirmMail(true)}>
+                  {busy ? '보내는 중…' : `발급한 ${outcome.issuedIds.length.toLocaleString()}명에게 메일 보내기`}</button>
+              </>)}
+            </div>
+          )}
+          {error && <p className="error-text" role="alert">{error}</p>}
           {notDone > 0 && (
             <div className="issue-notdone">
               <b id="issue-notdone-title">발급되지 않은 행</b>
@@ -484,6 +522,16 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
             <button type="button" className="btn-primary" onClick={onShowTickets}>발급 현황에서 보기</button>
           </div>
         </section>
+        <ConfirmDialog
+          open={confirmMail}
+          tone="primary"
+          title={`${outcome.issuedIds.length.toLocaleString()}명에게 메일을 보낼까요?`}
+          message="방금 발급한 입장권마다 받는 사람에게 링크를 보내요. 보낸 메일은 되돌릴 수 없어요."
+          confirmLabel="메일 보내기"
+          busy={busy}
+          onCancel={() => setConfirmMail(false)}
+          onConfirm={() => void sendMail()}
+        />
       </div>
     );
   }
@@ -549,10 +597,7 @@ function BulkIssue({ fields, onBulk, checkTaken, onShowTickets }: {
       {error && <p className="error-text" role="alert">{error}</p>}
 
       <div className="issue-bar">
-        <label className="issue-notify">
-          <input type="checkbox" checked={notify} disabled={busy} onChange={event => setNotify(event.target.checked)} />
-          <span>{sendable.toLocaleString()}명에게 <span className="issue-tab-wide">입장권 링크를 </span>메일로 보내기</span>
-        </label>
+        <span className="issue-notify muted">메일은 발급한 뒤 결과에서 따로 보내요.</span>
         <div className="issue-bar-buttons">
           <button type="button" className="btn-secondary" disabled={busy} onClick={() => setStep(1)}>이전</button>
           <button type="button" className="btn-primary" disabled={busy || sendable === 0} onClick={() => void submit()}>
