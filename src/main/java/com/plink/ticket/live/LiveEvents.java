@@ -28,9 +28,10 @@ import java.util.function.Predicate;
  * both asking about the same event, and the gate scan that matters to both is one row in
  * the ledger.
  *
- * <p>The registry is in memory, which is the honest match for one application instance.
- * A second instance would see only its own subscribers; the fan-out would then belong in
- * Postgres LISTEN/NOTIFY rather than here.
+ * <p>The registry is in memory: each copy of the app knows only the sockets it holds.
+ * What one copy publishes also goes to the others through the {@link LiveRelay}, and
+ * each delivers it to its own sockets, so a scan handled by one copy reaches a phone
+ * connected to another. Without a relay (one copy, or H2) delivery stays local.
  *
  * <p>Nothing is published from the caller's thread. Inside a transaction a message waits
  * for the commit - a phone told before it reloads into the old row, and one told about
@@ -50,9 +51,19 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
      * keep their order (MOVEMENT before PRESENCE), and a slow phone holds up only its lane.
      */
     private final Executor[] lanes;
+    /** Hands messages to the relay in the order they were published, off the caller's thread. */
+    private final Executor relayLane;
+    /** Tells this copy's own messages apart when the relay brings them back. */
+    private final String origin = java.util.UUID.randomUUID().toString();
+    private volatile LiveRelay relay;
 
     @Autowired
     public LiveEvents() {
+        relayLane = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "live-relay-send");
+            thread.setDaemon(true);
+            return thread;
+        });
         lanes = new Executor[LANES];
         for (int i = 0; i < LANES; i++) {
             String name = "live-send-" + i;
@@ -67,11 +78,20 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
     /** Sends on the given executor instead; a test passes {@code Runnable::run} to see each send at once. */
     public LiveEvents(Executor sender) {
         lanes = new Executor[] { sender };
+        relayLane = sender;
+    }
+
+    /** Present when other copies of the app may be holding sockets for the same events. */
+    @Autowired(required = false)
+    public void setRelay(LiveRelay relay) {
+        this.relay = relay;
+        relay.start(this::receive);
     }
 
     @Override
     public void destroy() {
         for (Executor lane : lanes) if (lane instanceof ExecutorService service) service.shutdownNow();
+        if (relayLane instanceof ExecutorService service) service.shutdownNow();
     }
 
     public void join(long sessionId, WebSocketSession socket) {
@@ -92,10 +112,17 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
 
     /** Sends one message to one socket, dropping it if the peer has gone. */
     public void send(WebSocketSession socket, String type, Map<String, Object> payload) {
+        sendText(socket, serialize(type, payload));
+    }
+
+    private String serialize(String type, Map<String, Object> payload) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("type", type);
         message.putAll(payload);
-        String text = mapper.writeValueAsString(message);
+        return mapper.writeValueAsString(message);
+    }
+
+    private void sendText(WebSocketSession socket, String text) {
         try {
             synchronized (socket) {
                 if (socket.isOpen()) socket.sendMessage(new TextMessage(text));
@@ -111,7 +138,11 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
      * into a tunnel must not stop the console from hearing the same scan.
      */
     public void publish(long sessionId, String type, Map<String, Object> payload) {
-        afterCommit(() -> fanOut(sessionId, type, payload, socket -> true));
+        afterCommit(() -> {
+            String text = serialize(type, payload);
+            fanOut(sessionId, text, everyone());
+            relay(EVERYONE, sessionId, null, text);
+        });
     }
 
     /**
@@ -123,11 +154,68 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
      * treat anything arriving on its socket as its own movement.
      */
     public void publishForTicket(long sessionId, long ticketId, String type, Map<String, Object> payload) {
-        afterCommit(() -> fanOut(sessionId, type, payload, socket -> {
+        afterCommit(() -> {
+            String text = serialize(type, payload);
+            fanOut(sessionId, text, about(ticketId));
+            relay(TICKET, sessionId, ticketId, text);
+        });
+    }
+
+    private static Predicate<WebSocketSession> everyone() {
+        return socket -> true;
+    }
+
+    private static Predicate<WebSocketSession> about(long ticketId) {
+        return socket -> {
             Object watching = socket.getAttributes().get(TicketSocketHandler.TICKET_KEY);
             // No ticket on the socket means the console, which watches all of them.
             return watching == null || watching.equals(ticketId);
-        }));
+        };
+    }
+
+    private static final String EVERYONE = "EVERYONE";
+    private static final String TICKET = "TICKET";
+    private static final String DROP = "DROP";
+
+    /** Passes a message this copy has delivered on to the other copies. */
+    private void relay(String kind, Long sessionId, Long ticketId, String text) {
+        LiveRelay current = relay;
+        if (current == null) return;
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        envelope.put("origin", origin);
+        envelope.put("kind", kind);
+        envelope.put("sessionId", sessionId);
+        envelope.put("ticketId", ticketId);
+        envelope.put("message", text);
+        String relayed = mapper.writeValueAsString(envelope);
+        try {
+            relayLane.execute(() -> {
+                try {
+                    current.send(relayed);
+                } catch (RuntimeException failed) {
+                    // The sockets on this copy have it already; the others catch up by polling.
+                    log.warn("Could not relay a live message: {}", failed.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            // Nothing more goes out once the app is stopping.
+        }
+    }
+
+    /** A message another copy published: delivered here as if it had been published here. */
+    void receive(String relayed) {
+        Map<?, ?> envelope = mapper.readValue(relayed, Map.class);
+        if (origin.equals(envelope.get("origin"))) return;
+        Object kind = envelope.get("kind");
+        Long ticketId = envelope.get("ticketId") instanceof Number n ? n.longValue() : null;
+        if (DROP.equals(kind)) {
+            if (ticketId != null) closeTicket(ticketId);
+            return;
+        }
+        if (!(envelope.get("sessionId") instanceof Number sessionId)
+                || !(envelope.get("message") instanceof String text)) return;
+        if (TICKET.equals(kind) && ticketId != null) fanOut(sessionId.longValue(), text, about(ticketId));
+        else if (EVERYONE.equals(kind)) fanOut(sessionId.longValue(), text, everyone());
     }
 
     /** Now, outside a transaction; inside one, once it has committed, and never if it rolls back. */
@@ -143,7 +231,7 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
         }
     }
 
-    private void fanOut(long sessionId, String type, Map<String, Object> payload, Predicate<WebSocketSession> wanted) {
+    private void fanOut(long sessionId, String text, Predicate<WebSocketSession> wanted) {
         Set<WebSocketSession> sockets = listeners.get(sessionId);
         if (sockets == null || sockets.isEmpty()) return;
         for (WebSocketSession socket : sockets) {
@@ -157,7 +245,7 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
                         closeQuietly(socket);
                         return;
                     }
-                    send(socket, type, payload);
+                    sendText(socket, text);
                 });
             } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
                 return;
@@ -175,6 +263,11 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
      * the new holder.
      */
     public void dropTicket(long ticketId) {
+        closeTicket(ticketId);
+        relay(DROP, null, ticketId, null);
+    }
+
+    private void closeTicket(long ticketId) {
         for (Set<WebSocketSession> sockets : listeners.values()) {
             for (WebSocketSession socket : sockets) {
                 if (Long.valueOf(ticketId).equals(socket.getAttributes().get(TicketSocketHandler.TICKET_KEY))) {
