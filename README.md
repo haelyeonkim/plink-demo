@@ -106,6 +106,24 @@ bash scripts/run-dev.sh stop
 
 다시 시작할 때는 `bash scripts/run-dev.sh`를 실행합니다. `.env`나 백엔드 코드를 바꾼 뒤에는 종료 후 다시 실행하세요.
 
+### `https://lyuni.ddak.app/`에서 실행하기
+
+이 도메인에서 사용할 때는 전용 실행 스크립트를 사용합니다.
+
+```bash
+bash scripts/run-lyuni.sh
+```
+
+이 스크립트는 `.env`의 로컬 URL 설정 대신 `APP_BASE_URL=https://lyuni.ddak.app`, `SESSION_COOKIE_SECURE=true`, `FORWARD_HEADERS_STRATEGY=NATIVE`를 적용하고 기존 개발 서버를 실행합니다. 데이터베이스와 계정 등 나머지 설정은 기존 `.env`를 사용합니다.
+
+HTTPS 리버스 프록시는 `lyuni.ddak.app` 요청을 이 서버의 프런트엔드 포트 `3000`으로 전달해야 합니다. `/tickets`도 같은 포트로 전달합니다. 프록시에서 원래 Host, `X-Forwarded-Proto: https`, 클라이언트 IP 헤더와 WebSocket 연결을 전달하고, 백엔드 `8080`은 신뢰하는 로컬 프록시에서만 접근하도록 구성합니다. 스크립트는 DNS나 HTTPS 프록시를 생성하지 않습니다.
+
+기존 개발 서버가 실행 중이면 먼저 `bash scripts/run-dev.sh stop`으로 종료하세요. 포트 변경 옵션은 `run-dev.sh`와 같으며, 프런트엔드 포트를 바꾸면 프록시 대상 포트도 맞춰야 합니다. 종료 명령은 다음과 같습니다.
+
+```bash
+bash scripts/run-lyuni.sh stop
+```
+
 ## 5. 최신 코드 받기
 
 이미 내려받은 저장소에서는 다시 `clone`하지 않습니다. 먼저 변경 중인 파일이 있는지 확인합니다.
