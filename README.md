@@ -1,356 +1,251 @@
 # P-Link Demo
 
-**P-Link** - 중요한 링크를 안전하게 공유하는 서비스 데모
+보호 링크 공유와 입장권 발급·입장 관리를 제공하는 웹 프로젝트입니다. 이 문서는 **Git을 처음 사용하는 사람**이 코드를 내려받고 자기 컴퓨터에서 실행하는 순서로 안내합니다.
 
-원본 URL에 비밀번호, 만료 시간, 최대 열람 수를 설정하고 공유 코드로 전달합니다. 관리 화면에서 생성한 링크와 열람자 이름·열람 시간을 확인할 수 있습니다.
+- **링크 도구**: 콘텐츠와 작품을 선택해 보호 링크를 만들고 공유합니다.
+- **입장권 도구**: 입장권 발급, 패스키 인증, QR 확인과 게이트 운영을 지원합니다.
 
-## 구현 현황
+## 1. 시작하기 전에
 
-- 보호 링크 생성 및 공유 코드 복사
-- 링크 목록, 상세 조회 및 삭제
-- 비밀번호·만료 시간·최대 열람 수 검증
-- 열람자 이름과 열람 시각 기록
-- Google 로그인, 로그인 상태·이름 표시 및 로그아웃
-- 수신자 패스키 최초 등록 및 등록된 패스키만 재접근 허용
-- 컨텐츠 직접 작성, 공개 URL 및 PDF 작품 정보 가져오기
-- 작품 라이브러리에서 작품을 선택해 수신자별 맞춤 보호 링크 생성
-- **입장권(Phase 0-4)**: 개인 URL 발급·메일 발송, 이메일 OTP 확인, URL당 패스키 1개 바인딩, 회전형 QR 제시, 게이트 단말 스캔, 재입장 원장과 회차 정책, 양도, 얼굴 인식(동의·암호화 저장·1:N·파기), 위치 바인딩, 오프라인 동기화, 이상 탐지, 주최자 콘솔
-- 통계, 사용자 가이드는 안내용 화면만 구현
+**Git**은 파일 변경 이력을 저장하는 프로그램이고, **GitHub**는 그 저장소를 온라인으로 공유하는 서비스입니다. 코드를 내려받는 `clone`은 처음 한 번, 이후 변경 내용을 받는 `pull`은 필요할 때 사용합니다.
 
-## 컨텐츠와 작품별 링크
+아래 프로그램을 준비하세요. 명령어는 브라우저 주소창이 아니라 **터미널**에 입력합니다.
 
-관리자는 **링크 관리 → 컨텐츠**에서 다음 방식으로 작품 자료를 준비합니다.
+| 프로그램 | 필요한 버전·용도 |
+| --- | --- |
+| Git | 저장소 다운로드와 변경 이력 관리 |
+| JDK | Java 17 이상. 백엔드 빌드·실행에 사용 |
+| Node.js / npm | Node.js 22.12 이상. npm도 함께 필요 |
+| Python 3 | 실행 스크립트의 포트 확인에 사용 |
+| Bash, curl | 개발 서버 실행 스크립트에 사용 |
 
-1. 직접 작품 정보를 작성합니다.
-2. 공개 뷰잉룸 URL을 입력해 Artlogic raw HTML, JSON-LD 또는 일반 작품 카드 구조를 분석합니다.
-3. 100MB 이하의 텍스트 PDF에서 작품 정보를 가져옵니다. 스캔 PDF는 먼저 OCR이 필요합니다.
+macOS·Linux에서는 터미널을 사용하세요. **Windows에서는 WSL의 Ubuntu 터미널을 기준으로 진행**하고, 위 프로그램도 WSL 안에 설치하세요. 아래 Bash 명령은 PowerShell이나 명령 프롬프트용이 아닙니다.
 
-가져온 결과는 자동 발송되지 않습니다. 공통 편집 화면에서 내용을 검토하고 **컨텐츠 저장**을 누르면 원본 JSON과 작품별 `artwork` 행이 함께 저장됩니다. 기존 컨텐츠는 작품 목록을 처음 열 때 자동으로 인덱싱됩니다.
-
-**링크 추가 → 작품 선택 · 수신자별 맞춤 작품 목록**에서는 전체 작품 중 전달할 항목을 고르고 수신자 이메일을 입력합니다. 서버는 선택 작품만 복사한 불변 스냅샷과 개인 링크를 생성합니다. 따라서 수신자마다 다른 작품을 전달할 수 있고, 이후 원본 작품을 수정해도 이미 발송한 내용은 바뀌지 않습니다.
-
-관련 API:
-
-- `GET /api/contents/artworks`: 현재 관리자 소유 작품 목록
-- `POST /api/links/artworks`: 선택 작품 스냅샷과 수신자 개인 링크 생성
-- `POST /api/contents/import/url`: 공개 URL 분석
-- `POST /api/contents/import/pdf`: PDF 분석
-
-작품 테이블은 Flyway `V24__artwork_library.sql`에서 생성됩니다. URL 가져오기는 내부망 접근을 차단하고, 웹페이지 8MB·PDF 100MB·한 번에 전달할 작품 60점으로 제한합니다.
-
-## 요구사항
-
-| 런타임 | 버전 | 용도 |
-|---------|------|------|
-| Java | 17+ | Spring Boot 4 백엔드 + Maven 빌드 |
-| Node.js | 22+ | Vite 프론트엔드 개발 서버 (npm 포함) |
-
-Maven은 `./mvnw` 래퍼를 사용하므로 별도 설치가 필요 없습니다. 이 개인 프로젝트는 `.mvn/settings.xml`에서 Maven Central만 사용하도록 고정되어 있어 사용자 홈의 사내 저장소 설정을 사용하지 않습니다.
-
-## 빠른 시작
+설치 후 새 터미널에서 한 줄씩 실행합니다. 모두 버전이 출력되면 준비된 상태입니다.
 
 ```bash
-# 개발 서버 실행 (내부 백엔드 :8080 + 프론트 :3000)
+git --version
+java -version
+javac -version
+node --version
+npm --version
+python3 --version
+bash --version
+curl --version
+```
+
+Maven은 저장소에 포함된 `mvnw`로 실행하므로 별도로 설치하지 않아도 됩니다. 최초 실행에는 의존성을 내려받기 위한 인터넷 연결이 필요합니다.
+
+## 2. 내 컴퓨터로 다운로드하기
+
+프로젝트를 보관할 폴더에서 다음을 실행하세요.
+
+```bash
 git clone https://github.com/haelyeonkim/plink-demo.git
 cd plink-demo
+```
+
+- `git clone`: GitHub의 코드와 변경 이력을 `plink-demo` 폴더에 내려받습니다.
+- `cd plink-demo`: 내려받은 폴더 안으로 이동합니다.
+
+이후 명령은 별도 안내가 없으면 **`README.md`, `pom.xml`, `mvnw`가 있는 프로젝트 최상위 폴더**에서 실행하세요. 터미널을 새로 열었다면 다시 이 폴더로 이동해야 합니다.
+
+## 3. 로컬 설정과 로그인 계정 만들기
+
+처음 한 번만 설정 예제 파일을 복사합니다. 이미 `.env`가 있다면 덮어쓰지 말고 기존 파일을 편집하세요.
+
+```bash
+cp .env.example .env
+```
+
+편집기로 `.env`를 열고 다음 항목을 설정하세요. 관리자 항목 두 개는 파일 끝에 추가합니다.
+
+```properties
+APP_BASE_URL=http://localhost:3000
+SESSION_COOKIE_SECURE=false
+PLINK_ADMIN_EMAIL=your-email@example.com
+PLINK_ADMIN_PASSWORD=replace-with-your-own-password
+```
+
+이메일은 자신의 주소로, 비밀번호는 **직접 정한 10자 이상의 값**으로 바꾸세요. 따옴표나 `export` 없이 `이름=값` 형식으로 작성합니다. 위 비밀번호 예시를 그대로 사용하지 마세요.
+
+서버가 시작될 때 이 관리자 계정을 생성합니다. 같은 계정이 이미 있으면 `.env`에 지정한 비밀번호로 재설정됩니다. Google 설정 없이 이 이메일·비밀번호로 로그인할 수 있습니다.
+
+`.env`에는 비밀번호 등 비밀값이 들어갑니다. Git에서 제외되므로 GitHub에 올리지 마세요. 설정 형식만 공유할 때는 실제 비밀값 없이 `.env.example`을 수정합니다.
+
+## 4. 실행하고 접속하기
+
+```bash
 bash scripts/run-dev.sh
+```
 
-# 로컬 브라우저에서 접속
-#   http://localhost:3000
+스크립트가 백엔드를 빌드하고 프론트엔드 의존성을 설치한 뒤 서버를 실행합니다. 첫 실행은 다운로드 때문에 시간이 걸릴 수 있습니다. `Health check passed.`가 나오면 브라우저에서 다음 주소를 여세요.
 
-# 종료
+| 주소 | 화면 |
+| --- | --- |
+| http://localhost:3000 | 서비스 소개 |
+| http://localhost:3000/links | 링크 관리 |
+| http://localhost:3000/links/login | 링크 도구 로그인 |
+| http://localhost:3000/tickets | 입장권 관리 |
+| http://localhost:3000/tickets/login | 입장권 도구 로그인 |
+| http://localhost:3000/tickets/gate | 게이트 화면 |
+
+앞에서 설정한 이메일·비밀번호로 로그인하세요. 게이트 사용에는 별도 단말 등록이 필요합니다.
+
+내부적으로 백엔드는 `8080`, 링크 앱은 `3000`, 입장권 앱은 `3010` 포트를 사용합니다. 브라우저에서는 **3000 포트 하나**로 두 도구를 이용합니다.
+
+기본 데이터베이스는 설치가 필요 없는 H2 메모리 DB입니다. **백엔드를 종료하면 추가·수정한 DB 데이터가 사라집니다.** SMTP를 설정하지 않으면 실제 이메일은 발송되지 않습니다. 얼굴 서비스가 없을 때의 개발용 대역은 실제 얼굴 인식을 제공하지 않습니다.
+
+### 종료와 재시작
+
+서버는 백그라운드에서 실행되므로 실행 명령이 끝나도 계속 동작합니다. 종료할 때는 다음 명령을 사용하세요.
+
+```bash
 bash scripts/run-dev.sh stop
 ```
 
-`bash scripts/run-dev.sh`는 백엔드와 프론트엔드를 백그라운드로 시작하고, 시작 메시지와 헬스체크 결과를 현재 터미널에 직접 출력한 뒤 프롬프트를 돌려줍니다. 서비스 로그는 `logs/backend.log`, `logs/frontend.log`(링크 앱), `logs/ticket.log`(입장권 앱)에 저장됩니다. 프론트엔드는 IPv4 `0.0.0.0`에 바인딩하고 `lyuni.ddak.app`을 허용해 Nginx가 도메인 Host 헤더로 연결할 수 있습니다. 실시간 확인은 `tail -f logs/backend.log` 또는 `tail -f logs/frontend.log`를 사용하세요. 로그 파일은 Git에 커밋하지 않습니다.
+다시 시작할 때는 `bash scripts/run-dev.sh`를 실행합니다. `.env`나 백엔드 코드를 바꾼 뒤에는 종료 후 다시 실행하세요.
 
-`run-dev.sh`는 두 서비스를 시작한 뒤 백엔드 `/api/auth/session`과 프론트엔드 `/`에 자동으로 HTTP 헬스체크를 수행합니다. `Health check passed.`가 출력되면 두 포트가 응답하는 상태입니다. 스크립트가 종료되어도 두 서비스는 백그라운드에서 계속 실행됩니다.
+## 5. 최신 코드 받기
 
-프론트엔드는 링크 앱(`3000`)과 입장권 앱(`3010`, 프론트엔드 포트 + 10) 두 개의 Vite 서버로 뜨며, 링크 앱 서버가 `/tickets` 요청을 입장권 앱으로 넘기므로 브라우저에서는 `3000` 하나만 사용합니다.
-
-포트 변경은 `--backend-port 9090 --frontend-port 5173 --ticket-port 5174` 옵션으로 지정할 수 있습니다. 실행 스크립트는 Vite 프록시와 기본 로그인 복귀 주소를 해당 포트에 맞춥니다. 프론트엔드 포트를 바꾸면 Google에 등록한 리디렉션 URI도 변경하세요. 개별 실행 시에는 `BACKEND_URL`(Vite)과 `APP_BASE_URL`(백엔드)을 지정하세요.
-
-`80` 또는 `443`은 공개 서비스의 외부 포트입니다. 운영 서버에서는 Nginx 같은 리버스 프록시가 `lyuni.ddak.app`의 HTTPS 요청을 받아 프론트엔드와 백엔드로 전달합니다. `run-dev.sh`가 사용하는 `3000`과 `8080`은 서버 내부 개발 포트이므로 공개 URL에 포트 번호를 붙이지 않습니다.
-
-### 개별 실행 및 빌드
-
-백엔드:
+이미 내려받은 저장소에서는 다시 `clone`하지 않습니다. 먼저 변경 중인 파일이 있는지 확인합니다.
 
 ```bash
-./mvnw spring-boot:run
+git status
 ```
 
-별도 터미널에서 프론트엔드:
+저장하지 않은 변경이 없고 서버를 종료한 상태에서 다음을 실행하세요.
+
+```bash
+git switch main
+git pull --ff-only origin main
+bash scripts/run-dev.sh
+```
+
+변경 파일이 표시된다면 먼저 아래 과정으로 작업 브랜치에 커밋하세요. `pull`이 실패하면 강제로 덮어쓰지 말고 오류 내용을 확인하세요.
+
+## 6. 수정한 내용을 PR로 올리기
+
+이 저장소는 **작업 브랜치 생성 → 수정·검증 → PR → 사람의 Approve → merge** 순서로 작업합니다. `main`에 직접 커밋하거나 push하지 않습니다. Codex와 Claude에도 같은 규칙이 적용됩니다.
+
+| 용어 | 의미 |
+| --- | --- |
+| 브랜치(branch) | 원본과 분리해 작업하는 변경 이력 |
+| 커밋(commit) | 내 컴퓨터에 변경 내용을 기록하는 단위 |
+| 푸시(push) | 커밋을 GitHub로 올리는 작업 |
+| PR(Pull Request) | 작업 브랜치의 변경을 `main`에 합쳐 달라는 검토 요청 |
+| Approve | 사람이 PR을 검토하고 승인하는 단계 |
+| merge | 승인된 변경을 `main`에 합치는 작업 |
+
+처음 커밋하기 전에 이 저장소에서 사용할 작성자 정보를 설정합니다. 아래 값은 자신의 이름과 이메일로 바꾸세요. GitHub에 이메일을 공개하고 싶지 않다면 GitHub 설정에서 제공하는 비공개 커밋 이메일을 사용하세요.
+
+```bash
+git config user.name "Your Name"
+git config user.email "your-email@example.com"
+```
+
+최신 `main`에서 새 브랜치를 만듭니다. 브랜치 이름은 작업마다 다르게 정하세요.
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c docs/update-readme
+```
+
+파일을 수정한 뒤 변경 내용을 확인하고, 올릴 파일을 지정해 커밋합니다. 아래는 README만 수정한 예시입니다.
+
+```bash
+git status
+git diff
+git add README.md
+git diff --cached
+git commit -m "Improve getting started instructions"
+git push -u origin docs/update-readme
+```
+
+`commit`은 내 컴퓨터에만 저장하며, `push`까지 해야 GitHub에 올라갑니다. Push에는 GitHub 인증과 저장소 쓰기 권한이 필요합니다. 권한이 없다면 GitHub에서 저장소를 Fork하고 자신의 Fork에 작업 브랜치를 push한 뒤 원본 저장소로 PR을 보내세요. GitHub 계정 비밀번호를 터미널 인증 비밀번호로 사용하지 마세요.
+
+GitHub 저장소에서 **Compare & pull request** 또는 **Pull requests → New pull request**를 선택합니다.
+
+1. `base`는 `main`, `compare`는 자신이 만든 작업 브랜치로 지정합니다.
+2. 변경 이유, 변경 내용, 검증 결과를 작성하고 PR을 만듭니다.
+3. 사람에게 리뷰를 받고 **Approve**를 기다립니다. 수정 요청이 있으면 같은 브랜치에 추가 커밋을 push합니다.
+4. 승인과 필요한 검증이 완료된 뒤 병합 권한이 있는 사람이 merge합니다. AI는 명시적인 병합 허가 없이 merge하지 않습니다.
+5. 병합 후 로컬에서 `git switch main`, `git pull --ff-only origin main`으로 결과를 받습니다.
+
+세부 협업 규칙은 [AGENTS.md](AGENTS.md), Claude의 진입 문서는 [CLAUDE.md](CLAUDE.md)를 참고하세요.
+
+## 7. 자주 만나는 문제
+
+| 증상 | 확인할 내용 |
+| --- | --- |
+| `command not found` | 해당 프로그램이 현재 터미널 환경에 설치되어 있는지 확인하고 새 터미널을 여세요. |
+| `not a git repository` | `cd`로 내려받은 `plink-demo` 폴더 안으로 이동하세요. |
+| `destination path ... already exists` | 이미 다운로드한 폴더로 이동하세요. 다시 clone할 필요가 없습니다. |
+| `Permission denied`로 `mvnw` 실행 실패 | 프로젝트 폴더에서 `chmod +x mvnw`를 실행하세요. |
+| 포트를 사용할 수 없다는 오류 | 기존 개발 서버를 `bash scripts/run-dev.sh stop`으로 종료하세요. 다른 프로그램이 쓰는 포트라면 아래처럼 변경하세요. |
+| 로그인 실패 | `.env`의 관리자 이메일·비밀번호를 확인하고 서버를 재시작하세요. 비밀번호는 10자 이상이어야 합니다. |
+| Google 로그인 불가 | 기본 시작 방법은 이메일·비밀번호 로그인입니다. Google은 클라이언트 설정과 허용 이메일 또는 도메인이 별도로 필요합니다. |
+| Git push 권한 오류 | GitHub 인증 상태와 저장소 쓰기 권한을 확인하세요. 권한이 없다면 Fork를 사용하세요. |
+| 충돌 또는 `pull --ff-only` 실패 | `git status`로 상태를 확인하고 담당자에게 오류를 공유하세요. `reset --hard`나 강제 push로 해결하지 마세요. |
+
+포트를 바꾸는 예시입니다. `.env`의 `APP_BASE_URL`도 `http://localhost:5173`으로 변경하세요.
+
+```bash
+bash scripts/run-dev.sh --backend-port 9090 --frontend-port 5173 --ticket-port 5174
+```
+
+종료할 때도 같은 포트를 지정합니다.
+
+```bash
+bash scripts/run-dev.sh stop --backend-port 9090 --frontend-port 5173 --ticket-port 5174
+```
+
+실행 실패 원인은 로그 마지막 부분에서 확인할 수 있습니다. 로그를 공유할 때는 개인 링크·인증번호 등 민감한 내용을 제거하세요.
+
+```bash
+tail -n 80 logs/backend.log
+tail -n 80 logs/frontend.log
+tail -n 80 logs/ticket.log
+```
+
+## 개발자를 위한 참고
+
+백엔드 테스트는 프로젝트 최상위 폴더에서 실행합니다.
+
+```bash
+./mvnw test
+```
+
+프론트엔드 타입 검사와 빌드는 다음과 같습니다.
 
 ```bash
 cd frontend
 npm ci
-npm run dev:ticket   # 입장권 앱 (:3010)
-npm run dev          # 링크 앱 (:3000, /tickets는 :3010으로 전달)
+npm run build
+cd ..
 ```
 
-빌드는 프로젝트 루트에서 `./mvnw package`, `frontend/`에서 `npm run build`로 실행합니다. 최초 Maven 빌드에는 Maven Central에서 의존성을 다운로드할 수 있는 네트워크가 필요합니다. 프론트엔드 결과물은 `frontend/dist/`(입장권 앱은 `frontend/dist/tickets/`), 백엔드 JAR은 `target/`에 생성됩니다. 현재 백엔드 JAR에 프론트엔드가 자동 포함되지는 않습니다.
+백엔드 JAR은 `./mvnw clean package -DskipTests`로 생성합니다. 결과물은 `target/`, 프론트엔드 결과물은 `frontend/dist/`에 저장됩니다. 프론트엔드는 백엔드 JAR에 자동 포함되지 않습니다.
 
-## 입장권 (Phase 0-1)
-
-QR은 자격증명이 아니라 **패스키 인증을 통과한 직후 10초간만 유효한 영수증**입니다. 권리는 서버의 티켓 행에, 신원은 검증된 이메일과 바인딩된 패스키에, 현재 위치(장내·장외)는 입·퇴장 원장에 있습니다.
-
-### 흐름
-
-```
-주최자 발급 ──▶ 메일로 개인 URL   /t/{sessionId}/{personalToken}
-관람객 열기 ──▶ 이메일 OTP 확인 ──▶ 이 휴대폰에 패스키 등록(URL당 1개)
-입장할 때  ──▶ [입장하기] ──▶ 지문·얼굴 인증 ──▶ 제시 권한 90초 발급
-           ──▶ 10초마다 새로 만들어지는 QR ──▶ 게이트 태블릿 스캔 ──▶ 원장 기록
-```
-
-개인 URL은 **해시만 저장**하므로 DB를 읽어도 유효한 링크가 나오지 않습니다. 발급 메일 외에는 어디에도 남지 않으며, 주최자 콘솔도 링크를 돌려받지 않습니다.
-
-### 화면
-
-| 경로 | 대상 | 설명 |
-|------|------|------|
-| `/t/{sessionId}/{token}` | 관람객 | 등록, 입·퇴장, 회전 QR. 모바일 전용 정책이 적용되는 유일한 경로 |
-| `/gate` | 게이트 단말 | 태블릿 카메라 하나로 QR 인식. 게이트 ID·토큰으로 연결 |
-| `/manage/tickets` | 주최자 | 회차·발급·정책·단말 등록·실시간 장내 인원 (Google 로그인 필요) |
-
-### 재입장과 입·퇴장 원장
-
-재입장이 가능하므로 "한 표는 한 번만"이라는 제약을 쓸 수 없습니다. 대신 **재실 상태 불변식**이 그 역할을 합니다.
-
-- `IN`은 장외 상태에서만, `OUT`은 장내 상태에서만 성립합니다.
-- 전이는 `SELECT … FOR UPDATE`로 직렬화되어 두 게이트에 동시에 찍혀도 한쪽만 성공합니다.
-- 따라서 **입장한 사람이 QR을 밖으로 넘겨도 두 번째 입장은 거부**됩니다. 표 한 장으로 장내에 있을 수 있는 사람은 항상 한 명입니다.
-- `admission_event`는 append-only이고, 거부와 중복 스캔도 함께 기록됩니다. 스태프 보정도 수정이 아니라 새 행으로 남습니다.
-- 퇴장 미스캔은 반드시 생기므로 `unmatched_exit` 정책으로 다룹니다. 다만 **장내 상태의 재입장은 `auto_exit_after_minutes`(기본 240분)가 지나야 보정**됩니다 - 즉시 용인하면 그 자체가 QR 공유 통로가 되기 때문입니다.
-
-회차 정책(`재입장 모드·횟수·유효시간·중복 스캔 무시·퇴장 스캔 필수·퇴장 미스캔`)은 주최자 콘솔에서 즉시 바꿀 수 있고, 판정 시점의 값이 원장에 함께 남습니다.
-
-### 게이트 단말 등록
-
-콘솔에서 단말을 등록하면 **토큰이 한 번만** 표시됩니다. 서버는 해시만 보관하므로 다시 확인할 수 없고, 분실하면 재등록해 교체합니다. 방향(`IN`/`OUT`/`BIDIRECTIONAL`)은 단말 신원에 박혀 있어 **스캔된 코드가 방향을 주장할 수 없습니다**. 겸용 단말은 재실 상태로 방향을 추론합니다.
-
-### 모바일 전용 정책
-
-`TICKET_MOBILE_ONLY`는 `OFF` / `ADVISE` / `ENFORCE`이며 **관람객 경로(`/api/t/**`)에만** 적용됩니다. 게이트와 콘솔은 태블릿·데스크톱이 정상 환경입니다.
-
-UA는 위조되므로 이 검사는 보안 통제가 아니라 UX 통제입니다. 실제 기기 결속은 두 곳에서 나옵니다 - 등록 시 **플랫폼 인증기 강제**(USB 보안키·크로스플랫폼 배제, `allowed-aaguids`로 기기 목록 제한 가능), 그리고 제시 권한 시크릿이 **그 브라우저를 떠나지 않는다**는 점입니다. 카카오톡·인스타그램 등 인앱 브라우저는 패스키를 쓸 수 없어 `X-InApp-Browser` 헤더로 알려 주고, 화면에서 기본 브라우저로 열도록 안내합니다.
-
-### 기기 분실·교체
-
-URL당 패스키가 하나라는 불변식을 유지하기 위해, 기기를 추가하지 않고 **토큰을 회전**합니다. 이메일 OTP 확인 → 기존 바인딩·제시 권한 폐기 → 새 URL 메일 발송 → 새 기기에서 재등록. 이전 URL은 즉시 404가 됩니다. 횟수는 `TICKET_REBIND_MAX`(기본 2회)로 제한하며, 입·퇴장 이력과 재입장 횟수는 보존됩니다.
-
-### 양도
-
-권리만 이동하고 신원은 이동하지 않습니다. 받는 사람은 자기 이메일과 자기 패스키로 새로 등록합니다.
-
-```
-보유자 [양도하기] ──▶ 지문 인증(이 서명이 양도를 승인) ──▶ 권리 잠금 + 받는 사람에게 링크 메일
-받는 사람 링크 ────▶ 이메일 OTP ──▶ 자기 패스키 등록 ──▶ 보유자 교체 · 보낸 사람 링크 사망
+```text
+plink-demo/
+├── src/main/java/com/plink/    # Java 백엔드, ticket/ 아래 입장권 기능
+├── src/main/resources/        # 설정 및 Flyway DB 마이그레이션
+├── src/test/java/             # 백엔드 테스트
+├── frontend/apps/link/        # 서비스 소개·계정·링크 도구
+├── frontend/apps/ticket/      # 입장권 도구
+├── frontend/shared/src/       # 두 앱이 함께 쓰는 UI·인증
+├── frontend/public/           # 정적 이미지·아이콘
+├── face-service/              # 선택적으로 실행하는 얼굴 서비스
+├── scripts/run-dev.sh         # 개발 서버 시작·종료
+├── .env.example               # 로컬 설정 예제
+└── docs/                      # 상세 문서
 ```
 
-- 양도 중에는 상태가 `TRANSFER_PENDING`이라 **게이트가 입장을 거부**합니다. 직전에 발급된 QR이 남아 있어도 통과하지 못합니다.
-- 티켓은 받는 사람이 등록을 마칠 때까지 **보낸 사람의 토큰을 유지**합니다. 그래서 보낸 사람이 언제든 취소할 수 있고, 24시간 안에 등록하지 않으면 자동으로 돌아옵니다.
-- 등록이 끝나면 받는 사람의 클레임 토큰이 티켓의 토큰이 되고, **보낸 사람의 링크는 즉시 404**가 됩니다.
-- 새 보유자는 입·퇴장 이력이 0부터 시작합니다. 원장에는 이전 기록이 그대로 남습니다.
-- 정책: `transfer_max`(기본 2회), `transfer_closes_minutes_before`(기본 공연 120분 전), `transfer_after_first_entry`(기본 금지). 장내 상태에서는 양도할 수 없습니다.
+- [상세 문서 목록](docs/README.md)
+- [설계와 의도](docs/design.md): 주요 설계 결정, 이유와 제약
+- [얼굴 서비스](face-service/README.md)
+- [협업 및 리뷰 규칙](AGENTS.md)
 
-### 얼굴 인식
-
-QR을 대체하는 **선택적** 경로입니다. 민감정보이므로 동의하지 않아도 패스키로 동일하게 입장할 수 있어야 하고, 그래서 얼굴은 항상 두 번째 트랙입니다.
-
-- **원본을 저장하지 않습니다.** 특징 벡터만 AES-GCM으로 암호화해 보관하고, 촬영 프레임은 판정이 끝나면 메모리에서 사라집니다.
-- **동의는 별도 기록**입니다. 목적·보유기간·거부권을 화면에 명시하고 동의 버전과 함께 남깁니다. 철회하면 템플릿을 **즉시 삭제**합니다(플래그가 아니라 삭제).
-- **1:N은 회차 참석자 안에서만** 검색합니다. 최고점이 임계값을 넘는 것만으로는 부족하고, **2위와의 점수 차(margin)** 도 함께 봅니다 - 오인식은 대부분 근소한 동점의 형태로 나타납니다.
-- **중복 등록 검사**는 입장 판정보다 엄격한 임계값을 씁니다. 원본 이미지가 없어 사람이 검토할 수 없으므로, 오탐이 정상 사용자를 막는 쪽으로 기울면 안 됩니다.
-- **라이브니스는 켜져 있습니다.** 얼굴 서비스가 안티스푸핑 ONNX 모델로 채점하고, 프레임이 사실상 동일하면(사진 들이대기) 점수를 떨어뜨립니다. 기본 임계값 0.7 미만은 등록·입장 모두 거부됩니다. 가중치 라이선스는 `face-service/README.md`를 확인하세요.
-- **라이브니스 판정은 서버에서** 합니다. 게이트가 서버에서 받은 챌린지를 화면에 띄우고 응답 프레임을 올리면 서버가 채점합니다. 브라우저가 스스로 "통과"를 보고하는 구조는 그대로 조작됩니다.
-- **보유기간이 지나면 자동 파기**됩니다(`face_retention_days`, 기본 회차 종료 + 7일).
-
-정책: `face_required`(얼굴로만 입장), `reentry_requires_face`(**재입장만 얼굴** - 순차 공유를 막는 가장 값싼 통제), `face_liveness`, `face_challenge_on`.
-
-#### 모델 연결
-
-특징 추출과 라이브니스는 `FaceEmbedder` 인터페이스 뒤에 있습니다.
-
-- `plink.ticket.face.service-url`을 설정하면 **[`face-service/`](face-service/README.md)** 를 호출합니다. 모델·연산을 티켓 서비스 밖에 두어, 이쪽이 침해되어도 생체 데이터에 닿지 못하게 하는 구조입니다. 기본 모델은 OpenCV Zoo의 YuNet + SFace(Apache-2.0)입니다.
-- 설정하지 않으면 개발용 `LocalFaceEmbedder`가 동작합니다. **이것은 얼굴 인식이 아닙니다** - 동일한 바이트를 알아볼 뿐이며, 파이프라인 전체를 실행·테스트하기 위한 대역입니다. 추출할 때마다 경고 로그를 남깁니다.
-
-`plink.ticket.face.template-key`(base64 32바이트)를 설정하지 않으면 토큰 시크릿에서 키를 파생하고 경고합니다. 실제 얼굴을 등록하기 전에 **반드시 별도 키**를 지정하세요 - 키를 분리하는 이유가 바로 한쪽이 유출돼도 다른 쪽이 남게 하는 것입니다.
-
-### 현장 운영
-
-**위치 바인딩** - 제시 권한을 발급할 때 공연장 반경 안인지 확인합니다. 목적은 위치 증명이 아니라 **"집에서 QR을 열어 전달하는 경로"를 끊는 것**입니다. 실내 GPS 오차가 크기 때문에 정확도가 나쁜 측정은 실패가 아니라 **판정 불가**로 처리하고, 기본 모드는 거부가 아니라 `ADVISE`(기록)입니다. 밖에서 연 기록은 그대로 남아 이상 탐지의 재료가 됩니다.
-
-**오프라인 열화 모드** - 재실 상태는 전역 상태라 오프라인 단말이 판정할 수 없습니다. 그래서 단말은 낙관적으로 통과시키고 읽은 코드를 큐에 쌓았다가, 연결이 돌아오면 `POST /api/gates/{id}/sync`로 올립니다. 서버는 **촬영 시각 순으로 재생**하면서 코드를 다시 검증하고, 원장과 모순되는 것은 상태에 반영하지 않고 **플래그를 달아 조사 큐**로 보냅니다.
-
-여기서 설계 하나를 고쳤습니다 - **폐기와 사용은 다릅니다.** 새 제시 권한이 발급되면 이전 권한은 온라인에서 죽지만, 오프라인 단말이 그 코드를 읽은 순간의 이동은 실제로 일어난 일입니다. 그래서 `revoked`와 `consumed_at`을 분리했습니다. 폐기된 권한은 온라인에서 거부되지만 오프라인 재생에서는 인정됩니다.
-
-**이상 탐지** (`GET /api/admin/sessions/{id}/anomalies`) - 반복 거부, 짧은 시간 안에 서로 다른 게이트에서 일어난 이동, 오프라인 충돌. 어느 것도 단독으로는 판정이 아니고, 사람이 볼 목록입니다.
-
-**스태프 보정** - 원장은 append-only이므로 보정은 수정이 아니라 **새 항목**입니다. 누가 왜 했는지가 함께 남습니다. 메일은 `spring.mail.host`가 없으면 발송되지 않고 경고와 함께 로그로만 남습니다.
-
-## 데이터베이스
-
-기본값은 H2 인메모리라 아무 설정 없이 실행됩니다. 스키마는 Flyway가 관리하므로 H2와 PostgreSQL에서 같은 마이그레이션이 적용됩니다.
-
-```
-src/main/resources/db/migration/V1__initial_schema.sql   # 모든 환경에 적용
-src/main/resources/db/dev/V2__demo_data.sql              # 개발·테스트 전용 샘플 데이터
-```
-
-### Supabase(PostgreSQL) 전환
-
-`.env`에 접속 정보만 넣으면 됩니다. 드라이버는 URL에서 자동으로 결정되므로 코드 변경이 필요 없습니다.
-
-```properties
-DB_URL=jdbc:postgresql://db.<project-ref>.supabase.co:5432/postgres?sslmode=require
-DB_USERNAME=postgres
-DB_PASSWORD=<Supabase 프로젝트의 DB 비밀번호>
-FLYWAY_LOCATIONS=classpath:db/migration
-H2_CONSOLE_ENABLED=false
-```
-
-주의할 점:
-
-- **연결 방식**: JDBC는 **직접 연결(5432)** 또는 세션 모드 풀러를 사용하세요. 트랜잭션 모드 풀러(6543)는 JDBC prepared statement와 충돌하므로 쓰려면 URL에 `&prepareThreshold=0`을 붙여야 합니다.
-- **SSL**: Supabase는 TLS를 요구하므로 `sslmode=require`가 필요합니다.
-- **샘플 데이터 제외**: `FLYWAY_LOCATIONS`에서 `classpath:db/dev`를 빼야 데모 링크가 운영 DB에 들어가지 않습니다.
-- **마이그레이션**: 애플리케이션 시작 시 Flyway가 자동 적용합니다. 스키마를 바꿀 때는 기존 파일을 수정하지 말고 `V3__*.sql`을 추가하세요.
-
-## 데모 사용 순서
-
-1. `http://localhost:3000/create`에서 실제로 열 수 있는 URL과 보호 옵션을 입력합니다.
-2. 생성된 공유 코드를 복사하고 `/s/공유코드`에 접속하거나 홈에서 코드를 입력합니다.
-3. 열람자 이름과 설정한 비밀번호를 입력해 원본 링크 열기 버튼을 확인합니다.
-4. `/manage`에서 해당 링크의 상세 화면을 열어 열람 기록을 확인합니다.
-
-패스키 수신 흐름에서는 수신자가 링크 화면에서 **패스키 등록하고 수신 확정**을 누릅니다. 등록이 완료된 첫 번째 패스키가 링크에 귀속되고, 이후 다른 패스키는 거부됩니다. 링크의 수신 확정 상태는 관리자 상세 화면에서 확인할 수 있습니다. 동기화 패스키를 사용하는 경우 같은 패스키가 등록된 다른 기기에서도 열 수 있습니다.
-
-패스키는 보안 컨텍스트가 필요하므로 `https://` 배포 주소 또는 `http://localhost`에서만 동작합니다. 서버는 WebAuthn 공개키만 저장하고 개인키·생체정보는 저장하지 않습니다. 수신 확정은 링크를 먼저 연 사람에게 귀속되므로, 관리자는 링크를 올바른 수신자에게만 전달해야 합니다.
-
-## Google 로그인 설정
-
-Spring Security의 OAuth 2.0 / OpenID Connect 로그인으로 Google 인증 결과를 백엔드에서 검증하고 서버 세션을 생성합니다. 로그인 후 `/manage`로 이동하며 헤더에 이름과 로그아웃 버튼이 표시됩니다. 토큰과 Client Secret은 프론트엔드에 전달하지 않습니다.
-
-1. Google Cloud의 **Google Auth Platform → 클라이언트**에서 기존 **웹 애플리케이션** 클라이언트를 선택하거나 새로 생성합니다.
-2. **승인된 리디렉션 URI**에 `http://localhost:3000/login/oauth2/code/google`을 추가합니다. 승인된 JavaScript 원본만 등록해서는 이 방식의 로그인을 완료할 수 없습니다.
-3. 프로젝트 루트에서 `cp .env.example .env`를 실행하고 `.env`의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`에 값을 입력합니다. 따옴표나 `export` 없이 `이름=값`으로 작성하세요. `.env`는 Git에서 제외됩니다. 환경변수로도 설정할 수 있습니다.
-4. 프로젝트 루트에서 백엔드를 재시작하고 `http://localhost:3000/login`에서 **Google로 계속하기**를 누릅니다. 클라이언트 설정이 없으면 서버는 정상 실행되지만 로그인 버튼은 비활성화됩니다.
-
-로그인 취소나 인증 실패 시 로그인 화면에서 다시 시도할 수 있습니다. 이 방식에는 **승인된 JavaScript 원본**이 필요하지 않습니다. 이 클라이언트를 현재 P-Link에서만 사용한다면 기존 원본 설정을 삭제해도 됩니다. 다른 사이트의 브라우저 Google 로그인이 같은 클라이언트를 사용한다면 해당 원본은 유지하세요. Google 콘솔에서 대상 사용자/테스트 사용자 설정에 따라 로그인할 계정을 허용하세요.
-
-배포 시 `APP_BASE_URL`을 실제 HTTPS 사이트 주소(마지막 `/` 제외)로 설정하고 동일한 `/login/oauth2/code/google` 주소를 Google에 등록하세요. 프론트엔드와 같은 호스트에서 `/api`, `/oauth2`, `/login/oauth2` 요청을 백엔드로 전달해야 합니다. Vite 프록시는 개발 환경에만 적용됩니다.
-
-### 로컬과 lyuni.ddak.app 배포 설정
-
-로컬 `.env`는 유지하고, 배포 서버의 환경변수 또는 프로젝트 루트 `.env`에 서버용 값을 설정합니다. `.env.example`은 값의 형식을 보여주는 템플릿이며 실제 인증값은 넣지 않습니다.
-
-| 설정 | 로컬 | 배포 서버 |
-|------|------|-----------|
-| `APP_BASE_URL` | `http://localhost:3000` | `https://lyuni.ddak.app` |
-| `SESSION_COOKIE_SECURE` | `false` | `true` |
-| Google 승인된 리디렉션 URI | `http://localhost:3000/login/oauth2/code/google` | `https://lyuni.ddak.app/login/oauth2/code/google` |
-
-Google 클라이언트에 위 리디렉션 URI 두 개를 모두 등록하면 됩니다. 백엔드는 `APP_BASE_URL`에 맞춰 로그인 복귀 주소와 API의 허용 원본을 설정합니다. `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`은 각 실행 환경에서 설정해야 하며, 서버 재시작 후 반영됩니다.
-
-배포 서버는 80/443에서 HTTPS를 제공하고 `/api`, `/oauth2`, `/login/oauth2`를 백엔드로 프록시해야 합니다. 그 외 화면 경로는 프론트엔드 `index.html`로 연결하세요. 공개 배포 시 H2 개발 콘솔은 `SPRING_H2_CONSOLE_ENABLED=false`로 끌 수 있습니다. `scripts/run-dev.sh`는 로컬 개발용이며 서버에서는 빌드된 JAR과 프론트엔드 정적 파일을 실행·호스팅하세요.
-
-설정 참고: [Google 웹 서버 OAuth 안내](https://developers.google.com/identity/protocols/oauth2/web-server), [Spring OAuth 로그인 안내](https://spring.io/guides/tutorials/spring-boot-oauth2/).
-
-### 인증 테스트
-
-`./mvnw test`로 세션 조회, Google 인증 시작, 잘못된 콜백 거부, CSRF 보호, 로그아웃 및 기존 링크 생성 API를 검증합니다. 테스트에는 가짜 클라이언트 설정과 인증 사용자를 사용하므로 실제 Google 계정이 필요하지 않습니다. 실제 계정 선택·동의 과정은 위 설정 후 브라우저에서 확인해야 합니다.
-
-## 메일 발송 (Resend)
-
-안내 메일(입장권 링크, 양도 알림, 보호 링크 주소, 인증번호)은 `EmailSender` 한 곳을 지나 SMTP로 나갑니다.
-`spring.mail.host`가 없으면 발송하지 않고 **경고 로그만 남기므로**, 로컬 개발에는 메일 서버가 필요 없습니다.
-운영에서는 Resend의 SMTP 릴레이를 씁니다. 코드는 표준 SMTP만 사용하므로 다른 제공자로 바꿔도 설정만 달라집니다.
-
-1. [resend.com](https://resend.com)에서 **Domains → Add Domain**으로 `ddak.app`을 등록합니다.
-2. Resend가 보여주는 DNS 레코드를 Cloudflare(`ddak.app` 영역)에 추가합니다. 보통 세 가지입니다.
-   - `resend._domainkey` **TXT** - DKIM 서명 키
-   - `send` (또는 Resend가 지정하는 이름) **MX**와 **TXT(SPF)** - 반송 처리용 서브도메인
-   - 이 서브도메인 레코드는 **프록시 끄기(DNS only)** 로 두세요.
-   기존 수신용 MX(`route1~3.mx.cloudflare.net`)는 그대로 둡니다. Email Routing은 수신, Resend는 발신이라 서로 간섭하지 않습니다.
-3. 도메인 상태가 **Verified**가 되면 **API Keys**에서 발송 권한 키를 하나 만듭니다(`re_`로 시작).
-4. 서버 `.env`에 넣고 재시작합니다.
-
-   ```
-   spring.mail.host=smtp.resend.com
-   spring.mail.username=resend
-   spring.mail.password=re_xxxxxxxxxxxxxxxxxxxx
-   SMTP_PORT=587
-   MAIL_FROM=no-reply@ddak.app
-   ```
-
-   `.env`는 properties 파일로 읽히므로 점이 들어간 이름을 그대로 씁니다. 포트는 587(STARTTLS)이 기본이며,
-   25번이 막힌 환경에서도 동작합니다.
-5. **계정 관리 → 메일 발송**에서 상태가 "발송 준비됨"으로 바뀌고, **테스트 메일 보내기**로 실제 도착을 확인합니다.
-
-DMARC는 아직 없습니다. 발송을 시작한 뒤 `_dmarc.ddak.app` **TXT**에 `v=DMARC1; p=none; rua=mailto:...`를
-추가해 리포트를 받아 보고, 정상으로 확인되면 `p=quarantine`으로 올리세요.
-
-발송이 꺼져 있거나 릴레이가 거부하면 요청은 실패하지 않습니다. 입장권과 보호 링크 주소는 그대로 발급되고
-콘솔이 `LINK`(= 직접 전달 필요)로 표시하므로, 메일 장애가 발급을 막지 않습니다.
-
-## 데모 데이터와 제한 사항
-
-- 기본값이 H2 인메모리 DB이므로 백엔드를 종료하면 변경 데이터가 사라집니다. 시작할 때 Flyway가 `db/migration`의 스키마와 `db/dev`의 샘플 링크 3개·열람 기록을 적용합니다. 영속 저장이 필요하면 아래 **데이터베이스** 절을 따라 Supabase로 전환하세요.
-- 샘플 URL은 예시 주소입니다. 비밀번호가 있는 샘플 `abc123`, `demo01`은 더미 해시를 사용하므로 인증 시연에는 새 링크를 생성하세요.
-- Google 로그인은 계정 식별과 세션 유지 기능입니다. 현재 링크 관리 화면과 API는 공유 데모로 누구나 접근할 수 있으며, 링크 소유자별 권한 검사는 아직 구현되어 있지 않습니다. 수신자 이름은 표시용으로 저장하며 접근 제한에 사용하지 않습니다.
-- Google 로그인은 관리자 계정 식별과 세션 유지에 사용하며 링크 생성·관리 API는 로그인한 관리자만 이용할 수 있습니다. 수신자는 계정 없이 공유 링크에서 패스키를 등록합니다. 현재 관리자별 링크 소유자 데이터는 저장하지만 운영 수준의 계정 복구·관리자 역할 정책은 별도로 구현해야 합니다.
-- 비밀번호 처리는 데모용 `String.hashCode()` 방식입니다. 실제 비공개 링크 서비스로 운영하기 전에 비밀번호 저장 방식과 관리 API의 인증·권한 처리를 구현해야 합니다.
-- `./mvnw test`와 `./mvnw package`는 인증 테스트를 실행합니다. 개발 서버 실행 스크립트는 빠른 시작을 위해 테스트를 건너뜁니다.
-
-## 기술 스택
-
-- **백엔드**: Spring Boot 4.1 (Java 17) + spring-boot-starter-jdbc + H2 (in-memory)
-- **프론트엔드**: Vite 8 + React 19 + TypeScript 7 (QR 생성 `qrcode`, 디코딩 `jsqr`)
-- **DB**: H2 인메모리(기본, 별도 설치 불요) / Supabase(PostgreSQL) 전환 가능 - 스키마는 Flyway 마이그레이션이 관리
-
-## 프로젝트 구조
-
-```
-plink/
-├── pom.xml                          # Maven 설정
-├── mvnw                             # Maven wrapper
-├── scripts/run-dev.sh               # 개발 서버 실행 스크립트
-├── src/main/java/com/plink/         # Spring Boot 백엔드
-│   ├── PlinkApplication.java
-│   ├── config/                     # SecurityConfig, PasskeyConfig, WebConfig
-│   ├── controller/                 # AuthController, LinkController, PasskeyController
-│   ├── model/
-│   ├── repository/
-│   └── service/LinkService.java
-├── src/main/resources/
-│   ├── application.yml
-│   ├── schema.sql
-│   └── data.sql                     # 데모 데이터
-├── frontend/                        # Vite + React, 앱 두 개가 한 도메인을 나눠 씀
-│   ├── package.json                 # 의존성·스크립트 공용
-│   ├── vite.common.ts               # 백엔드 프록시, 빌드 위치 공용 설정
-│   ├── shared/src/                  # 공용: 인증, 헤더·푸터, 대화상자, base.css (@shared/...)
-│   ├── apps/link/                   # 링크 앱: / 앱 설명, /admin, /guide, 링크 도구 /links(관리 화면), 수신자 /s/*
-│   ├── apps/ticket/                 # 입장권 앱: /tickets(관리 화면) 아래 전부 (base /tickets/)
-│   └── public/                      # 로고·아이콘 (링크 앱이 사이트 루트에서 제공)
-├── index.html                       # 정적 랜딩 페이지
-└── app/globals.css
-```
-
-## API
-
-| Method | Path | 설명 |
-|--------|------|------|
-| GET | /api/links | 전체 링크 목록 |
-| GET | /api/links/{id} | 링크 상세 + 열람 기록 |
-| POST | /api/links | 보호 링크 생성 |
-| DELETE | /api/links/{id} | 링크 삭제 |
-| GET | /api/links/s/{code} | 공유 코드로 링크 접근 정보 |
-| POST | /api/links/s/{code}/verify | 비밀번호 검증 + 열람 기록 |
-| GET | /api/auth/session | 로그인 사용자, Google 설정 여부 및 CSRF 토큰 |
-| GET | /oauth2/authorization/google | Google 로그인 시작 |
-| POST | /api/auth/logout | 세션 종료 |
-
-POST/DELETE 요청에는 `/api/auth/session` 응답의 `csrfHeader` 이름으로 `csrfToken` 값을 보내야 하며 동일한 세션 쿠키를 유지해야 합니다. 프론트엔드는 이를 자동 처리합니다.
+개발 서버 실행 안내는 로컬 사용 기준입니다. 운영 배포에서는 영속 DB, 고정된 `TICKET_TOKEN_SECRET`, HTTPS `APP_BASE_URL`, 보안 세션 쿠키, 개발 데이터 제외 및 H2 콘솔 비활성화를 별도로 설정해야 합니다.
