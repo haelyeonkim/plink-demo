@@ -116,8 +116,8 @@ export default function TicketVenue({ sessionId, token, eventName, view }: {
       <header className="venue-title">
         <span>{eventName}</span>
         <h2>행사장 안내</h2>
+        {view.venue && <p>{view.venue}</p>}
       </header>
-      {view.venue && <VenueAddress venue={view.venue} />}
       {table && <NowCard section={table} onOpen={() => show(table.id)} />}
       {view.sections.length > 0 && (
         <nav className="venue-list" aria-label="행사장 안내 목록">
@@ -138,24 +138,6 @@ export default function TicketVenue({ sessionId, token, eventName, view }: {
         </nav>
       )}
     </div>
-  );
-}
-
-function VenueAddress({ venue }: { venue: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(venue); setCopied(true); window.setTimeout(() => setCopied(false), 2000); }
-    catch { /* nothing to say: the address is on screen to read */ }
-  };
-  return (
-    <section className="venue-address">
-      <b>{venue}</b>
-      <div className="button-row">
-        <a className="btn-primary" href={`https://map.naver.com/p/search/${encodeURIComponent(venue)}`}
-          target="_blank" rel="noopener noreferrer">길찾기</a>
-        <button className="btn-secondary" type="button" onClick={() => void copy()}>{copied ? '복사했어요' : '장소 복사'}</button>
-      </div>
-    </section>
   );
 }
 
