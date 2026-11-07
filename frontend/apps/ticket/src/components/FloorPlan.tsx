@@ -4,6 +4,8 @@ import type { VenueFloor, VenuePoint, VenueShape } from '../ticket/api';
 /** A floor is drawn on a plan this many units wide; its height follows the plan's image. */
 export const PLAN_WIDTH = 1000;
 export const DEFAULT_HEIGHT = 700;
+export const MIN_HEIGHT = 100;
+export const MAX_HEIGHT = 3000;
 
 /** The swatches an area can take, told apart by lightness as well as hue. */
 export const AREA_COLORS: Array<[string, string]> = [
@@ -47,7 +49,11 @@ export function useFloorSize(floor: VenueFloor | undefined, imageUrl: string | n
     let current = true;
     const image = new Image();
     image.onload = () => {
-      if (current && image.naturalWidth > 0) setNatural(Math.round((PLAN_WIDTH * image.naturalHeight) / image.naturalWidth));
+      // Kept within what a floor may be saved with: a panorama would otherwise give a height
+      // the server refuses, and the map could no longer be saved.
+      if (current && image.naturalWidth > 0) {
+        setNatural(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round((PLAN_WIDTH * image.naturalHeight) / image.naturalWidth))));
+      }
     };
     image.src = imageUrl;
     return () => { current = false; };

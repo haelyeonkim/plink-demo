@@ -183,11 +183,12 @@ function VenueMap({ sessionId, token, map, sections, pin }: {
   const floors = map.content.floors;
   // Every list of places put on this map, each in its own colour.
   const lists = sections.filter((s): s is Section<'PLACES'> => s.kind === 'PLACES' && s.content.mapId === map.id);
+  const floorAt = (id: string | null) => floors.findIndex(f => f.id === id);
   const pins: Pin[] = lists.flatMap((list, l) => list.content.places.flatMap((place, i) =>
-    place.floor !== null && place.x !== null && place.y !== null ? [{
+    floorAt(place.floorId) >= 0 && place.x !== null && place.y !== null ? [{
       key: `${list.id}-${i}`, list: list.id, color: PIN_COLORS[l % PIN_COLORS.length],
       mark: list.title.slice(0, 1), listTitle: list.title, name: place.name, where: place.where,
-      floor: place.floor, x: place.x, y: place.y,
+      floor: floorAt(place.floorId), x: place.x, y: place.y,
     }] : []));
   const asked = pins.find(p => p.key === pin) ?? null;
   const [floor, setFloor] = useState(asked?.floor ?? 0);
@@ -307,11 +308,13 @@ function VenuePlaces({ section, map, onMap }: {
   const [only, setOnly] = useState<string[]>([]);
   const places = section.content.places.map((place, index) => ({ place, index }))
     .filter(({ place }) => only.every(tag => place.tags.includes(tag)));
-  const floorName = (floor: number | null) => (floor === null ? null : map?.content.floors[floor]?.name ?? null);
+  const floors = map?.content.floors ?? [];
+  const order = (id: string | null) => { const at = floors.findIndex(f => f.id === id); return at < 0 ? 99 : at; };
+  const floorName = (id: string | null) => floors.find(f => f.id === id)?.name ?? null;
   // Grouped by floor where there is a map to name them, in the map's order.
   const groups = new Map<string, typeof places>();
-  for (const entry of [...places].sort((a, b) => (a.place.floor ?? 99) - (b.place.floor ?? 99))) {
-    const name = floorName(entry.place.floor) ?? '';
+  for (const entry of [...places].sort((a, b) => order(a.place.floorId) - order(b.place.floorId))) {
+    const name = floorName(entry.place.floorId) ?? '';
     groups.set(name, [...(groups.get(name) ?? []), entry]);
   }
   return (

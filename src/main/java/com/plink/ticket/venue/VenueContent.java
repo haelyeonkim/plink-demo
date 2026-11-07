@@ -11,6 +11,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -39,6 +41,17 @@ final class VenueContent {
     private static final int MAX_HEIGHT = 3000;
 
     /** What a section of each kind starts with, before the organiser has filled it. */
+    /** The ids of a map section's floors, in order. */
+    static List<String> floorIds(Map<?, ?> mapContent) {
+        List<String> ids = new ArrayList<>();
+        if (mapContent.get("floors") instanceof List<?> floors) {
+            for (Object floor : floors) {
+                if (floor instanceof Map<?, ?> f && f.get("id") != null) ids.add(f.get("id").toString());
+            }
+        }
+        return ids;
+    }
+
     static Map<String, Object> empty(String kind) {
         return switch (kind) {
             case MAP -> Map.of("floors", List.of());
@@ -52,13 +65,15 @@ final class VenueContent {
 
     /**
      * @param imageOk whether an image id is one of this event's floor plans
-     * @param mapOk whether a section id is one of this event's map sections
+     * @param mapFloors the floor ids of one of this event's map sections, or empty when the
+     *     id names no map of the event
      */
-    static Map<String, Object> clean(String kind, Object raw, Predicate<String> imageOk, Predicate<Long> mapOk) {
+    static Map<String, Object> clean(String kind, Object raw, Predicate<String> imageOk,
+            Function<Long, Optional<List<String>>> mapFloors) {
         Map<?, ?> in = raw instanceof Map<?, ?> m ? m : Map.of();
         return switch (kind) {
             case MAP -> map(in, imageOk);
-            case PLACES -> places(in, mapOk);
+            case PLACES -> places(in, mapFloors);
             case TEXT -> Map.of("body", text(in.get("body"), 5000, false, "안내문"));
             case TIMETABLE -> timetable(in);
             case LINK -> link(in);
@@ -68,15 +83,25 @@ final class VenueContent {
 
     private static Map<String, Object> map(Map<?, ?> in, Predicate<String> imageOk) {
         List<Map<String, Object>> floors = new ArrayList<>();
+        Set<String> ids = new java.util.HashSet<>();
+        int n = 0;
         for (Map<?, ?> floor : objects(in.get("floors"), 10, "층은 10개까지 둘 수 있어요.")) {
+            n++;
+            // Pins name their floor by this id, so a floor taken out of the middle does not
+            // move the pins of the floors after it. A missing or repeated one is replaced.
+            String id = floor.get("id") == null ? "" : floor.get("id").toString();
+            if (!SHAPE_ID.matcher(id).matches() || !ids.add(id)) {
+                id = "f" + n;
+                while (!ids.add(id)) id = id + "x";
+            }
             String image = text(floor.get("imageId"), 36, false, "지도 이미지");
             if (!image.isEmpty() && !imageOk.test(image)) throw bad("지도 이미지를 다시 올려 주세요.");
             Integer height = null;
-            if (floor.get("height") instanceof Number n) {
-                height = n.intValue();
+            if (floor.get("height") instanceof Number h) {
+                height = h.intValue();
                 if (height < 100 || height > MAX_HEIGHT) throw bad("지도 크기를 확인해 주세요.");
             }
-            floors.add(mapOf("name", text(floor.get("name"), 20, true, "층 이름"),
+            floors.add(mapOf("id", id, "name", text(floor.get("name"), 20, true, "층 이름"),
                 "imageId", image.isEmpty() ? null : image,
                 "height", height,
                 "shapes", shapes(floor.get("shapes"), height == null ? MAX_HEIGHT : height)));
@@ -146,23 +171,30 @@ final class VenueContent {
         return out;
     }
 
-    private static Map<String, Object> places(Map<?, ?> in, Predicate<Long> mapOk) {
+    private static Map<String, Object> places(Map<?, ?> in, Function<Long, Optional<List<String>>> mapFloors) {
         Long mapId = in.get("mapId") instanceof Number n ? n.longValue() : null;
-        if (mapId != null && !mapOk.test(mapId)) throw bad("연결할 지도를 다시 골라 주세요.");
+        // A map that has gone, or was never this event's, leaves a list without a map rather
+        // than one that can no longer be saved.
+        List<String> floorIds = mapId == null ? List.of() : mapFloors.apply(mapId).orElse(null);
+        if (floorIds == null) {
+            mapId = null;
+            floorIds = List.of();
+        }
         List<String> tags = strings(in.get("tags"), 10, 20, "표시");
         Set<String> allowed = new LinkedHashSet<>(tags);
         List<Map<String, Object>> places = new ArrayList<>();
         for (Map<?, ?> place : objects(in.get("places"), 100, "장소는 100곳까지 둘 수 있어요.")) {
-            Integer floor = index(place.get("floor"), 10);
+            String floorId = place.get("floorId") == null ? null : place.get("floorId").toString();
             Double x = percent(place.get("x"));
             Double y = percent(place.get("y"));
-            // A pin is a point on one floor: half a coordinate, or one with no floor, is no pin.
-            boolean pinned = mapId != null && floor != null && x != null && y != null;
+            // A pin is a point on one floor of the map: half a coordinate, or a floor the map
+            // no longer has, is no pin.
+            boolean pinned = floorId != null && floorIds.contains(floorId) && x != null && y != null;
             List<String> own = strings(place.get("tags"), 10, 20, "표시").stream().filter(allowed::contains).toList();
             places.add(mapOf(
                 "name", text(place.get("name"), 40, true, "장소 이름"),
                 "where", text(place.get("where"), 80, false, "위치 설명"),
-                "floor", floor,
+                "floorId", pinned ? floorId : null,
                 "x", pinned ? x : null,
                 "y", pinned ? y : null,
                 "tags", own));

@@ -422,9 +422,10 @@ export type VenueShape =
   | { id: string; type: 'line'; pts: VenuePoint[]; name: string }
   | { id: string; type: 'label'; x: number; y: number; name: string };
 /** One floor: a plan image, drawn shapes, or both. Height is in the same units as the shapes. */
-export interface VenueFloor { name: string; imageId: string | null; height?: number | null; shapes?: VenueShape[] }
+export interface VenueFloor { id: string; name: string; imageId: string | null; height?: number | null; shapes?: VenueShape[] }
 export interface VenuePlace {
-  name: string; where: string; floor: number | null; x: number | null; y: number | null; tags: string[];
+  /** The floor a pin is on, by the floor's id: positions move when a floor is taken out. */
+  name: string; where: string; floorId: string | null; x: number | null; y: number | null; tags: string[];
 }
 export interface VenueDay { label: string; date: string | null }
 export interface VenueItem {

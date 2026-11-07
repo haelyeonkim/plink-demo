@@ -2364,3 +2364,11 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .venue-floor-fields select { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; max-width: 240px; }
 .venue-floor-fields { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .venue-floor-fields > label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; }
+.venue-editor-state { display: inline-flex; align-items: center; gap: 10px; }
+.venue-editor-state small { font-size: 12px; }
+.venue-draft {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-radius: 10px; background: #fff7e6; border: 1px solid #f3dcae; color: #5e3800;
+}
+.venue-draft p { margin: 0; font-size: 13px; line-height: 1.6; flex: 1 1 320px; }
+.venue-has-draft { color: #8a5000; font-weight: 700; }

@@ -43,6 +43,7 @@ class VenueTest {
     @Autowired TicketPasskeyService passkeys;
     @Autowired HolderRepository holders;
     @Autowired EventSessionRepository sessions;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private long newSession() {
         return sessions.insert("행사장 이벤트 " + Secrets.randomAlnum(6), "메인홀",
@@ -153,7 +154,7 @@ class VenueTest {
         long toilets = id(venue.create(sessionId, Map.of("kind", "PLACES", "title", "화장실")));
         venue.update(sessionId, toilets, Map.of("title", "화장실", "content", Map.of(
             "mapId", map, "tags", List.of("장애인용"),
-            "places", List.of(Map.of("name", "로비", "floor", 0, "x", 40.04, "y", 60,
+            "places", List.of(Map.of("name", "로비", "floorId", "f1", "x", 40.04, "y", 60,
                 "tags", List.of("장애인용", "아무거나"))))));
         venue.setVisible(sessionId, toilets, true);
         Holder holder = holder(sessionId, "places@example.com", true);
@@ -246,6 +247,86 @@ class VenueTest {
         assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "label", "x", 10, "y", 10)));
         assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "circle", "pts", triangle)));
         assertEquals(HttpStatus.OK, save.apply(Map.of("type", "area", "color", "#315cf4", "pts", triangle)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> contentOf(long sessionId, long sectionId) {
+        return (Map<String, Object>) sections(venue.console(sessionId)).stream()
+            .filter(s -> ((Number) s.get("id")).longValue() == sectionId).findFirst().orElseThrow().get("content");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> firstPlace(Map<String, Object> placesContent) {
+        return ((List<Map<String, Object>>) placesContent.get("places")).get(0);
+    }
+
+    /** Taking a floor out of the middle used to move the pins of the floors after it. */
+    @Test void pinsFollowTheirFloorNotItsPosition() {
+        long sessionId = newSession();
+        long map = id(venue.create(sessionId, Map.of("kind", "MAP", "title", "지도")));
+        Map<String, Object> first = Map.of("id", "ground", "name", "1층", "height", 700);
+        Map<String, Object> second = Map.of("id", "upper", "name", "2층", "height", 700);
+        venue.update(sessionId, map, Map.of("title", "지도", "content", Map.of("floors", List.of(first, second))));
+        long places = id(venue.create(sessionId, Map.of("kind", "PLACES", "title", "화장실")));
+        venue.update(sessionId, places, Map.of("title", "화장실", "content", Map.of("mapId", map,
+            "places", List.of(Map.of("name", "2층 화장실", "floorId", "upper", "x", 30, "y", 40)))));
+
+        venue.update(sessionId, map, Map.of("title", "지도", "content", Map.of("floors", List.of(second))));
+        Map<String, Object> pin = firstPlace(contentOf(sessionId, places));
+        assertEquals("upper", pin.get("floorId"));
+        assertEquals(30.0, ((Number) pin.get("x")).doubleValue());
+
+        // The floor itself gone: the pin is let go, not moved to whatever floor is left.
+        venue.update(sessionId, map, Map.of("title", "지도", "content", Map.of("floors", List.of(first))));
+        pin = firstPlace(contentOf(sessionId, places));
+        assertNull(pin.get("floorId"));
+        assertNull(pin.get("x"));
+        assertEquals("2층 화장실", pin.get("name"));
+    }
+
+    @Test void aListWhoseMapIsGoneCanStillBeSaved() {
+        long sessionId = newSession();
+        long map = id(venue.create(sessionId, Map.of("kind", "MAP", "title", "지도")));
+        venue.update(sessionId, map, Map.of("title", "지도", "content", Map.of("floors", List.of(Map.of("name", "1층")))));
+        long places = id(venue.create(sessionId, Map.of("kind", "PLACES", "title", "화장실")));
+        Map<String, Object> stale = Map.of("mapId", map,
+            "places", List.of(Map.of("name", "로비", "floorId", "f1", "x", 10, "y", 10)));
+        venue.update(sessionId, places, Map.of("title", "화장실", "content", stale));
+
+        venue.delete(sessionId, map);
+        assertNull(contentOf(sessionId, places).get("mapId"));
+        // A console that still holds the old map id saves without a map instead of failing.
+        Map<String, Object> saved = venue.update(sessionId, places, Map.of("title", "화장실", "content", stale));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> content = (Map<String, Object>) saved.get("content");
+        assertNull(content.get("mapId"));
+        assertNull(firstPlace(content).get("x"));
+    }
+
+    @Test void storedFloorsAndPinsAreGivenIdsOnce() throws Exception {
+        long sessionId = newSession();
+        jdbc.update("INSERT INTO venue_section (session_id, kind, title, content) VALUES (?, 'MAP', '지도', ?)", sessionId,
+            "{\"floors\":[{\"name\":\"1층\",\"imageId\":null},{\"name\":\"2층\",\"imageId\":null}]}");
+        long map = jdbc.queryForObject("SELECT MAX(id) FROM venue_section", Long.class);
+        jdbc.update("INSERT INTO venue_section (session_id, kind, title, content) VALUES (?, 'PLACES', '화장실', ?)", sessionId,
+            "{\"mapId\":" + map + ",\"tags\":[],\"places\":["
+            + "{\"name\":\"위\",\"where\":\"\",\"floor\":1,\"x\":5.0,\"y\":6.0,\"tags\":[]},"
+            + "{\"name\":\"없는 층\",\"where\":\"\",\"floor\":7,\"x\":5.0,\"y\":6.0,\"tags\":[]}]}");
+        long places = jdbc.queryForObject("SELECT MAX(id) FROM venue_section", Long.class);
+
+        try (java.sql.Connection connection = jdbc.getDataSource().getConnection()) {
+            db.migration.V55__venue_floor_ids.upgrade(connection);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> floors = (List<Map<String, Object>>) contentOf(sessionId, map).get("floors");
+        assertEquals(List.of("f1", "f2"), floors.stream().map(f -> f.get("id")).toList());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pins = (List<Map<String, Object>>) contentOf(sessionId, places).get("places");
+        assertEquals("f2", pins.get(0).get("floorId"));
+        assertFalse(pins.get(0).containsKey("floor"));
+        assertNull(pins.get(1).get("floorId"));
+        assertNull(pins.get(1).get("x"));
     }
 
     @Test void reorderingMustNameEverySectionOnce() {
