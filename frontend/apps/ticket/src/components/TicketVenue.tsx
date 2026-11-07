@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { venueImageUrl, type VenueSection, type VenueView } from '../ticket/api';
+import { FloorPlan, inside, useFloorHeight, type Area } from './FloorPlan';
 
 type Section<K extends VenueSection['kind']> = Extract<VenueSection, { kind: K }>;
 
@@ -191,13 +192,23 @@ function VenueMap({ sessionId, token, map, sections, pin }: {
   const asked = pins.find(p => p.key === pin) ?? null;
   const [floor, setFloor] = useState(asked?.floor ?? 0);
   const [filter, setFilter] = useState<number | null>(asked?.list ?? null);
-  const [picked, setPicked] = useState<string | null>(asked?.key ?? null);
+  // A pin or a drawn area: whichever was tapped last is described below the plan.
+  const [picked, setPicked] = useState<string | null>(asked ? `pin:${asked.key}` : null);
   const [zoomed, setZoomed] = useState(false);
   const plan = floors[floor];
+  const imageUrl = plan?.imageId ? venueImageUrl(sessionId, token, plan.imageId) : null;
+  const height = useFloorHeight(plan, imageUrl);
   const shown = pins.filter(p => p.floor === floor && (filter === null || p.list === filter));
-  const current = shown.find(p => p.key === picked) ?? null;
+  const areas = (plan?.shapes ?? []).filter((s): s is Area => s.type === 'area' && !!s.name);
+  // A pin's place on the plan, in the units the areas are drawn in.
+  const onPlan = (p: Pin): [number, number] => [p.x * 10, (p.y * height) / 100];
+  const pickedPin = shown.find(p => `pin:${p.key}` === picked) ?? null;
+  const pickedArea = areas.find(a => `area:${a.id}` === picked) ?? null;
+  const pinZone = pickedPin ? areas.find(a => inside(onPlan(pickedPin), a.pts)) ?? null : null;
+  const pinLine = [pinZone && `${pinZone.name} 안`, pickedPin?.where].filter(Boolean).join(' · ');
 
   if (floors.length === 0) return <p className="console-none">아직 지도가 준비되지 않았어요.</p>;
+  const drawn = (plan?.shapes ?? []).length > 0;
   return (
     <div className="venue-map">
       {floors.length > 1 && (
@@ -221,30 +232,66 @@ function VenueMap({ sessionId, token, map, sections, pin }: {
         </div>
       )}
       <div className={`venue-plan-box${zoomed ? ' zoomed' : ''}`}>
-        {plan?.imageId ? (
-          <div className="venue-plan">
-            <img src={venueImageUrl(sessionId, token, plan.imageId)} alt={`${plan.name} 지도`} />
-            {shown.map(p => (
-              <button key={p.key} type="button" className={`venue-pin${p.key === picked ? ' on' : ''}`}
-                style={{ left: `${p.x}%`, top: `${p.y}%`, background: p.color }}
-                aria-label={`${p.listTitle} · ${p.name}`} aria-pressed={p.key === picked}
-                onClick={() => setPicked(p.key)}>{p.mark}</button>
-            ))}
+        {plan && (imageUrl || drawn) ? (
+          <div className="venue-plan" role="img" aria-label={`${plan.name} 지도`}>
+            <FloorPlan floor={plan} imageUrl={imageUrl} height={height}
+              picked={pickedArea?.id ?? null} onArea={area => setPicked(`area:${area.id}`)}>
+              {shown.map(p => (
+                <button key={p.key} type="button" className={`venue-pin${`pin:${p.key}` === picked ? ' on' : ''}`}
+                  style={{ left: `${p.x}%`, top: `${p.y}%`, background: p.color }}
+                  aria-label={`${p.listTitle} · ${p.name}`} aria-pressed={`pin:${p.key}` === picked}
+                  onClick={() => setPicked(`pin:${p.key}`)}>{p.mark}</button>
+              ))}
+            </FloorPlan>
           </div>
         ) : <p className="console-none">이 층의 지도는 아직 없어요.</p>}
       </div>
-      {plan?.imageId && (
+      {plan && (imageUrl || drawn) && (
         <button type="button" className="btn-tiny venue-zoom" onClick={() => setZoomed(z => !z)}>
           {zoomed ? '지도 작게 보기' : '지도 크게 보기'}</button>
       )}
-      {current && (
+      {pickedPin && (
         <section className="venue-picked" aria-live="polite">
-          <span className="venue-pin-mark" style={{ background: current.color }}>{current.mark}</span>
+          <span className="venue-pin-mark" style={{ background: pickedPin.color }}>{pickedPin.mark}</span>
           <span>
-            <small style={{ color: current.color }}>{current.listTitle}</small>
-            <b>{current.name}</b>
-            {current.where && <span>{current.where}</span>}
+            <small style={{ color: pickedPin.color }}>{pickedPin.listTitle}</small>
+            <b>{pickedPin.name}</b>
+            {pinLine && <span>{pinLine}</span>}
           </span>
+        </section>
+      )}
+      {pickedArea && (
+        <section className="venue-picked" aria-live="polite">
+          <span className="venue-area-mark" style={{ background: `${pickedArea.color}33`, borderColor: pickedArea.color }} />
+          <span>
+            <small className="muted">구역</small>
+            <b>{pickedArea.name}</b>
+            {pickedArea.desc && <span>{pickedArea.desc}</span>}
+            {(() => {
+              const within = pins.filter(p => p.floor === floor && inside(onPlan(p), pickedArea.pts));
+              return within.length > 0 && (
+                <span className="venue-area-places">
+                  {within.map(p => (
+                    <button key={p.key} type="button" onClick={() => setPicked(`pin:${p.key}`)}>
+                      <span className="venue-dot" style={{ background: p.color }} />{p.name}</button>
+                  ))}
+                </span>
+              );
+            })()}
+          </span>
+        </section>
+      )}
+      {areas.length > 0 && (
+        <section className="venue-areas" aria-label="구역 목록">
+          <h3>구역</h3>
+          <div>
+            {areas.map(area => (
+              <button key={area.id} type="button" aria-pressed={pickedArea?.id === area.id}
+                className={pickedArea?.id === area.id ? 'on' : ''} onClick={() => setPicked(`area:${area.id}`)}>
+                <span style={{ background: area.color }} />{area.name}
+              </button>
+            ))}
+          </div>
         </section>
       )}
       {lists.length > 0 && shown.length === 0 && <p className="console-none">이 층에는 표시할 곳이 없어요.</p>}

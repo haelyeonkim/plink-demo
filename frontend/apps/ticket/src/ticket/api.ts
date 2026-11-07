@@ -415,7 +415,14 @@ export async function cancelInvite(sessionId: string, token: string, ticketId: n
 
 // ---- The venue tab ----
 
-export interface VenueFloor { name: string; imageId: string | null }
+export type VenuePoint = [number, number];
+/** What the organiser drew on a floor, in units of a plan 1000 wide. */
+export type VenueShape =
+  | { id: string; type: 'area'; pts: VenuePoint[]; name: string; color: string; desc: string; showName: boolean }
+  | { id: string; type: 'line'; pts: VenuePoint[]; name: string }
+  | { id: string; type: 'label'; x: number; y: number; name: string };
+/** One floor: a plan image, drawn shapes, or both. Height is in the same units as the shapes. */
+export interface VenueFloor { name: string; imageId: string | null; height?: number | null; shapes?: VenueShape[] }
 export interface VenuePlace {
   name: string; where: string; floor: number | null; x: number | null; y: number | null; tags: string[];
 }
