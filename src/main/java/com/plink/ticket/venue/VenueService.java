@@ -88,17 +88,38 @@ public class VenueService {
     @Transactional
     public Map<String, Object> update(long sessionId, long sectionId, Map<String, Object> body) {
         VenueRepository.Section section = require(sessionId, sectionId);
-        Map<String, Object> content = VenueContent.clean(section.kind(), body.get("content"),
-            imageId -> repo.image(imageId).filter(image -> image.sessionId() == sessionId).isPresent(),
-            mapId -> repo.section(sessionId, mapId).filter(s -> VenueContent.MAP.equals(s.kind())).isPresent());
+        Map<String, Object> content = clean(sessionId, section.kind(), body.get("content"));
         Set<String> before = planIds(section);
         repo.update(section.id(), title(body.get("title")), write(content));
         VenueRepository.Section saved = require(sessionId, sectionId);
         // A plan taken off this map goes once no other map of the event shows it.
         before.removeAll(planIds(saved));
         before.forEach(imageId -> release(sessionId, imageId));
+        // A floor taken off this map takes the pins on it out of the lists that use it.
+        if (VenueContent.MAP.equals(section.kind())) refreshPlaces(sessionId, section.id());
         changed(sessionId);
         return describe(saved);
+    }
+
+    private Map<String, Object> clean(long sessionId, String kind, Object content) {
+        return VenueContent.clean(kind, content,
+            imageId -> repo.image(imageId).filter(image -> image.sessionId() == sessionId).isPresent(),
+            mapId -> repo.section(sessionId, mapId).filter(s -> VenueContent.MAP.equals(s.kind()))
+                .map(s -> VenueContent.floorIds(read(s))));
+    }
+
+    /**
+     * Cleans again every list of places on one map, after the map changed or went: pins on
+     * a floor that is gone are dropped, and a list whose map is gone keeps its places
+     * without one.
+     */
+    private void refreshPlaces(long sessionId, long mapId) {
+        for (VenueRepository.Section places : repo.sections(sessionId)) {
+            if (!VenueContent.PLACES.equals(places.kind())) continue;
+            Map<String, Object> content = read(places);
+            if (!(content.get("mapId") instanceof Number linked) || linked.longValue() != mapId) continue;
+            repo.update(places.id(), places.title(), write(clean(sessionId, places.kind(), content)));
+        }
     }
 
     public Map<String, Object> setVisible(long sessionId, long sectionId, boolean visible) {
@@ -131,6 +152,7 @@ public class VenueService {
         Set<String> plans = planIds(section);
         repo.delete(section.id());
         plans.forEach(imageId -> release(sessionId, imageId));
+        if (VenueContent.MAP.equals(section.kind())) refreshPlaces(sessionId, section.id());
         changed(sessionId);
     }
 

@@ -6,7 +6,7 @@ import { openLive } from '../ticket/live';
 import { useCoalesced } from '../ticket/coalesce';
 import { read } from '../console/model';
 import type { VenueDay, VenueFloor, VenueItem, VenuePlace, VenuePoint, VenueSection } from '../ticket/api';
-import { DEFAULT_HEIGHT, FloorPlan, PLAN_WIDTH, useFloorHeight, useFloorSize } from './FloorPlan';
+import { DEFAULT_HEIGHT, FloorPlan, MAX_HEIGHT, MIN_HEIGHT, PLAN_WIDTH, useFloorHeight, useFloorSize } from './FloorPlan';
 import MapDrawer from './MapDrawer';
 
 type Kind = VenueSection['kind'];
@@ -92,7 +92,7 @@ export default function ConsoleVenue({ sessionId, onNotice, onError }: {
       <VenueEditor key={open.id} base={base} row={open} maps={rows.filter((r): r is Of<'MAP'> => r.kind === 'MAP')}
         onError={onError}
         onSave={(title, content) => act(() => send(`${base}/${open.id}`, 'PUT', { title, content }), `'${title}' 섹션을 저장했어요.`)
-          .then(ok => { if (ok) setEditing(null); })}
+          .then(ok => { if (ok) setEditing(null); return !!ok; })}
         onClose={() => setEditing(null)} />
     );
   }
@@ -131,7 +131,8 @@ export default function ConsoleVenue({ sessionId, onNotice, onError }: {
                   <button className="btn-tiny" type="button" aria-label={`${row.title} 아래로`} disabled={index === rows.length - 1}
                     onClick={() => move(index, 1)}>↓</button>
                 </td>
-                <td className="wrap"><b>{row.title}</b><small className="cell-note">{summary(row)}</small></td>
+                <td className="wrap"><b>{row.title}</b><small className="cell-note">{summary(row)}</small>
+                  {readDraft(draftKey(base, row.id)) && <small className="cell-note venue-has-draft">이 브라우저에 저장하지 않은 작업이 있어요</small>}</td>
                 <td className="muted">{KIND_LABEL[row.kind]}</td>
                 <td>
                   <label className="console-switch venue-visible">
@@ -145,6 +146,7 @@ export default function ConsoleVenue({ sessionId, onNotice, onError }: {
                   <button className="btn-tiny" type="button" onClick={() => setEditing(row.id)}>편집</button>
                   <button className="btn-tiny btn-tiny-danger" type="button" onClick={() => {
                     if (window.confirm(`'${row.title}' 섹션을 지울까요? 되돌릴 수 없어요.`)) {
+                      dropDraft(base, row.id);
                       void act(() => send(`${base}/${row.id}`, 'DELETE'), '섹션을 지웠어요.');
                     }
                   }}>삭제</button>
@@ -165,19 +167,96 @@ export default function ConsoleVenue({ sessionId, onNotice, onError }: {
 
 // ---- One section open ----
 
+// ---- Work in progress, kept in this browser ----
+
+/** What is being edited, saved as it changes: a reload or a closed tab does not lose it. */
+interface Draft { title: string; content: Row['content']; base: string; at: string }
+
+const draftKey = (base: string, id: number) => `plink.venueDraft:${base}/${id}`;
+
+function readDraft(key: string): Draft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as Draft : null;
+  } catch { return null; }
+}
+
+function writeDraft(key: string, draft: Draft | null) {
+  try {
+    if (draft) window.localStorage.setItem(key, JSON.stringify(draft));
+    else window.localStorage.removeItem(key);
+  } catch { /* storage full or switched off: the editor still works, just without the copy */ }
+}
+
+export function dropDraft(base: string, id: number) { writeDraft(draftKey(base, id), null); }
+
+function clockOf(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function VenueEditor({ base, row, maps, onSave, onClose, onError }: {
   base: string; row: Row; maps: Of<'MAP'>[];
-  onSave: (title: string, content: unknown) => void; onClose: () => void; onError: (text: string) => void;
+  onSave: (title: string, content: unknown) => Promise<boolean>; onClose: () => void; onError: (text: string) => void;
 }) {
+  const key = draftKey(base, row.id);
   const [title, setTitle] = useState(row.title);
   const [content, setContent] = useState<Row['content']>(row.content);
   const set = <T,>(patch: Partial<T>) => setContent(current => ({ ...current, ...patch }));
+  // A copy left from before - a reload, a closed tab - is offered rather than applied:
+  // the saved section may be the one wanted.
+  const [offer, setOffer] = useState<Draft | null>(() => {
+    const draft = readDraft(key);
+    if (!draft) return null;
+    const same = draft.title === row.title && JSON.stringify(draft.content) === JSON.stringify(row.content);
+    if (same) { writeDraft(key, null); return null; }
+    return draft;
+  });
+  const dirty = title !== row.title || JSON.stringify(content) !== JSON.stringify(row.content);
+
+  // Kept as it changes, a moment after the last change. Not while a copy is on offer: one
+  // keystroke would otherwise write over the work being offered back.
+  useEffect(() => {
+    if (offer) return;
+    const timer = window.setTimeout(() => writeDraft(key, dirty
+      ? { title, content, base: row.updatedAt, at: new Date().toISOString() } : null), 600);
+    return () => window.clearTimeout(timer);
+  }, [key, title, content, dirty, offer, row.updatedAt]);
+  // Leaving the page with changes not saved to the server asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  const save = () => {
+    void onSave(title, content).then(ok => { if (ok) writeDraft(key, null); });
+  };
+
   return (
-    <form className="console-card venue-editor" onSubmit={e => { e.preventDefault(); onSave(title, content); }}>
+    <form className="console-card venue-editor" onSubmit={e => { e.preventDefault(); save(); }}>
       <div className="console-card-head">
         <h3>{KIND_LABEL[row.kind]} 편집</h3>
-        <span className={`pill pill-${row.visible ? 'ok' : 'off'}`}>{row.visible ? '공개 중' : '숨김'}</span>
+        <span className="venue-editor-state">
+          {dirty && !offer && <small className="muted">이 브라우저에 임시 저장 중 · 서버에는 저장 전</small>}
+          <span className={`pill pill-${row.visible ? 'ok' : 'off'}`}>{row.visible ? '공개 중' : '숨김'}</span>
+        </span>
       </div>
+      {offer && (
+        <div className="venue-draft" role="status">
+          <p><b>저장하지 않은 작업이 있어요.</b> {clockOf(offer.at)}에 이 브라우저에서 고치던 내용이에요.
+            {offer.base !== row.updatedAt && ' 그 뒤로 이 섹션이 다른 곳에서 저장됐어요. 이어서 하면 그 내용을 덮어쓰게 돼요.'}</p>
+          <span className="row-actions">
+            <button className="btn-tiny btn-tiny-primary" type="button" onClick={() => {
+              setTitle(offer.title);
+              setContent(offer.content);
+              setOffer(null);
+            }}>이어서 하기</button>
+            <button className="btn-tiny" type="button" onClick={() => { writeDraft(key, null); setOffer(null); }}>버리기</button>
+          </span>
+        </div>
+      )}
       <div className="console-fields">
         <label className="span">섹션 이름<input required maxLength={40} value={title} onChange={e => setTitle(e.target.value)} /></label>
       </div>
@@ -198,7 +277,7 @@ function VenueEditor({ base, row, maps, onSave, onClose, onError }: {
       )}
       {row.kind === 'MAP' && (
         <MapEditor base={base} floors={(content as Of<'MAP'>['content']).floors} onError={onError}
-          onChange={floors => set<Of<'MAP'>['content']>({ floors })} />
+          onChange={edit => setContent(current => ({ ...current, floors: edit((current as Of<'MAP'>['content']).floors) }))} />
       )}
       {row.kind === 'PLACES' && (
         <PlacesEditor base={base} maps={maps} value={content as Of<'PLACES'>['content']}
@@ -218,35 +297,49 @@ function VenueEditor({ base, row, maps, onSave, onClose, onError }: {
 /** The plan shapes a floor without an image can take, as heights on a plan 1000 wide. */
 const CANVAS_SHAPES: Array<[number, string]> = [[700, '가로형'], [1000, '정사각형'], [1400, '세로형']];
 
+let floorCounter = 0;
+const newFloorId = () => `f${Date.now().toString(36)}${(floorCounter++).toString(36)}`;
+
+/** A floor at a new height, keeping what was drawn on it: anything below the edge moves up to it. */
+function withHeight(floor: VenueFloor, next: number): VenueFloor {
+  return {
+    ...floor, height: next,
+    shapes: (floor.shapes ?? []).map(shape => (shape.type === 'label'
+      ? { ...shape, y: Math.min(shape.y, next) }
+      : { ...shape, pts: shape.pts.map(([x, y]) => [x, Math.min(y, next)] as VenuePoint) })),
+  };
+}
+
+/**
+ * The floors of a map. Every change is given as a function of the floors as they are when
+ * it lands, and finds its floor by id: an upload that finishes while the organiser is
+ * still drawing must not put back the floors as they were when it started.
+ */
 function MapEditor({ base, floors, onChange, onError }: {
-  base: string; floors: VenueFloor[]; onChange: (floors: VenueFloor[]) => void; onError: (text: string) => void;
+  base: string; floors: VenueFloor[]; onChange: (change: (floors: VenueFloor[]) => VenueFloor[]) => void;
+  onError: (text: string) => void;
 }) {
-  const [active, setActive] = useState(0);
+  const [activeId, setActiveId] = useState<string | null>(floors[0]?.id ?? null);
   const [uploading, setUploading] = useState(false);
-  const index = Math.min(active, Math.max(0, floors.length - 1));
-  const floor = floors[index];
+  const floor = floors.find(f => f.id === activeId) ?? floors[0];
+  const index = floor ? floors.indexOf(floor) : -1;
   const imageUrl = floor?.imageId ? `${base}/images/${floor.imageId}` : null;
   const { height, settled } = useFloorSize(floor, imageUrl);
-  const update = (patch: Partial<VenueFloor>) =>
-    onChange(floors.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  const change = (id: string, edit: (f: VenueFloor) => VenueFloor) =>
+    onChange(current => current.map(f => (f.id === id ? edit(f) : f)));
+  const update = (patch: Partial<VenueFloor>) => { if (floor) change(floor.id, f => ({ ...f, ...patch })); };
   // A floor that only knew its height from its image says it outright once edited, so the
   // phone draws it the same way without loading the image first.
   useEffect(() => {
     if (floor && floor.height == null && settled) update({ height });
   }, [floor, settled, height]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** A new height keeps what was drawn on the plan: anything below it moves up to the edge. */
-  const resize = (next: number, patch: Partial<VenueFloor> = {}) => update({
-    ...patch, height: next,
-    shapes: (floor.shapes ?? []).map(shape => (shape.type === 'label'
-      ? { ...shape, y: Math.min(shape.y, next) }
-      : { ...shape, pts: shape.pts.map(([x, y]) => [x, Math.min(y, next)] as VenuePoint) })),
-  });
-
   async function pick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || !floor) return;
+    // The floor the image was picked for, wherever it is by the time the upload is done.
+    const target = floor.id;
     setUploading(true);
     try {
       const small = await shrinkPhoto(file, 2400);
@@ -260,7 +353,7 @@ function MapEditor({ base, floors, onChange, onError }: {
       form.append('file', small, 'plan.jpg');
       const { imageId } = await read(await mutate(`${base}/images`, { method: 'POST', body: form })) as { imageId: string };
       // The plan takes the image's proportions, so pins put on it stay where they were put.
-      resize(Math.min(3000, Math.max(100, size)), { imageId });
+      change(target, f => withHeight({ ...f, imageId }, Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, size))));
     } catch (err) { onError(err instanceof Error ? err.message : '지도 이미지를 올리지 못했어요.'); }
     finally { setUploading(false); }
   }
@@ -269,13 +362,14 @@ function MapEditor({ base, floors, onChange, onError }: {
     <div className="venue-floors">
       <div className="chip-row" role="group" aria-label="층">
         {floors.map((f, i) => (
-          <button key={i} type="button" className={i === index ? 'on' : ''} aria-pressed={i === index}
-            onClick={() => setActive(i)}>{f.name || `${i + 1}층`}</button>
+          <button key={f.id} type="button" className={i === index ? 'on' : ''} aria-pressed={i === index}
+            onClick={() => setActiveId(f.id)}>{f.name || `${i + 1}층`}</button>
         ))}
         {floors.length < 10 && (
           <button type="button" onClick={() => {
-            onChange([...floors, { name: `${floors.length + 1}층`, imageId: null, height: DEFAULT_HEIGHT, shapes: [] }]);
-            setActive(floors.length);
+            const id = newFloorId();
+            onChange(current => [...current, { id, name: `${current.length + 1}층`, imageId: null, height: DEFAULT_HEIGHT, shapes: [] }]);
+            setActiveId(id);
           }}>+ 층 추가</button>
         )}
       </div>
@@ -285,7 +379,8 @@ function MapEditor({ base, floors, onChange, onError }: {
             onChange={e => update({ name: e.target.value })} /></label>
           {!floor.imageId && (
             <label>캔버스 모양
-              <select value={CANVAS_SHAPES.some(([h]) => h === height) ? height : ''} onChange={e => resize(Number(e.target.value))}>
+              <select value={CANVAS_SHAPES.some(([h]) => h === height) ? height : ''}
+                onChange={e => { const next = Number(e.target.value); change(floor.id, f => withHeight(f, next)); }}>
                 {!CANVAS_SHAPES.some(([h]) => h === height) && <option value="">지금 크기</option>}
                 {CANVAS_SHAPES.map(([h, label]) => <option key={h} value={h}>{label}</option>)}
               </select></label>
@@ -298,14 +393,15 @@ function MapEditor({ base, floors, onChange, onError }: {
             </label>
             {floor.imageId && <button className="btn-tiny" type="button" onClick={() => update({ imageId: null })}>도면 이미지 빼기</button>}
             <button className="btn-tiny btn-tiny-danger" type="button" onClick={() => {
-              if (window.confirm(`'${floor.name}' 층을 뺄까요? 그린 것도 함께 사라져요.`)) {
-                onChange(floors.filter((_, i) => i !== index));
-                setActive(Math.max(0, index - 1));
+              if (window.confirm(`'${floor.name}' 층을 뺄까요? 그린 것도 함께 사라지고, 이 층에 찍은 장소 핀은 저장할 때 빠져요.`)) {
+                const gone = floor.id;
+                onChange(current => current.filter(f => f.id !== gone));
+                setActiveId(floors[index - 1]?.id ?? floors[index + 1]?.id ?? null);
               }
             }}>층 빼기</button>
           </span>
         </div>
-        <MapDrawer key={index} shapes={floor.shapes ?? []} height={height} imageUrl={imageUrl}
+        <MapDrawer key={floor.id} shapes={floor.shapes ?? []} height={height} imageUrl={imageUrl}
           onChange={shapes => update({ shapes })} />
       </>) : <p className="console-none">층을 추가해 주세요.</p>}
       <p className="muted venue-note">도면 이미지가 있으면 그 위에 따라 그리고, 없으면 빈 캔버스에 바로 그려요. 화장실 같은 장소의 핀은 장소 목록 섹션에서 찍어요.</p>
@@ -332,7 +428,8 @@ function PlacesEditor({ base, maps, value, onChange }: {
     const box = event.currentTarget.getBoundingClientRect();
     const x = Math.round(((event.clientX - box.left) / box.width) * 1000) / 10;
     const y = Math.round(((event.clientY - box.top) / box.height) * 1000) / 10;
-    update(pinning, { floor, x, y });
+    if (!plan) return;
+    update(pinning, { floorId: plan.id, x, y });
     setPinning(null);
   }
 
@@ -343,7 +440,7 @@ function PlacesEditor({ base, maps, value, onChange }: {
           <select value={value.mapId ?? ''} onChange={e => {
             const mapId = e.target.value ? Number(e.target.value) : null;
             // Points belong to one map's plans; another map's floors would misplace them.
-            onChange({ ...value, mapId, places: value.places.map(place => ({ ...place, floor: null, x: null, y: null })) });
+            onChange({ ...value, mapId, places: value.places.map(place => ({ ...place, floorId: null, x: null, y: null })) });
             setFloor(0);
           }}>
             <option value="">지도 없이 목록만</option>
@@ -373,7 +470,7 @@ function PlacesEditor({ base, maps, value, onChange }: {
               <button type="button" className={`venue-pin-plan${pinning !== null ? ' pinning' : ''}`}
                 aria-label="지도에서 위치 지정" disabled={pinning === null} onClick={placePin}>
                 <FloorPlan floor={plan} imageUrl={planUrl} height={planHeight}>
-                  {value.places.map((place, i) => place.floor === floor && place.x !== null && place.y !== null && (
+                  {value.places.map((place, i) => place.floorId === plan.id && place.x !== null && place.y !== null && (
                     <span key={i} className={`venue-pin-dot${pinning === i ? ' on' : ''}`}
                       style={{ left: `${place.x}%`, top: `${place.y}%` }}>{i + 1}</span>
                   ))}
@@ -407,15 +504,20 @@ function PlacesEditor({ base, maps, value, onChange }: {
                 ))}
                 {map && (
                   <button className="btn-tiny" type="button" aria-pressed={pinning === i}
-                    onClick={() => { setPinning(pinning === i ? null : i); if (place.floor !== null) setFloor(place.floor); }}>
-                    {pinning === i ? '찍는 중…' : place.x === null ? '핀 찍기' : `핀 옮기기 (${floors[place.floor ?? 0]?.name ?? ''})`}</button>
+                    onClick={() => {
+                      setPinning(pinning === i ? null : i);
+                      const at = floors.findIndex(f => f.id === place.floorId);
+                      if (at >= 0) setFloor(at);
+                    }}>
+                    {pinning === i ? '찍는 중…' : place.x === null ? '핀 찍기'
+                      : `핀 옮기기 (${floors.find(f => f.id === place.floorId)?.name ?? ''})`}</button>
                 )}
               </div>
             </div>
           ))}
           {value.places.length < 100 && (
             <button className="btn-secondary" type="button" onClick={() => {
-              onChange({ ...value, places: [...value.places, { name: '', where: '', floor: null, x: null, y: null, tags: [] }] });
+              onChange({ ...value, places: [...value.places, { name: '', where: '', floorId: null, x: null, y: null, tags: [] }] });
               if (map) setPinning(value.places.length);
             }}>장소 추가</button>
           )}
