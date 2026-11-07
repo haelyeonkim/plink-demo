@@ -5,7 +5,9 @@ import { shrinkPhoto } from '../ticket/photo';
 import { openLive } from '../ticket/live';
 import { useCoalesced } from '../ticket/coalesce';
 import { read } from '../console/model';
-import type { VenueDay, VenueFloor, VenueItem, VenuePlace, VenueSection } from '../ticket/api';
+import type { VenueDay, VenueFloor, VenueItem, VenuePlace, VenuePoint, VenueSection } from '../ticket/api';
+import { DEFAULT_HEIGHT, FloorPlan, PLAN_WIDTH, useFloorHeight, useFloorSize } from './FloorPlan';
+import MapDrawer from './MapDrawer';
 
 type Kind = VenueSection['kind'];
 type Row = VenueSection & { visible: boolean; updatedAt: string };
@@ -213,53 +215,100 @@ function VenueEditor({ base, row, maps, onSave, onClose, onError }: {
   );
 }
 
+/** The plan shapes a floor without an image can take, as heights on a plan 1000 wide. */
+const CANVAS_SHAPES: Array<[number, string]> = [[700, '가로형'], [1000, '정사각형'], [1400, '세로형']];
+
 function MapEditor({ base, floors, onChange, onError }: {
   base: string; floors: VenueFloor[]; onChange: (floors: VenueFloor[]) => void; onError: (text: string) => void;
 }) {
-  const [uploading, setUploading] = useState<number | null>(null);
-  const update = (index: number, patch: Partial<VenueFloor>) =>
-    onChange(floors.map((floor, i) => (i === index ? { ...floor, ...patch } : floor)));
-  async function pick(index: number, event: React.ChangeEvent<HTMLInputElement>) {
+  const [active, setActive] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const index = Math.min(active, Math.max(0, floors.length - 1));
+  const floor = floors[index];
+  const imageUrl = floor?.imageId ? `${base}/images/${floor.imageId}` : null;
+  const { height, settled } = useFloorSize(floor, imageUrl);
+  const update = (patch: Partial<VenueFloor>) =>
+    onChange(floors.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  // A floor that only knew its height from its image says it outright once edited, so the
+  // phone draws it the same way without loading the image first.
+  useEffect(() => {
+    if (floor && floor.height == null && settled) update({ height });
+  }, [floor, settled, height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** A new height keeps what was drawn on the plan: anything below it moves up to the edge. */
+  const resize = (next: number, patch: Partial<VenueFloor> = {}) => update({
+    ...patch, height: next,
+    shapes: (floor.shapes ?? []).map(shape => (shape.type === 'label'
+      ? { ...shape, y: Math.min(shape.y, next) }
+      : { ...shape, pts: shape.pts.map(([x, y]) => [x, Math.min(y, next)] as VenuePoint) })),
+  });
+
+  async function pick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    setUploading(index);
+    setUploading(true);
     try {
       const small = await shrinkPhoto(file, 2400);
+      const size = await new Promise<number>(resolve => {
+        const image = new Image();
+        image.onload = () => resolve(Math.round((PLAN_WIDTH * image.naturalHeight) / Math.max(1, image.naturalWidth)));
+        image.onerror = () => resolve(DEFAULT_HEIGHT);
+        image.src = URL.createObjectURL(small);
+      });
       const form = new FormData();
       form.append('file', small, 'plan.jpg');
       const { imageId } = await read(await mutate(`${base}/images`, { method: 'POST', body: form })) as { imageId: string };
-      update(index, { imageId });
+      // The plan takes the image's proportions, so pins put on it stay where they were put.
+      resize(Math.min(3000, Math.max(100, size)), { imageId });
     } catch (err) { onError(err instanceof Error ? err.message : '지도 이미지를 올리지 못했어요.'); }
-    finally { setUploading(null); }
+    finally { setUploading(false); }
   }
+
   return (
     <div className="venue-floors">
-      {floors.map((floor, index) => (
-        <div key={index} className="venue-floor">
-          {floor.imageId
-            ? <img src={`${base}/images/${floor.imageId}`} alt={`${floor.name || '층'} 지도`} />
-            : <span className="venue-floor-empty">지도 이미지 없음</span>}
-          <div className="venue-floor-fields">
-            <label>층 이름<input required maxLength={20} value={floor.name} placeholder="예: 1층"
-              onChange={e => update(index, { name: e.target.value })} /></label>
-            <span className="row-actions">
-              <label className="btn-tiny">
-                {uploading === index ? '올리는 중…' : floor.imageId ? '이미지 바꾸기' : '이미지 올리기'}
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden
-                  disabled={uploading !== null} onChange={e => void pick(index, e)} />
-              </label>
-              <button className="btn-tiny btn-tiny-danger" type="button"
-                onClick={() => onChange(floors.filter((_, i) => i !== index))}>층 빼기</button>
-            </span>
-          </div>
+      <div className="chip-row" role="group" aria-label="층">
+        {floors.map((f, i) => (
+          <button key={i} type="button" className={i === index ? 'on' : ''} aria-pressed={i === index}
+            onClick={() => setActive(i)}>{f.name || `${i + 1}층`}</button>
+        ))}
+        {floors.length < 10 && (
+          <button type="button" onClick={() => {
+            onChange([...floors, { name: `${floors.length + 1}층`, imageId: null, height: DEFAULT_HEIGHT, shapes: [] }]);
+            setActive(floors.length);
+          }}>+ 층 추가</button>
+        )}
+      </div>
+      {floor ? (<>
+        <div className="venue-floor-fields">
+          <label>층 이름<input required maxLength={20} value={floor.name} placeholder="예: 1층"
+            onChange={e => update({ name: e.target.value })} /></label>
+          {!floor.imageId && (
+            <label>캔버스 모양
+              <select value={CANVAS_SHAPES.some(([h]) => h === height) ? height : ''} onChange={e => resize(Number(e.target.value))}>
+                {!CANVAS_SHAPES.some(([h]) => h === height) && <option value="">지금 크기</option>}
+                {CANVAS_SHAPES.map(([h, label]) => <option key={h} value={h}>{label}</option>)}
+              </select></label>
+          )}
+          <span className="row-actions">
+            <label className="btn-tiny">
+              {uploading ? '올리는 중…' : floor.imageId ? '도면 이미지 바꾸기' : '도면 이미지 깔기 (선택)'}
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden
+                disabled={uploading} onChange={e => void pick(e)} />
+            </label>
+            {floor.imageId && <button className="btn-tiny" type="button" onClick={() => update({ imageId: null })}>도면 이미지 빼기</button>}
+            <button className="btn-tiny btn-tiny-danger" type="button" onClick={() => {
+              if (window.confirm(`'${floor.name}' 층을 뺄까요? 그린 것도 함께 사라져요.`)) {
+                onChange(floors.filter((_, i) => i !== index));
+                setActive(Math.max(0, index - 1));
+              }
+            }}>층 빼기</button>
+          </span>
         </div>
-      ))}
-      {floors.length < 10 && (
-        <button className="btn-secondary" type="button"
-          onClick={() => onChange([...floors, { name: `${floors.length + 1}층`, imageId: null }])}>층 추가</button>
-      )}
-      <p className="muted venue-note">층 하나에 이미지 한 장이에요. 장소 목록 섹션에서 이 지도를 고르면 위치를 찍을 수 있어요.</p>
+        <MapDrawer key={index} shapes={floor.shapes ?? []} height={height} imageUrl={imageUrl}
+          onChange={shapes => update({ shapes })} />
+      </>) : <p className="console-none">층을 추가해 주세요.</p>}
+      <p className="muted venue-note">도면 이미지가 있으면 그 위에 따라 그리고, 없으면 빈 캔버스에 바로 그려요. 화장실 같은 장소의 핀은 장소 목록 섹션에서 찍어요.</p>
     </div>
   );
 }
@@ -275,6 +324,8 @@ function PlacesEditor({ base, maps, value, onChange }: {
   const update = (index: number, patch: Partial<VenuePlace>) =>
     onChange({ ...value, places: value.places.map((place, i) => (i === index ? { ...place, ...patch } : place)) });
   const plan = floors[floor];
+  const planUrl = plan?.imageId ? `${base}/images/${plan.imageId}` : null;
+  const planHeight = useFloorHeight(plan, planUrl);
 
   function placePin(event: React.MouseEvent<HTMLButtonElement>) {
     if (pinning === null) return;
@@ -318,16 +369,17 @@ function PlacesEditor({ base, maps, value, onChange }: {
                 ))}
               </div>
             )}
-            {plan?.imageId ? (
+            {plan && (planUrl || (plan.shapes ?? []).length > 0) ? (
               <button type="button" className={`venue-pin-plan${pinning !== null ? ' pinning' : ''}`}
                 aria-label="지도에서 위치 지정" disabled={pinning === null} onClick={placePin}>
-                <img src={`${base}/images/${plan.imageId}`} alt="" />
-                {value.places.map((place, i) => place.floor === floor && place.x !== null && place.y !== null && (
-                  <span key={i} className={`venue-pin-dot${pinning === i ? ' on' : ''}`}
-                    style={{ left: `${place.x}%`, top: `${place.y}%` }}>{i + 1}</span>
-                ))}
+                <FloorPlan floor={plan} imageUrl={planUrl} height={planHeight}>
+                  {value.places.map((place, i) => place.floor === floor && place.x !== null && place.y !== null && (
+                    <span key={i} className={`venue-pin-dot${pinning === i ? ' on' : ''}`}
+                      style={{ left: `${place.x}%`, top: `${place.y}%` }}>{i + 1}</span>
+                  ))}
+                </FloorPlan>
               </button>
-            ) : <p className="console-none">이 층에 지도 이미지가 없어요. 지도 섹션에서 올려 주세요.</p>}
+            ) : <p className="console-none">이 층은 아직 비어 있어요. 지도 섹션에서 도면을 올리거나 그려 주세요.</p>}
             <p className={pinning !== null ? 'venue-pin-hint on' : 'muted venue-pin-hint'}>
               {pinning !== null ? `${value.places[pinning]?.name || '새 장소'}의 위치를 지도에서 눌러 주세요.`
                 : '장소마다 핀 찍기를 누른 뒤 지도에서 위치를 눌러요.'}</p>

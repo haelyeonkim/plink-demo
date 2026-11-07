@@ -2154,9 +2154,8 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 
 .venue-map { display: flex; flex-direction: column; gap: 12px; }
 .venue-plan-box { border-radius: 14px; border: 1px solid #e0e4ed; background: #eef1f6; overflow: auto; }
-.venue-plan { position: relative; width: 100%; }
+.venue-plan { width: 100%; }
 .venue-plan-box.zoomed .venue-plan { width: 220%; }
-.venue-plan img { display: block; width: 100%; height: auto; }
 .venue-pin {
   position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; padding: 0; border-radius: 999px;
   border: 2px solid white; color: white; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
@@ -2246,7 +2245,7 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 }
 .venue-pin-plan:disabled { opacity: 1; }
 .venue-pin-plan.pinning { border-color: #ad6500; cursor: crosshair; }
-.venue-pin-plan img { display: block; width: 100%; height: auto; pointer-events: none; }
+.venue-pin-plan .floor-plan { pointer-events: none; }
 .venue-pin-dot {
   position: absolute; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 999px; background: var(--blue);
   color: white; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center;
@@ -2281,3 +2280,87 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .venue-items-table select { padding-left: 8px; padding-top: 0; padding-bottom: 0; min-width: 120px; }
 .venue-items-table td { min-width: 80px; }
 .venue-timetable-editor > .btn-tiny { align-self: flex-start; }
+
+/* ---- A floor: its plan image, what was drawn on it, and pins over both ---- */
+.floor-plan { position: relative; width: 100%; background: #f7f8fb; }
+.floor-plan > img, .floor-plan > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.floor-plan > img { object-fit: fill; }
+.floor-plan > svg { pointer-events: none; }
+.floor-plan .floor-area { pointer-events: auto; cursor: pointer; }
+/* Sizes are in plan units: a plan 1000 wide drawn across a phone is about a third of a pixel each. */
+.floor-area-name, .floor-label { font-size: 42px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.floor-label { fill: var(--ink); font-size: 36px; }
+.venue-area-mark { width: 30px; height: 30px; border-radius: 8px; border: 3px solid; flex-shrink: 0; box-sizing: border-box; }
+.venue-area-places { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.venue-area-places button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: white; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.venue-areas { display: flex; flex-direction: column; gap: 6px; }
+.venue-areas h3 { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.venue-areas > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.venue-areas button {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 10px; text-align: left;
+  border: 1px solid var(--line); background: white; font: inherit; font-size: 14px; font-weight: 700; color: var(--ink); cursor: pointer;
+}
+.venue-areas button > span { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.venue-areas button.on { border-color: var(--blue); background: var(--accent-soft); }
+
+/* ---- The console's drawing tool ---- */
+.map-drawer { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.map-drawer-main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.map-drawer-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px;
+  background: white; border: 1px solid var(--line); border-radius: 12px;
+}
+.map-drawer-tools > button {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink); cursor: pointer;
+}
+.map-drawer-tools > button.on { background: var(--ink); color: white; }
+.map-drawer-tools > button:disabled { color: #b5bbc9; cursor: default; }
+.map-drawer-tools .console-switch { margin: 0 6px; font-size: 13px; }
+.map-drawer-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.map-drawer-grow { flex: 1 1 auto; }
+.map-drawer-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; color: #33405e; }
+.map-drawer-board { background: white; border: 1px solid #e0e4ed; border-radius: 12px; overflow: hidden; }
+.map-drawer-board svg { display: block; width: 100%; height: auto; user-select: none; touch-action: none; }
+.map-drawer-name, .map-drawer-label { font-size: 26px; font-weight: 800; text-anchor: middle; dominant-baseline: middle; }
+.map-drawer-name { pointer-events: none; }
+.map-drawer-label { font-size: 24px; }
+.map-drawer-vertex { fill: white; stroke: #315cf4; stroke-width: 2; cursor: grab; }
+.map-drawer-vertex.on { fill: #315cf4; }
+.map-drawer-mid { fill: white; stroke: #315cf4; stroke-width: 2; stroke-dasharray: 3 2; cursor: copy; }
+.map-drawer-draft { fill: rgba(49, 92, 244, 0.08); stroke: #315cf4; stroke-width: 2; stroke-dasharray: 6 5; pointer-events: none; }
+.map-drawer-dot, .map-drawer-start { stroke: #315cf4; stroke-width: 2; pointer-events: none; }
+.map-drawer-dot { fill: #315cf4; }
+.map-drawer-start { fill: var(--accent-soft); }
+.map-drawer-side { flex: 1 1 260px; max-width: 340px; display: flex; flex-direction: column; gap: 12px; }
+.map-drawer-panel {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: white;
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.map-drawer-panel > label:not(.console-switch), .map-drawer-field {
+  display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; color: #3d4663;
+}
+.map-drawer-panel input:not([type=checkbox]), .map-drawer-panel textarea {
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; color: var(--ink);
+}
+.map-drawer-panel .console-switch { margin: 0; }
+.map-drawer-panel-head { display: flex; justify-content: space-between; align-items: center; }
+.map-drawer-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.map-drawer-swatches button { width: 30px; height: 30px; border-radius: 999px; border: 3px solid white; box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.map-drawer-swatches button.on { box-shadow: 0 0 0 2px var(--ink); }
+.map-drawer-row { display: flex; gap: 6px; }
+.map-drawer-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
+.map-drawer-layers button {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left;
+}
+.map-drawer-layers button.on { background: var(--accent-soft); }
+.map-drawer-layers button > span:nth-child(2) { flex: 1 1 auto; font-weight: 600; }
+.map-drawer-layers small { color: var(--muted); }
+.map-drawer-chip { width: 14px; height: 14px; border-radius: 4px; border: 1px solid #9aa1b3; background: white; flex-shrink: 0; }
+.venue-floor-fields select { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; max-width: 240px; }
+.venue-floor-fields { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.venue-floor-fields > label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; }

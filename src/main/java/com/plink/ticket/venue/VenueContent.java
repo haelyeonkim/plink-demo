@@ -30,6 +30,13 @@ final class VenueContent {
     static final List<String> KINDS = List.of(MAP, PLACES, TEXT, TIMETABLE, LINK);
 
     private static final Pattern TIME = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
+    private static final Pattern SHAPE_ID = Pattern.compile("^[A-Za-z0-9_-]{1,24}$");
+    /** The colours an area may take: the console's swatches, nothing typed in. */
+    static final List<String> AREA_COLORS = List.of(
+        "#315cf4", "#14855f", "#ad6500", "#bf3226", "#6b3fc4", "#0b6f80", "#646c7e");
+    /** A floor is 1000 units wide; its height follows its plan's proportions. */
+    private static final int WIDTH = 1000;
+    private static final int MAX_HEIGHT = 3000;
 
     /** What a section of each kind starts with, before the organiser has filled it. */
     static Map<String, Object> empty(String kind) {
@@ -64,10 +71,79 @@ final class VenueContent {
         for (Map<?, ?> floor : objects(in.get("floors"), 10, "층은 10개까지 둘 수 있어요.")) {
             String image = text(floor.get("imageId"), 36, false, "지도 이미지");
             if (!image.isEmpty() && !imageOk.test(image)) throw bad("지도 이미지를 다시 올려 주세요.");
+            Integer height = null;
+            if (floor.get("height") instanceof Number n) {
+                height = n.intValue();
+                if (height < 100 || height > MAX_HEIGHT) throw bad("지도 크기를 확인해 주세요.");
+            }
             floors.add(mapOf("name", text(floor.get("name"), 20, true, "층 이름"),
-                "imageId", image.isEmpty() ? null : image));
+                "imageId", image.isEmpty() ? null : image,
+                "height", height,
+                "shapes", shapes(floor.get("shapes"), height == null ? MAX_HEIGHT : height)));
         }
         return Map.of("floors", floors);
+    }
+
+    /** What the organiser drew on one floor: areas, arrows for the way through, and words. */
+    private static List<Map<String, Object>> shapes(Object raw, int height) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> ids = new java.util.HashSet<>();
+        int n = 0;
+        for (Map<?, ?> shape : objects(raw, 300, "한 층에 그릴 수 있는 도형은 300개까지예요.")) {
+            n++;
+            // The id only keeps a shape apart from its neighbours; a missing or repeated one is replaced.
+            String id = shape.get("id") == null ? "" : shape.get("id").toString();
+            if (!SHAPE_ID.matcher(id).matches() || !ids.add(id)) {
+                id = "s" + n;
+                while (!ids.add(id)) id = id + "x";
+            }
+            String type = String.valueOf(shape.get("type"));
+            switch (type) {
+                case "area" -> {
+                    String color = String.valueOf(shape.get("color")).toLowerCase(java.util.Locale.ROOT);
+                    if (!AREA_COLORS.contains(color)) throw bad("영역 색을 다시 골라 주세요.");
+                    out.add(mapOf("id", id, "type", "area",
+                        "pts", points(shape.get("pts"), 3, 60, height),
+                        "name", text(shape.get("name"), 30, false, "영역 이름"),
+                        "color", color,
+                        "desc", text(shape.get("desc"), 200, false, "영역 설명"),
+                        "showName", !Boolean.FALSE.equals(shape.get("showName"))));
+                }
+                case "line" -> out.add(mapOf("id", id, "type", "line",
+                    "pts", points(shape.get("pts"), 2, 2, height),
+                    "name", text(shape.get("name"), 30, false, "동선 이름")));
+                case "label" -> {
+                    List<List<Double>> at = points(List.of(List.of(
+                        shape.get("x") == null ? -1 : shape.get("x"), shape.get("y") == null ? -1 : shape.get("y"))), 1, 1, height);
+                    out.add(mapOf("id", id, "type", "label",
+                        "x", at.get(0).get(0), "y", at.get(0).get(1),
+                        "name", text(shape.get("name"), 30, true, "글자")));
+                }
+                default -> throw bad("그린 도형의 형식을 확인해 주세요.");
+            }
+        }
+        return out;
+    }
+
+    /** Points on the floor, each [x, y] within its bounds, kept to one decimal. */
+    private static List<List<Double>> points(Object raw, int min, int max, int height) {
+        if (!(raw instanceof List<?> list) || list.size() < min || list.size() > max) {
+            throw bad(min == max && min == 2 ? "동선은 시작점과 끝점이 있어야 해요."
+                : "영역은 꼭짓점이 " + min + "개에서 " + max + "개까지예요.");
+        }
+        List<List<Double>> out = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof List<?> pair) || pair.size() != 2
+                    || !(pair.get(0) instanceof Number x) || !(pair.get(1) instanceof Number y)) {
+                throw bad("그린 도형의 위치를 확인해 주세요.");
+            }
+            double px = x.doubleValue(), py = y.doubleValue();
+            if (Double.isNaN(px) || Double.isNaN(py) || px < 0 || px > WIDTH || py < 0 || py > height) {
+                throw bad("도형이 지도 밖으로 나갔어요.");
+            }
+            out.add(List.of(Math.round(px * 10) / 10.0, Math.round(py * 10) / 10.0));
+        }
+        return out;
     }
 
     private static Map<String, Object> places(Map<?, ?> in, Predicate<Long> mapOk) {

@@ -203,6 +203,51 @@ class VenueTest {
         assertTrue(repo.image(second).isEmpty());
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> shapesOf(Map<String, Object> section) {
+        Map<String, Object> content = (Map<String, Object>) section.get("content");
+        return (List<Map<String, Object>>) ((List<Map<String, Object>>) content.get("floors")).get(0).get("shapes");
+    }
+
+    @Test void aDrawnFloorKeepsOnlyWhatTheToolsMake() {
+        long sessionId = newSession();
+        long map = id(venue.create(sessionId, Map.of("kind", "MAP", "title", "지도")));
+        Map<String, Object> area = Map.of("id", "a1", "type", "area", "name", "A홀", "color", "#315CF4",
+            "desc", "부스", "pts", List.of(List.of(40, 40), List.of(520.04, 40), List.of(520, 380)), "onclick", "x");
+        Map<String, Object> line = Map.of("id", "a1", "type", "line", "pts", List.of(List.of(500, 690), List.of(500, 600)));
+        Map<String, Object> label = Map.of("type", "label", "x", 500, "y", 672, "name", "정문");
+        Map<String, Object> saved = venue.update(sessionId, map, Map.of("title", "지도", "content", Map.of("floors",
+            List.of(Map.of("name", "1층", "height", 700, "shapes", List.of(area, line, label))))));
+
+        List<Map<String, Object>> shapes = shapesOf(saved);
+        assertEquals(3, shapes.size());
+        // Only the fields a kind allows survive, in the console's own colour spelling.
+        assertFalse(shapes.get(0).containsKey("onclick"));
+        assertEquals("#315cf4", shapes.get(0).get("color"));
+        assertEquals(List.of(520.0, 40.0), ((List<?>) shapes.get(0).get("pts")).get(1));
+        // A repeated id is replaced, so each shape can still be told apart.
+        assertNotEquals(shapes.get(0).get("id"), shapes.get(1).get("id"));
+        assertEquals("정문", shapes.get(2).get("name"));
+    }
+
+    @Test void aDrawingThatCannotBeShownIsRefused() {
+        long sessionId = newSession();
+        long map = id(venue.create(sessionId, Map.of("kind", "MAP", "title", "지도")));
+        java.util.function.Function<Map<String, Object>, HttpStatus> save = shape -> status(() -> venue.update(sessionId, map,
+            Map.of("title", "지도", "content", Map.of("floors", List.of(Map.of("name", "1층", "height", 700, "shapes", List.of(shape)))))));
+        List<List<Integer>> triangle = List.of(List.of(0, 0), List.of(100, 0), List.of(0, 100));
+
+        assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "area", "color", "red", "pts", triangle)));
+        assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "area", "color", "#315cf4",
+            "pts", List.of(List.of(0, 0), List.of(100, 0)))));
+        // Below the floor's height is off the plan.
+        assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "area", "color", "#315cf4",
+            "pts", List.of(List.of(0, 0), List.of(100, 0), List.of(0, 900)))));
+        assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "label", "x", 10, "y", 10)));
+        assertEquals(HttpStatus.BAD_REQUEST, save.apply(Map.of("type", "circle", "pts", triangle)));
+        assertEquals(HttpStatus.OK, save.apply(Map.of("type", "area", "color", "#315cf4", "pts", triangle)));
+    }
+
     @Test void reorderingMustNameEverySectionOnce() {
         long sessionId = newSession();
         long a = id(venue.create(sessionId, Map.of("kind", "TEXT", "title", "가")));
