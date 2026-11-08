@@ -329,6 +329,42 @@ class VenueTest {
         assertNull(pins.get(1).get("x"));
     }
 
+    @Test void anImageSectionShowsItsOwnPicturesOnceShown() throws Exception {
+        long sessionId = newSession();
+        String poster = venue.upload(sessionId, png()).get("imageId").toString();
+        String seats = venue.upload(sessionId, png()).get("imageId").toString();
+        long images = id(venue.create(sessionId, Map.of("kind", "IMAGE", "title", "포스터")));
+        Map<String, Object> saved = venue.update(sessionId, images, Map.of("title", "포스터", "content", Map.of("images", List.of(
+            Map.of("imageId", poster, "caption", "공식 포스터", "onload", "x"),
+            Map.of("imageId", seats),
+            Map.of("imageId", poster)))));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pictures = (List<Map<String, Object>>) ((Map<String, Object>) saved.get("content")).get("images");
+        // Only the allowed fields, and the same picture once.
+        assertEquals(2, pictures.size());
+        assertEquals(Map.of("imageId", poster, "caption", "공식 포스터"), pictures.get(0));
+
+        Holder holder = holder(sessionId, "poster@example.com", true);
+        // Hidden: not sent to a holder.
+        assertEquals(HttpStatus.NOT_FOUND, status(() -> venue.holderImage(holder.resolved(), holder.session(), poster)));
+        venue.setVisible(sessionId, images, true);
+        assertEquals(HttpStatus.OK, status(() -> venue.holderImage(holder.resolved(), holder.session(), poster)));
+
+        // A picture taken off goes; one still shown stays.
+        venue.update(sessionId, images, Map.of("title", "포스터", "content", Map.of("images", List.of(Map.of("imageId", seats)))));
+        assertTrue(repo.image(poster).isEmpty());
+        assertTrue(repo.image(seats).isPresent());
+    }
+
+    @Test void anImageSectionTakesOnlyThisEventsPictures() throws Exception {
+        long mine = newSession();
+        long theirs = newSession();
+        String theirPicture = venue.upload(theirs, png()).get("imageId").toString();
+        long images = id(venue.create(mine, Map.of("kind", "IMAGE", "title", "포스터")));
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> venue.update(mine, images, Map.of("title", "포스터",
+            "content", Map.of("images", List.of(Map.of("imageId", theirPicture)))))));
+    }
+
     @Test void reorderingMustNameEverySectionOnce() {
         long sessionId = newSession();
         long a = id(venue.create(sessionId, Map.of("kind", "TEXT", "title", "가")));

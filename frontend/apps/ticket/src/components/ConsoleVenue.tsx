@@ -5,7 +5,7 @@ import { shrinkPhoto } from '../ticket/photo';
 import { openLive } from '../ticket/live';
 import { useCoalesced } from '../ticket/coalesce';
 import { read } from '../console/model';
-import type { VenueDay, VenueFloor, VenueItem, VenuePlace, VenuePoint, VenueSection } from '../ticket/api';
+import type { VenueDay, VenueFloor, VenueImage, VenueItem, VenuePlace, VenuePoint, VenueSection } from '../ticket/api';
 import { DEFAULT_HEIGHT, FloorPlan, MAX_HEIGHT, MIN_HEIGHT, PLAN_WIDTH, useFloorHeight, useFloorSize } from './FloorPlan';
 import MapDrawer from './MapDrawer';
 
@@ -19,6 +19,7 @@ const KINDS: Array<[Kind, string, string]> = [
   ['TEXT', '안내문', '주차, 교통, 유의사항을 글로 적어요.'],
   ['TIMETABLE', '타임테이블', '날짜별, 무대별 일정을 올려요.'],
   ['LINK', '링크', '외부 예약 페이지 같은 곳으로 보내요.'],
+  ['IMAGE', '이미지', '포스터, 좌석 배치도 같은 이미지를 그대로 올려요.'],
 ];
 const KIND_LABEL = Object.fromEntries(KINDS.map(([kind, label]) => [kind, label])) as Record<Kind, string>;
 
@@ -32,6 +33,7 @@ function summary(row: Row): string {
     case 'TEXT': return row.content.body.split('\n').find(line => line.trim())?.slice(0, 50) || '내용 없음';
     case 'TIMETABLE': return `${row.content.days.length}일 · 일정 ${row.content.items.length}개`;
     case 'LINK': return row.content.url || '주소 없음';
+    case 'IMAGE': return row.content.images.length ? `이미지 ${row.content.images.length}장` : '이미지 없음';
   }
 }
 
@@ -283,6 +285,11 @@ function VenueEditor({ base, row, maps, onSave, onClose, onError }: {
         <PlacesEditor base={base} maps={maps} value={content as Of<'PLACES'>['content']}
           onChange={next => setContent(next)} />
       )}
+      {row.kind === 'IMAGE' && (
+        <ImageEditor base={base} onError={onError}
+          onChange={edit => setContent(current => ({ ...current, images: edit((current as Of<'IMAGE'>['content']).images) }))}
+          images={(content as Of<'IMAGE'>['content']).images} />
+      )}
       {row.kind === 'TIMETABLE' && (
         <TimetableEditor value={content as Of<'TIMETABLE'>['content']} onChange={next => setContent(next)} />
       )}
@@ -523,6 +530,65 @@ function PlacesEditor({ base, maps, value, onChange }: {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Pictures as they are. Changes are given as functions of the list as it is when they land,
+ * so pictures still uploading do not put back the list as it was when they were picked.
+ */
+function ImageEditor({ base, images, onChange, onError }: {
+  base: string; images: VenueImage[]; onChange: (edit: (images: VenueImage[]) => VenueImage[]) => void;
+  onError: (text: string) => void;
+}) {
+  const [uploading, setUploading] = useState(0);
+  async function pick(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, 10 - images.length));
+    event.target.value = '';
+    for (const file of files) {
+      setUploading(n => n + 1);
+      try {
+        const small = await shrinkPhoto(file, 2400);
+        const form = new FormData();
+        form.append('file', small, 'image.jpg');
+        const { imageId } = await read(await mutate(`${base}/images`, { method: 'POST', body: form })) as { imageId: string };
+        onChange(current => (current.length >= 10 ? current : [...current, { imageId, caption: '' }]));
+      } catch (err) { onError(err instanceof Error ? err.message : '이미지를 올리지 못했어요.'); }
+      finally { setUploading(n => n - 1); }
+    }
+  }
+  const move = (index: number, by: number) => onChange(current => {
+    const next = [...current];
+    const [item] = next.splice(index, 1);
+    next.splice(index + by, 0, item);
+    return next;
+  });
+  return (
+    <div className="venue-image-editor">
+      {images.map((image, i) => (
+        <div key={image.imageId} className="venue-image-row">
+          <img src={`${base}/images/${image.imageId}`} alt="" />
+          <div className="venue-image-fields">
+            <label>설명 (선택)<input maxLength={120} value={image.caption} placeholder="예: 공식 포스터"
+              onChange={e => { const caption = e.target.value; onChange(current => current.map(x => (x.imageId === image.imageId ? { ...x, caption } : x))); }} /></label>
+            <span className="row-actions">
+              <button className="btn-tiny" type="button" aria-label="위로" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+              <button className="btn-tiny" type="button" aria-label="아래로" disabled={i === images.length - 1} onClick={() => move(i, 1)}>↓</button>
+              <button className="btn-tiny btn-tiny-danger" type="button"
+                onClick={() => onChange(current => current.filter(x => x.imageId !== image.imageId))}>빼기</button>
+            </span>
+          </div>
+        </div>
+      ))}
+      {images.length < 10 && (
+        <label className="btn-secondary venue-image-pick">
+          {uploading > 0 ? `올리는 중… (${uploading})` : '이미지 올리기'}
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden
+            disabled={uploading > 0} onChange={e => void pick(e)} />
+        </label>
+      )}
+      <p className="muted venue-note">한 섹션에 10장까지, 올린 순서대로 보여요. 사진 속 위치·기기 정보는 지우고 저장해요.</p>
     </div>
   );
 }

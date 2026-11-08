@@ -441,7 +441,10 @@ export type VenueSection = { id: number; title: string } & (
   | { kind: 'TEXT'; content: { body: string } }
   | { kind: 'TIMETABLE'; content: { days: VenueDay[]; stages: string[]; items: VenueItem[] } }
   | { kind: 'LINK'; content: { url: string; description: string } }
+  | { kind: 'IMAGE'; content: { images: VenueImage[] } }
 );
+/** A picture as it is - a poster, a seating chart - with an optional line under it. */
+export interface VenueImage { imageId: string; caption: string }
 
 export interface VenueView { venue: string | null; sections: VenueSection[] }
 

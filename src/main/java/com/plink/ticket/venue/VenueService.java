@@ -37,7 +37,7 @@ import java.util.UUID;
  */
 @Service
 public class VenueService {
-    /** A floor plan is read zoomed in, so it keeps more detail than a board photo. */
+    /** A floor plan or a poster is read zoomed in, so it keeps more detail than a board photo. */
     private static final int PLAN_EDGE = 2400;
     private static final int MAX_SECTIONS = 30;
 
@@ -286,12 +286,14 @@ public class VenueService {
         return mapper.writeValueAsString(content);
     }
 
+    /** The stored images a section names: a map's floor plans, or an image section's pictures. */
     private Set<String> planIds(VenueRepository.Section section) {
         Set<String> ids = new HashSet<>();
-        if (!VenueContent.MAP.equals(section.kind())) return ids;
-        if (read(section).get("floors") instanceof List<?> floors) {
-            for (Object floor : floors) {
-                if (floor instanceof Map<?, ?> f && f.get("imageId") instanceof String id) ids.add(id);
+        if (!VenueContent.IMAGE_KINDS.contains(section.kind())) return ids;
+        String list = VenueContent.MAP.equals(section.kind()) ? "floors" : "images";
+        if (read(section).get(list) instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> m && m.get("imageId") instanceof String id) ids.add(id);
             }
         }
         return ids;
@@ -310,6 +312,6 @@ public class VenueService {
     }
 
     private static ResponseStatusException noImage() {
-        return new ResponseStatusException(HttpStatus.NOT_FOUND, "지도 이미지를 찾을 수 없어요.");
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "이미지를 찾을 수 없어요.");
     }
 }

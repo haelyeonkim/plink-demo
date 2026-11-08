@@ -12,6 +12,7 @@ const KIND_ICON: Record<VenueSection['kind'], string> = {
   TEXT: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3',
   TIMETABLE: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
   LINK: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+  IMAGE: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 9.5h.01',
 };
 
 /** Pin colours, one per list of places on a map, told apart by lightness as well as hue. */
@@ -71,6 +72,7 @@ function summary(section: VenueSection): string {
       return `${section.content.days.length}일 · 일정 ${section.content.items.length}개`;
     }
     case 'LINK': return section.content.description || '외부 사이트로 열려요';
+    case 'IMAGE': return section.content.images[0]?.caption || `이미지 ${section.content.images.length}장`;
   }
 }
 
@@ -107,6 +109,22 @@ export default function TicketVenue({ sessionId, token, eventName, view }: {
         )}
         {open.kind === 'TEXT' && <p className="venue-text">{open.content.body}</p>}
         {open.kind === 'TIMETABLE' && <VenueTimetable table={open.content} />}
+        {open.kind === 'IMAGE' && (
+          open.content.images.length === 0 ? <p className="console-none">아직 이미지가 없어요.</p> : (
+            <div className="venue-images">
+              {open.content.images.map(image => (
+                <figure key={image.imageId}>
+                  {/* Opened on its own, the picture can be zoomed as far as the phone allows. */}
+                  <a href={venueImageUrl(sessionId, token, image.imageId)} target="_blank" rel="noopener noreferrer"
+                    aria-label={`${image.caption || open.title} 크게 보기`}>
+                    <img src={venueImageUrl(sessionId, token, image.imageId)} alt={image.caption || open.title} loading="lazy" />
+                  </a>
+                  {image.caption && <figcaption>{image.caption}</figcaption>}
+                </figure>
+              ))}
+              <p className="muted venue-note">이미지를 누르면 크게 볼 수 있어요.</p>
+            </div>
+          ))}
       </div>
     );
   }
