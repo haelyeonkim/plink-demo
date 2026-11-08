@@ -2387,3 +2387,46 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .venue-image-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; }
 .venue-image-fields input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; font-size: 14px; }
 .venue-image-pick { align-self: flex-start; width: auto; cursor: pointer; }
+
+/* ---- An event over several days ---- */
+.schedule-settings { display: flex; flex-direction: column; gap: 14px; }
+.schedule-empty { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.schedule-empty p { margin: 0; font-size: 14px; color: #33405e; flex: 1 1 320px; }
+.schedule-empty .btn-secondary { width: auto; margin: 0; }
+.schedule-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.schedule-range label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; color: #3d4663; }
+.schedule-range input { height: 40px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; font: inherit; font-size: 14px; }
+.schedule-range > span[aria-hidden] { padding-bottom: 10px; color: #8b93a7; }
+.schedule-span { padding-bottom: 10px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.schedule-turn { margin-left: auto; padding-bottom: 10px; font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.schedule-table input { height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: inherit; font-size: 14px; }
+.schedule-table input:not([type]) { width: 120px; }
+.schedule-table .console-switch { margin: 0; }
+.schedule-settings .button-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.schedule-settings .button-row .btn-primary, .schedule-settings .button-row .btn-secondary { width: auto; margin: 0; }
+.schedule-passes { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.schedule-passes h4 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 4px; }
+.schedule-passes > .btn-secondary { align-self: flex-start; width: auto; margin: 0; }
+.pass-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.pass-row > input { height: 36px; width: 150px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; font-size: 14px; font-weight: 700; }
+.pass-row .chip-row { flex: 1 1 280px; margin: 0; }
+.pass-issued { font-size: 13px; }
+.pass-summary { flex-basis: 100%; font-size: 12.5px; color: var(--muted); }
+.issue-pass-days { font-size: 12px; color: var(--muted); }
+.ticket-days { margin-top: -4px; }
+.ticket-days-strip { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+.ticket-pass { align-self: center; font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: #2447c9; }
+.ticket-days-strip ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ticket-days-strip li { display: flex; flex-direction: column; gap: 1px; align-items: center; padding: 9px 4px; border-radius: 12px; text-align: center; font-size: 12px; }
+.ticket-days-strip li b { font-size: 13px; }
+.ticket-days-strip li small { font-size: 11px; }
+.ticket-days-strip li.is-today { background: var(--ink); color: white; }
+.ticket-days-strip li.is-today small:first-of-type { color: var(--mint); font-weight: 800; }
+.ticket-days-strip li.is-today-off { background: #f3f5f9; color: #4b5470; border: 2px dashed #c9cfdb; }
+.ticket-days-strip li.is-on { background: var(--accent-soft); color: #2447c9; }
+.ticket-days-strip li.is-off { background: #f3f5f9; color: #8b93a7; }
+.ticket-not-today, .ticket-ended {
+  margin: 0 0 10px; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.6; text-align: left;
+}
+.ticket-not-today { background: #fff7e6; border: 1px solid #f3dcae; color: #5e3800; }
+.ticket-ended { background: #f3f5f9; color: #33405e; font-weight: 600; }

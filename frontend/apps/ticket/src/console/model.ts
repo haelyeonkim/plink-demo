@@ -35,6 +35,8 @@ export interface TicketFieldRow { id: number; label: string; kind: 'SEAT' | 'TIE
 
 export interface TicketRow {
   ticketId: number; ticketRef: string; seat: string | null; status: string;
+  /** The ticket's pass, by name; null admits every day of the event. */
+  pass?: string | null;
   issuedToEmail: string; holderEmail: string | null; reissueCount: number;
   tier: string | null;
   inside: boolean; entryCount: number; reentryCount: number;
@@ -251,3 +253,15 @@ export interface TicketHistory {
 export const DELIVERY: Record<string, string> = {
   EMAIL: '메일', SMS: '문자', 'EMAIL+SMS': '메일·문자', LINK: '직접 전달',
 };
+
+/** One day of a multi-day event; times are "HH:mm" on the venue's clock, null for the whole day. */
+export interface ScheduleDay { date: string; label: string; weekday: string; opensAt: string | null; closesAt: string | null; closed: boolean }
+/** A kind of ticket by the days it admits; null days is every day. */
+export interface PassRow { id: number; name: string; days: string[] | null; issued: number }
+export interface ScheduleView { dayCloseHour: number; days: ScheduleDay[]; passes: PassRow[] }
+
+/** "11.21 (토)" from "2026-11-21" and its weekday. */
+export function dayShort(day: { date: string; weekday: string }): string {
+  const [, m, d] = day.date.split('-').map(Number);
+  return `${m}.${d} (${day.weekday})`;
+}

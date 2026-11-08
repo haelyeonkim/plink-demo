@@ -57,6 +57,8 @@ public class TicketService {
     private final TransactionTemplate transactions;
     private final String baseUrl;
 
+    private final com.plink.ticket.schedule.ScheduleService schedule;
+
     public TicketService(TicketRepository tickets, TicketFieldRepository fields,
             EventSessionRepository sessions,
             HolderRepository holders, AdmissionRepository admissions,
@@ -64,7 +66,9 @@ public class TicketService {
             MessageSender sms, TicketProperties properties, TextCipher cipher, CouponService coupons,
             com.plink.ticket.live.LiveEvents live,
             org.springframework.transaction.PlatformTransactionManager transactionManager,
+            com.plink.ticket.schedule.ScheduleService schedule,
             @Value("${plink.auth.base-url}") String baseUrl) {
+        this.schedule = schedule;
         this.live = live;
         this.transactions = new TransactionTemplate(transactionManager);
         this.coupons = coupons;
@@ -126,7 +130,13 @@ public class TicketService {
      */
     public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
             String rawPhone, boolean notify, Map<String, String> values) {
-        return issue(sessionId, email, seat, tier, rawPhone, notify, values, null);
+        return issue(sessionId, email, seat, tier, rawPhone, notify, values, null, null);
+    }
+
+    /** @param passId the days the ticket admits, by pass; null admits every day */
+    public Map<String, Object> issue(long sessionId, String email, String seat, String tier,
+            String rawPhone, boolean notify, Map<String, String> values, Long passId) {
+        return issue(sessionId, email, seat, tier, rawPhone, notify, values, null, passId);
     }
 
     /**
@@ -140,15 +150,19 @@ public class TicketService {
     public record Invitation(long inviterId, String inviterMasked, String name, Runnable admit) {}
 
     public Map<String, Object> issueInvite(long sessionId, String email, Invitation invitation) {
-        return issue(sessionId, email, null, null, null, true, Map.of(), invitation);
+        return issue(sessionId, email, null, null, null, true, Map.of(), invitation, null);
     }
 
     private Map<String, Object> issue(long sessionId, String email, String seat, String tier,
-            String rawPhone, boolean notify, Map<String, String> values, Invitation invitation) {
+            String rawPhone, boolean notify, Map<String, String> values, Invitation invitation, Long passId) {
         Issued issued = transactions.execute(status -> {
             if (invitation != null) invitation.admit().run();
             Issued created = create(sessionId, email, seat, tier, rawPhone, values);
             if (invitation != null) tickets.markInvited(created.id, invitation.inviterId(), invitation.name());
+            // An invitee comes on the days the person who asked them comes.
+            Long pass = invitation != null
+                ? tickets.findById(invitation.inviterId()).map(t -> t.passId).orElse(null) : passId;
+            if (pass != null) tickets.setPass(created.id, pass);
             return created;
         });
         // Committed: the link exists whatever happens to the messages below.
@@ -653,6 +667,8 @@ public class TicketService {
         event.put("faceEnabled", session.faceEnabled);
         // The phone asks for its position only when the event will look at it.
         event.put("geoCheck", GeoCheck.active(session));
+        // The days this ticket admits and where it stands today; null without a schedule.
+        event.put("schedule", schedule.holderView(session, ticket, Instant.now()));
         result.put("event", event);
 
         Map<String, Object> state = new LinkedHashMap<>();

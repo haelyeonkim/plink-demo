@@ -7,12 +7,21 @@ import {
   downloadCsv, downloadSample, useImportRows, type ImportField, type ImportResult, type RowProblem,
 } from '@shared/components/BulkImport';
 import { parseTable } from '@shared/csv';
-import { DELIVERY, type IssuedTicket, type SessionRow, type TicketFieldRow } from '../console/model';
+import { DELIVERY, type IssuedTicket, type PassRow, type ScheduleDay, type SessionRow, type TicketFieldRow } from '../console/model';
 
 export type IssueMode = 'single' | 'bulk';
 
 export interface IssueInput {
   email: string; phone: string; values: Record<string, string>; notify: boolean;
+  /** The pass the ticket is for; null admits every day. */
+  pass: number | null;
+}
+
+/** "DAY 1, DAY 3", or 전 일정, for a pass. */
+export function passDays(pass: PassRow | null | undefined, days: ScheduleDay[]): string {
+  if (!pass || pass.days === null) return '전 일정';
+  if (pass.days.length === 0) return '입장일 없음';
+  return pass.days.map(date => days.find(d => d.date === date)?.label ?? date).join(', ');
 }
 
 /**
@@ -21,9 +30,13 @@ export interface IssueInput {
  */
 export default function IssuePanel({
   session, fields, takenSeats, counts, busy, mode, onMode, issued, onIssue, onContinue, onBulk, onMail, checkTaken, onShowTickets,
+  passes = [], days = [],
 }: {
   session: SessionRow;
   fields: TicketFieldRow[];
+  /** The event's passes, when it runs over days and sells some of them. */
+  passes?: PassRow[];
+  days?: ScheduleDay[];
   takenSeats: Set<string>;
   counts: { all: number; bound: number };
   busy: boolean;
@@ -88,10 +101,10 @@ export default function IssuePanel({
       <div role="tabpanel" id="issue-panel-single" aria-labelledby="issue-tab-single" hidden={mode !== 'single'}>
         {issued
           ? <IssueDone issued={issued} fields={fields} onContinue={onContinue} onShowTickets={onShowTickets} />
-          : <SingleForm fields={fields} takenSeats={takenSeats} busy={busy} onIssue={onIssue} />}
+          : <SingleForm fields={fields} takenSeats={takenSeats} busy={busy} onIssue={onIssue} passes={passes} days={days} />}
       </div>
       <div role="tabpanel" id="issue-panel-bulk" aria-labelledby="issue-tab-bulk" hidden={mode !== 'bulk'}>
-        <BulkIssue fields={fields} onBulk={onBulk} onMail={onMail} checkTaken={checkTaken} onShowTickets={() => onShowTickets()} />
+        <BulkIssue fields={fields} passes={passes} onBulk={onBulk} onMail={onMail} checkTaken={checkTaken} onShowTickets={() => onShowTickets()} />
       </div>
     </div>
   );
@@ -122,10 +135,13 @@ function DownloadIcon() {
 }
 
 /** One ticket: the event's own fields, and whether the link goes out by mail. */
-function SingleForm({ fields, takenSeats, busy, onIssue }: {
+function SingleForm({ fields, takenSeats, busy, onIssue, passes, days }: {
   fields: TicketFieldRow[]; takenSeats: Set<string>; busy: boolean; onIssue: (input: IssueInput) => Promise<boolean>;
+  passes: PassRow[]; days: ScheduleDay[];
 }) {
   const [notify, setNotify] = useState(true);
+  const [pass, setPass] = useState<number | null>(null);
+  const chosen = passes.find(p => p.id === pass) ?? null;
   const [hasPhone, setHasPhone] = useState(false);
 
   function submit(form: HTMLFormElement) {
@@ -135,7 +151,7 @@ function SingleForm({ fields, takenSeats, busy, onIssue }: {
     for (const [key, value] of data.entries()) {
       if (key.startsWith('field:') && String(value).trim()) values[key.slice(6)] = String(value).trim();
     }
-    void onIssue({ email: String(data.get('email') ?? ''), phone: String(data.get('phone') ?? ''), values, notify });
+    void onIssue({ email: String(data.get('email') ?? ''), phone: String(data.get('phone') ?? ''), values, notify, pass });
   }
 
   return (
@@ -150,6 +166,16 @@ function SingleForm({ fields, takenSeats, busy, onIssue }: {
             <label htmlFor="ticket-to">받는 사람 이메일</label>
             <input id="ticket-to" name="email" type="email" required autoComplete="off" placeholder="name@example.com" />
           </div>
+          {passes.length > 0 && (
+            <div className="field">
+              <label htmlFor="ticket-pass">입장권 종류</label>
+              <select id="ticket-pass" value={pass ?? ''} onChange={e => setPass(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">전 일정</option>
+                {passes.map(p => <option key={p.id} value={p.id}>{p.name} · {passDays(p, days)}</option>)}
+              </select>
+              <small className="issue-pass-days">입장 가능: {passDays(chosen, days)}</small>
+            </div>
+          )}
           {/* One input per field the organiser defined. A field with a list is a choice;
               one without takes whatever is typed. */}
           {fields.map(field => (
@@ -312,8 +338,9 @@ export interface MailedResult { sent: number; skipped: Array<{ ticketId: number;
  * then what came of it - with the rows that did not go out ready to fix and upload again.
  * The validation and the request are BulkImport's; only the screens are arranged here.
  */
-function BulkIssue({ fields, onBulk, onMail, checkTaken, onShowTickets }: {
+function BulkIssue({ fields, passes, onBulk, onMail, checkTaken, onShowTickets }: {
   fields: TicketFieldRow[];
+  passes: PassRow[];
   onBulk: (rows: Array<Record<string, string>>, notify: boolean) => Promise<ImportResult>;
   onMail: (ticketIds: number[]) => Promise<MailedResult>;
   checkTaken: (emails: string[]) => Promise<Set<string>>;
@@ -327,6 +354,8 @@ function BulkIssue({ fields, onBulk, onMail, checkTaken, onShowTickets }: {
       match: [field.label, ...(field.kind === 'SEAT' ? ['seat', '좌석'] : field.kind === 'TIER' ? ['tier', '등급', '권종'] : [])],
     })),
     { key: 'phone', label: '휴대폰', match: ['phone', '휴대폰', '전화', '연락처'] },
+    // A pass by its name; an empty cell is an every-day ticket.
+    ...(passes.length > 0 ? [{ key: '입장권 종류', label: '입장권 종류', match: ['입장권 종류', '종류', 'pass', '패스'] }] : []),
   ];
   const [step, setStep] = useState<Step>(1);
   const [text, setText] = useState('');

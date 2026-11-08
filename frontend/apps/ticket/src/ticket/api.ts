@@ -47,6 +47,8 @@ export interface TicketView {
     faceEnabled?: boolean;
     /** Opening a code is checked against the venue: only then is the phone's position asked for. */
     geoCheck: boolean;
+    /** The days this ticket admits and where it stands today; null for an event of one day. */
+    schedule?: TicketSchedule | null;
   };
   presence: {
     inside: boolean;
@@ -456,4 +458,22 @@ export async function fetchVenue(sessionId: string, token: string): Promise<Venu
 
 export function venueImageUrl(sessionId: string, token: string, imageId: string): string {
   return `${venueBase(sessionId, token)}/images/${imageId}`;
+}
+
+// ---- An event over several days ----
+
+export interface TicketDay {
+  date: string; label: string; weekday: string; opensAt: string | null; closesAt: string | null;
+  closed: boolean; today: boolean; admits: boolean;
+  /** Before today, in the venue's calendar. */
+  past: boolean;
+}
+export interface TicketSchedule {
+  /** The ticket's pass by name; null admits every day. */
+  pass: string | null;
+  days: TicketDay[];
+  /** OPEN: may come in now. CLOSED: not today or not at this hour. ENDED: the event is over. */
+  state: 'OPEN' | 'CLOSED' | 'ENDED';
+  message: string | null;
+  endsAt: string | null;
 }
