@@ -29,7 +29,10 @@ final class VenueContent {
     static final String TEXT = "TEXT";
     static final String TIMETABLE = "TIMETABLE";
     static final String LINK = "LINK";
-    static final List<String> KINDS = List.of(MAP, PLACES, TEXT, TIMETABLE, LINK);
+    static final String IMAGE = "IMAGE";
+    static final List<String> KINDS = List.of(MAP, PLACES, TEXT, TIMETABLE, LINK, IMAGE);
+    /** The kinds whose content names stored images: a map's plans, an image section's pictures. */
+    static final List<String> IMAGE_KINDS = List.of(MAP, IMAGE);
 
     private static final Pattern TIME = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
     private static final Pattern SHAPE_ID = Pattern.compile("^[A-Za-z0-9_-]{1,24}$");
@@ -55,6 +58,7 @@ final class VenueContent {
     static Map<String, Object> empty(String kind) {
         return switch (kind) {
             case MAP -> Map.of("floors", List.of());
+            case IMAGE -> Map.of("images", List.of());
             case PLACES -> mapOf("mapId", null, "tags", List.of(), "places", List.of());
             case TEXT -> Map.of("body", "");
             case TIMETABLE -> Map.of("days", List.of(), "stages", List.of(), "items", List.of());
@@ -77,6 +81,7 @@ final class VenueContent {
             case TEXT -> Map.of("body", text(in.get("body"), 5000, false, "안내문"));
             case TIMETABLE -> timetable(in);
             case LINK -> link(in);
+            case IMAGE -> images(in, imageOk);
             default -> throw bad("섹션 종류를 확인해 주세요.");
         };
     }
@@ -237,6 +242,19 @@ final class VenueContent {
             return byDay != 0 ? byDay : ((String) a.get("start")).compareTo((String) b.get("start"));
         });
         return Map.of("days", days, "stages", stages, "items", items);
+    }
+
+    /** Pictures as they are - a poster, a seating chart - each with an optional line under it. */
+    private static Map<String, Object> images(Map<?, ?> in, Predicate<String> imageOk) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (Map<?, ?> image : objects(in.get("images"), 10, "이미지는 10장까지 올릴 수 있어요.")) {
+            String id = text(image.get("imageId"), 36, true, "이미지");
+            if (!imageOk.test(id)) throw bad("이미지를 다시 올려 주세요.");
+            if (!seen.add(id)) continue;
+            out.add(mapOf("imageId", id, "caption", text(image.get("caption"), 120, false, "이미지 설명")));
+        }
+        return Map.of("images", out);
     }
 
     private static Map<String, Object> link(Map<?, ?> in) {

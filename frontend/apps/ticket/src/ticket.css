@@ -2373,3 +2373,17 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .venue-draft p { margin: 0; font-size: 13px; line-height: 1.6; flex: 1 1 320px; }
 .venue-has-draft { color: #8a5000; font-weight: 700; }
 .settings-note { margin: 6px 0 0; font-size: 13px; line-height: 1.6; }
+
+/* ---- Image sections ---- */
+.venue-images { display: flex; flex-direction: column; gap: 14px; }
+.venue-images figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.venue-images a { display: block; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #f3f5f9; }
+.venue-images img { display: block; width: 100%; height: auto; }
+.venue-images figcaption { font-size: 14px; color: #33405e; }
+.venue-image-editor { display: flex; flex-direction: column; gap: 10px; }
+.venue-image-row { display: flex; gap: 14px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.venue-image-row img { width: 160px; height: 120px; object-fit: contain; background: #f3f5f9; border-radius: 8px; flex-shrink: 0; }
+.venue-image-fields { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.venue-image-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 700; }
+.venue-image-fields input { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; font-size: 14px; }
+.venue-image-pick { align-self: flex-start; width: auto; cursor: pointer; }

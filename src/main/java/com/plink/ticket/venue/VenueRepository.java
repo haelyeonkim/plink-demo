@@ -104,16 +104,16 @@ public class VenueRepository {
         jdbc.update("DELETE FROM venue_image WHERE id = ?", id);
     }
 
-    /** Whether any map of the event names this image. Ids are UUIDs, so a match is the image. */
+    /** Whether any map or image section of the event names this image. Ids are UUIDs, so a match is the image. */
     public boolean imageInUse(long sessionId, String id) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM venue_section WHERE session_id = ? AND kind = 'MAP' "
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM venue_section WHERE session_id = ? AND kind IN ('MAP', 'IMAGE') "
             + "AND content LIKE ?", Integer.class, sessionId, "%\"" + id + "\"%");
         return n != null && n > 0;
     }
 
-    /** Whether a visible map of the event names this image: what a holder may be sent. */
+    /** Whether a visible map or image section of the event names this image: what a holder may be sent. */
     public boolean imageShown(long sessionId, String id) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM venue_section WHERE session_id = ? AND kind = 'MAP' "
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM venue_section WHERE session_id = ? AND kind IN ('MAP', 'IMAGE') "
             + "AND visible = TRUE AND content LIKE ?", Integer.class, sessionId, "%\"" + id + "\"%");
         return n != null && n > 0;
     }
