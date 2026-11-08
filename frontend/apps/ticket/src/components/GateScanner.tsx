@@ -28,6 +28,8 @@ interface GateInfo {
   grants?: { offerId: number; title: string; booth: string | null; auto: boolean }[];
   /** Null for a terminal registered before tokens had an end date. */
   tokenExpiresAt: string | null;
+  /** Whether the event admits by face; a terminal at one that does not never looks for faces. */
+  faceEnabled?: boolean;
 }
 
 /** Days of validity left, or null when this terminal has no end date. */
@@ -402,7 +404,7 @@ export default function GateScanner() {
     // A stand hands something over against a code the holder chose to show; walking past
     // a camera is not that choice, so a booth terminal reads codes only.
     // Giving mode reads codes only too: a face walking past is not a request for coupons.
-    if (!gate || !scanning || !faceMode || gate.role === 'BOOTH' || giving) return;
+    if (!gate || !scanning || !faceMode || gate.faceEnabled === false || gate.role === 'BOOTH' || giving) return;
     let stopped = false;
     const timer = window.setInterval(async () => {
       if (stopped || inFlight.current || Date.now() < restUntil.current) return;
@@ -722,7 +724,7 @@ export default function GateScanner() {
             </div>
           );
         })()}
-        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다. 얼굴 인식은 따로 켤 수 있어요.</p>}
+        {!scanning && <p className="gate-idle">스캔 시작을 누르면 QR을 인식합니다.{gate.faceEnabled !== false && gate.role !== 'BOOTH' ? ' 얼굴 인식은 따로 켤 수 있어요.' : ''}</p>}
         {/* On the picture rather than in the bar below: it is the picture it changes. */}
         {!picking && <button className="gate-flip" onClick={flipCamera}
           title={`${facing === 'user' ? '전면' : '후면'} 카메라 · 앞뒤 전환`}
@@ -775,7 +777,7 @@ export default function GateScanner() {
             {giving ? '쿠폰 부여 끝내기' : '쿠폰 부여'}
           </button>
         )}
-        {gate.role !== 'BOOTH' && !giving && (
+        {gate.role !== 'BOOTH' && gate.faceEnabled !== false && !giving && (
           <button className="btn-ghost" onClick={() => {
             if (!faceMode) { faceFailures.current = 0; setError(''); }
             setFaceMode(value => {

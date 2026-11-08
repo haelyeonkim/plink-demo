@@ -9,6 +9,8 @@ public class EventSession {
     public int reentryMax, reentryGraceMinutes, reentryCooldownSeconds, autoExitAfterMinutes;
     public int transferMax, transferClosesMinutesBefore;
     public boolean transferAfterFirstEntry;
+    /** Whether the event admits by face at all; when off, tickets do not mention it. */
+    public boolean faceEnabled;
     public boolean faceRequired, reentryRequiresFace, claimRequiresOtp;
     public String faceLiveness, faceChallengeOn;
     public int faceRetentionDays;

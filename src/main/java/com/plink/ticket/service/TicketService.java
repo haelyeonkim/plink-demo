@@ -649,6 +649,8 @@ public class TicketService {
         event.put("exitScanRequired", session.exitScanRequired);
         event.put("reentryMode", session.reentryMode);
         event.put("claimRequiresOtp", session.claimRequiresOtp);
+        // An event that does not admit by face says nothing about faces on its tickets.
+        event.put("faceEnabled", session.faceEnabled);
         // The phone asks for its position only when the event will look at it.
         event.put("geoCheck", GeoCheck.active(session));
         result.put("event", event);

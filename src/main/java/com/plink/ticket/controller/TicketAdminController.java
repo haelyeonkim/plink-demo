@@ -61,6 +61,7 @@ public class TicketAdminController {
     private final com.plink.ticket.repository.InviteQuotaRepository inviteQuotas;
     private final com.plink.ticket.service.InviteService invites;
     private final com.plink.ticket.venue.VenueService venue;
+    private final com.plink.ticket.repository.FaceRepository faceRows;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -75,7 +76,9 @@ public class TicketAdminController {
             com.plink.ticket.service.BoothManagerService boothManagers,
             com.plink.ticket.repository.InviteQuotaRepository inviteQuotas,
             com.plink.ticket.service.InviteService invites,
-            com.plink.ticket.venue.VenueService venue) {
+            com.plink.ticket.venue.VenueService venue,
+            com.plink.ticket.repository.FaceRepository faceRows) {
+        this.faceRows = faceRows;
         this.venue = venue;
         this.inviteQuotas = inviteQuotas;
         this.invites = invites;
@@ -1182,6 +1185,9 @@ public class TicketAdminController {
         row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
         row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
         row.put("claimRequiresOtp", session.claimRequiresOtp);
+        row.put("faceEnabled", session.faceEnabled);
+        // How many faces turning it off would delete, so the console can say so first.
+        row.put("faceEnrolled", faceRows.countEnrolled(session.id));
         row.put("faceRequired", session.faceRequired);
         row.put("reentryRequiresFace", session.reentryRequiresFace);
         row.put("faceLiveness", session.faceLiveness);

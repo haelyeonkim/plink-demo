@@ -55,12 +55,13 @@ const TAB_HELP: Partial<Record<Tab, ReactNode>> = {
   </>,
 };
 /** Settings is one page of sections; these are its sections, in order. */
-type SettingsTab = 'event' | 'policy' | 'crowd' | 'invite' | 'fields';
+type SettingsTab = 'event' | 'policy' | 'face' | 'crowd' | 'invite' | 'fields';
 /** The settings forms that wait for the save bar, in the order they are saved. */
-type SettingsKey = 'details' | 'policy' | 'crowd' | 'invite';
-const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'crowd', 'invite'];
+type SettingsKey = 'details' | 'policy' | 'face' | 'crowd' | 'invite';
+const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'face', 'crowd', 'invite'];
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
-  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['crowd', '혼잡도'], ['invite', '초대'], ['fields', '발급 항목'],
+  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['face', '얼굴 입장'], ['crowd', '혼잡도'], ['invite', '초대'],
+  ['fields', '발급 항목'],
 ];
 /** What each choice of who sees a group's entry status means, in one line. */
 const INVITE_STATUS_HINT: Record<InviteStatus, string> = {
@@ -206,9 +207,12 @@ export default function TicketAdmin() {
   const [shownCodes, setShownCodes] = useState<Set<string>>(new Set());
   // The settings page saves once, from a bar that shows while anything is changed.
   const settingsForms = {
-    details: useRef<HTMLFormElement>(null), policy: useRef<HTMLFormElement>(null), crowd: useRef<HTMLFormElement>(null),
-    invite: useRef<HTMLFormElement>(null),
+    details: useRef<HTMLFormElement>(null), policy: useRef<HTMLFormElement>(null), face: useRef<HTMLFormElement>(null),
+    crowd: useRef<HTMLFormElement>(null), invite: useRef<HTMLFormElement>(null),
   };
+  // Whether the face form shows its options: they mean nothing while face entry is off.
+  const [faceOn, setFaceOn] = useState<boolean | null>(null);
+  useEffect(() => { setFaceOn(null); }, [selected]);
   const [settingsDirty, setSettingsDirty] = useState<Set<SettingsKey>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
   // Whether any tier input grants invites before the save; null means as saved.
@@ -216,7 +220,7 @@ export default function TicketAdmin() {
   useEffect(() => { setInviteQuotaAny(null); }, [selected]);
   // Counts edits per form, so a change typed while its save is on the way is not
   // marked saved along with it.
-  const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, crowd: 0, invite: 0 });
+  const settingsEdits = useRef<Record<SettingsKey, number>>({ details: 0, policy: 0, face: 0, crowd: 0, invite: 0 });
   const markSettingsDirty = (key: SettingsKey) => {
     settingsEdits.current[key] += 1;
     setSettingsDirty(current => (current.has(key) ? current : new Set(current).add(key)));
@@ -224,6 +228,7 @@ export default function TicketAdmin() {
   const revertSettings = () => {
     settingsDirty.forEach(key => settingsForms[key].current?.reset());
     setInviteQuotaAny(null);
+    setFaceOn(null);
     setSettingsDirty(new Set());
   };
   const [gateSetup, setGateSetup] = useState<{ gateId: string; setupUrl: string; setupCode: string; expiresAt?: string } | null>(null);
@@ -1008,6 +1013,33 @@ export default function TicketAdmin() {
     await loadSessions();
   });
 
+  /**
+   * Face entry, on or off for the event, and what it requires. Turning it off deletes the
+   * faces holders enrolled, so that asks first and says how many.
+   */
+  const saveFace = (data: FormData) => {
+    const enabled = data.get('faceEnabled') === 'on';
+    const enrolled = session?.faceEnrolled ?? 0;
+    if (!enabled && session?.faceEnabled && enrolled > 0 && !window.confirm(
+      `얼굴 입장을 끄면 관람객 ${enrolled.toLocaleString()}명이 등록한 얼굴 정보가 바로 삭제되고 되돌릴 수 없어요. 끌까요?`)) {
+      return Promise.resolve(false);
+    }
+    return act(async () => {
+      await read(await mutate(`/api/admin/sessions/${selected}/policy`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          faceEnabled: enabled,
+          faceRequired: enabled && data.get('faceRequired') === 'on',
+          reentryRequiresFace: enabled && data.get('reentryRequiresFace') === 'on',
+        }),
+      }));
+      setNotice(enabled ? '얼굴 입장을 켰어요. 입장권에 얼굴 등록이 보여요.'
+        : enrolled > 0 ? `얼굴 입장을 껐어요. 등록된 얼굴 ${enrolled.toLocaleString()}건을 삭제했어요.` : '얼굴 입장을 껐어요.');
+      setFaceOn(null);
+      await loadSessions();
+    });
+  };
+
   /** Who sees a group's entry status, and how many each tier may invite: all of it, every save. */
   const saveInvites = (data: FormData) => act(async () => {
     const inviteQuotas: Record<string, number> = {};
@@ -1028,7 +1060,7 @@ export default function TicketAdmin() {
    * and the operator's values where they were, and the first refusal stops the rest.
    */
   const settingsSavers: Record<SettingsKey, (data: FormData) => Promise<boolean>> = {
-    details: submitDetails, policy: savePolicy, crowd: saveCrowding, invite: saveInvites,
+    details: submitDetails, policy: savePolicy, face: saveFace, crowd: saveCrowding, invite: saveInvites,
   };
   const saveSettings = async () => {
     if (savingSettings) return;
@@ -1770,6 +1802,47 @@ export default function TicketAdmin() {
                   인증을 요구합니다.
                 </InfoTip>
               </label>
+            </form>
+              </div>
+            </section>
+            <section id="settings-face" className="settings-section" aria-labelledby="settings-face-title">
+              <div className="settings-side">
+                <h3 id="settings-face-title">얼굴 입장
+                  <InfoTip label="얼굴 입장">
+                    <p>켜면 관람객이 입장권에서 얼굴을 등록하고, 게이트 카메라를 보고 QR 없이 지나갈 수 있어요.</p>
+                    <p>끄면 입장권과 게이트에 얼굴 관련 내용이 나타나지 않아요. 얼굴은 민감한 개인정보라서, 끄는 순간
+                      이미 등록된 얼굴도 함께 삭제돼요.</p>
+                  </InfoTip></h3>
+              </div>
+              <div className="settings-body">
+            <form key={`face-${session.id}`} className="settings-form" ref={settingsForms.face}
+              onChange={() => markSettingsDirty('face')}
+              onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
+              <label className="field-inline">
+                <input name="faceEnabled" type="checkbox" defaultChecked={session.faceEnabled}
+                  onChange={e => setFaceOn(e.target.checked)} />
+                얼굴 입장 사용
+              </label>
+              {(faceOn ?? session.faceEnabled) ? (<>
+                <label className="field-inline">
+                  <input name="faceRequired" type="checkbox" defaultChecked={session.faceRequired} />
+                  얼굴로만 입장
+                  <InfoTip label="얼굴로만 입장">켜면 QR로는 들어올 수 없어요. 현장 직원 처리는 예외예요.</InfoTip>
+                </label>
+                <label className="field-inline">
+                  <input name="reentryRequiresFace" type="checkbox" defaultChecked={session.reentryRequiresFace} />
+                  재입장은 얼굴로만
+                  <InfoTip label="재입장은 얼굴로만">첫 입장은 QR도 되지만, 다시 들어올 때는 얼굴로만 들어올 수 있어요.
+                    입장 사이에 입장권을 돌려 쓰는 것을 막아요.</InfoTip>
+                </label>
+                {session.faceEnabled && (
+                  <p className="muted settings-note">지금 얼굴을 등록한 관람객 {session.faceEnrolled.toLocaleString()}명</p>
+                )}
+              </>) : (
+                <p className="muted settings-note">꺼져 있어요. 입장권과 게이트에 얼굴 등록·인식이 나타나지 않아요.
+                  {session.faceEnabled && session.faceEnrolled > 0
+                    && ` 저장하면 등록된 얼굴 ${session.faceEnrolled.toLocaleString()}건이 삭제돼요.`}</p>
+              )}
             </form>
               </div>
             </section>

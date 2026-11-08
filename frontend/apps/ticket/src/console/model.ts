@@ -5,6 +5,11 @@ export interface SessionRow {
   reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
   claimRequiresOtp: boolean;
+  faceEnabled: boolean;
+  /** Holders with a face enrolled now: what turning face entry off would delete. */
+  faceEnrolled: number;
+  faceRequired: boolean;
+  reentryRequiresFace: boolean;
   /** A rehearsal: recipient emails are shown in full in the console's lists. */
   testEvent: boolean;
   /** Close open entries once the venue's day turns over, at this hour (venue time). */
