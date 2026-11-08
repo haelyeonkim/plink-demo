@@ -62,6 +62,7 @@ public class TicketAdminController {
     private final com.plink.ticket.service.InviteService invites;
     private final com.plink.ticket.venue.VenueService venue;
     private final com.plink.ticket.repository.FaceRepository faceRows;
+    private final com.plink.ticket.schedule.ScheduleService schedule;
 
     public TicketAdminController(EventSessionRepository sessions, TicketRepository tickets, GateRepository gates,
             AdmissionRepository admissions, TicketService ticketService, GateAuthService gateAuth,
@@ -77,7 +78,9 @@ public class TicketAdminController {
             com.plink.ticket.repository.InviteQuotaRepository inviteQuotas,
             com.plink.ticket.service.InviteService invites,
             com.plink.ticket.venue.VenueService venue,
-            com.plink.ticket.repository.FaceRepository faceRows) {
+            com.plink.ticket.repository.FaceRepository faceRows,
+            com.plink.ticket.schedule.ScheduleService schedule) {
+        this.schedule = schedule;
         this.faceRows = faceRows;
         this.venue = venue;
         this.inviteQuotas = inviteQuotas;
@@ -193,7 +196,14 @@ public class TicketAdminController {
     public Map<String, Object> issueTicket(@PathVariable long id, @RequestBody Map<String, Object> body) {
         boolean notify = !"false".equalsIgnoreCase(String.valueOf(body.get("notify")));
         return ticketService.issue(id, text(body.get("email"), null), blankToNull(body.get("seat")),
-            blankToNull(body.get("tier")), blankToNull(body.get("phone")), notify, fieldValues(id, body));
+            blankToNull(body.get("tier")), blankToNull(body.get("phone")), notify, fieldValues(id, body),
+            passOf(id, body));
+    }
+
+    /** The pass a row names: by id from the form, or by name from a spreadsheet's 입장권 종류 column. */
+    private Long passOf(long sessionId, Map<String, Object> row) {
+        Object raw = row.get("pass") != null ? row.get("pass") : row.get("입장권 종류");
+        return schedule.resolvePass(sessionId, raw);
     }
 
     /**
@@ -244,7 +254,7 @@ public class TicketAdminController {
             try {
                 Map<String, Object> ticket = ticketService.issue(id, text(row.get("email"), null),
                     blankToNull(row.get("seat")), blankToNull(row.get("tier")),
-                    blankToNull(row.get("phone")), notify, fieldValues(id, row));
+                    blankToNull(row.get("phone")), notify, fieldValues(id, row), passOf(id, row));
                 outcome.put("ok", true);
                 outcome.put("ticketId", ticket.get("ticketId"));
                 outcome.put("ticketRef", ticket.get("ticketRef"));
@@ -612,18 +622,31 @@ public class TicketAdminController {
      * separately, which is two thousand and one queries for two thousand tickets. A page
      * is now two: the tickets, then their presence together.
      */
+    public Map<String, Object> listTickets(long id, int page, int size, String q, String filter) {
+        return listTickets(id, page, size, q, filter, null);
+    }
+
     @GetMapping("/sessions/{id}/tickets")
     public Map<String, Object> listTickets(@PathVariable long id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "ALL") String filter) {
+            @RequestParam(defaultValue = "ALL") String filter,
+            @RequestParam(required = false) String day) {
         boolean plain = ticketService.requireSession(id).testEvent;
         int limit = pageSize(size);
         int offset = Math.max(page, 0) * limit;
         TicketRepository.Filter narrowed = ticketFilter(filter);
         String query = blankToNull(q);
-        List<Ticket> found = tickets.search(id, narrowed, query, limit, offset);
+        // "Who may come on this day": every-day tickets and those whose pass names it.
+        List<Long> admitting = null;
+        if (blankToNull(day) != null) {
+            try { admitting = schedule.passesAdmitting(id, java.time.LocalDate.parse(day.trim())); }
+            catch (java.time.format.DateTimeParseException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "날짜 형식을 확인해 주세요.");
+            }
+        }
+        List<Ticket> found = tickets.search(id, narrowed, query, admitting, limit, offset);
         List<Long> ids = found.stream().map(ticket -> ticket.id).toList();
         Map<Long, Presence> presence = admissions.findAll(ids);
         // Who invited the invitees on this page, and how many each inviter has used: two
@@ -635,6 +658,7 @@ public class TicketAdminController {
                 .map(ticket -> ticket.invitedBy).filter(java.util.Objects::nonNull).toList())) {
             inviters.put(inviter.id, inviter);
         }
+        Map<Long, String> passNames = schedule.passNames(id);
         List<Map<String, Object>> items = new ArrayList<>();
         for (Ticket ticket : found) {
             Map<String, Object> row = ticketRow(ticket, presence.get(ticket.id), plain);
@@ -649,9 +673,10 @@ public class TicketAdminController {
             // The organiser's own count for this ticket, or null when it follows its tier.
             row.put("inviteQuota", ticket.invitee ? null : ticket.inviteQuota);
             row.put("inviteQuotaEffective", com.plink.ticket.service.InviteService.quotaFor(ticket, tierQuotas));
+            row.put("pass", ticket.passId == null ? null : passNames.get(ticket.passId));
             items.add(row);
         }
-        return paged(items, tickets.count(id, narrowed, query), page, limit);
+        return paged(items, tickets.count(id, narrowed, query, admitting), page, limit);
     }
 
     /**

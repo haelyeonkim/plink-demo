@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
   ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket, requestOtp, verifyOtp,
-  type CommunitySummary, type InviteView, type TicketCoupon, type TicketView, type VenueView,
+  type CommunitySummary, type InviteView, type TicketCoupon, type TicketSchedule, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
 import { CodeMinter, type Grant } from '../ticket/codes';
@@ -620,7 +620,12 @@ export default function TicketPage() {
   const skipOtp = ticketRequiresNoOtp(ticket);
 
 
-  const tabs = ticket.claimed;
+  // An event over several days: which of them this ticket admits, and whether it is over.
+  const schedule = ticket.event.schedule ?? null;
+  const ended = schedule?.state === 'ENDED';
+  const shut = schedule !== null && schedule.state !== 'OPEN';
+  // Once the event is over the ticket is a record: nothing is left to open from it.
+  const tabs = ticket.claimed && !ended;
   const entered = community?.entered === true;
   const chatOpen = entered && community?.chatOpen === true;
   const liveCoupons = ticket.coupons?.filter(row => row.status !== 'REDEEMED' && row.status !== 'VOID').length ?? 0;
@@ -752,7 +757,7 @@ export default function TicketPage() {
           {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           {ticket.tier && <><dt>등급</dt><dd>{ticket.tier}</dd></>}
           <dt>등록 이메일</dt><dd>{ticket.holderEmailMasked}</dd>
-          {ticket.presence.reentryRemaining !== null && (
+          {ticket.presence.reentryRemaining !== null && ticket.event.schedule?.state !== 'ENDED' && (
             <><dt>남은 재입장</dt><dd>{ticket.presence.reentryRemaining}회</dd></>
           )}
         </dl>}
@@ -782,16 +787,23 @@ export default function TicketPage() {
 
         {ticket.claimed ? (
           <>
-            {faceEnrolled && ticket.event.faceEnabled ? (
+            {schedule && <TicketDays schedule={schedule} />}
+            {ended ? (
+              <p className="ticket-ended" role="status">종료된 이벤트예요. 이 입장권으로는 더 이상 입장할 수 없어요.</p>
+            ) : faceEnrolled && ticket.event.faceEnabled && !shut ? (
               <p className="notice-text" role="status">
                 얼굴이 등록되어 있어요. 게이트 카메라를 보고 지나가시면 됩니다 - QR은 필요하지 않아요.
               </p>
-            ) : !ticket.presence.inside ? (
-              <button className="btn-primary" onClick={() => present('IN')} disabled={busy}>입장하기</button>
-            ) : (
+            ) : !ticket.presence.inside ? (<>
+              {shut && schedule.message && <p className="ticket-not-today" role="status">{schedule.message}</p>}
+              <button className="btn-primary" onClick={() => present('IN')} disabled={busy || shut}>입장하기</button>
+            </>) : (
               <button className="btn-primary" onClick={() => present('OUT')} disabled={busy}>퇴장하기</button>
             )}
 
+            {/* Once the event is over the ticket is a record: the group, the room and the
+                housekeeping below have nothing left to do. */}
+            {!ended && (<>
             {/* Before the door the group comes first - who is coming, who has not
                 registered; once inside, the room's news does, and the group is one line. */}
             {!ticket.presence.inside && groupTile}
@@ -860,6 +872,7 @@ export default function TicketPage() {
                 )}
               </div>
             )}
+            </>)}
           </>
         ) : ticket.claimExpired ? (
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
@@ -1156,5 +1169,30 @@ function RotatingCode({ grant, ticket, movement, used, coupon, onAnother, onDone
       )}
       <button className="btn-secondary" onClick={() => { void onDone(); }}>닫기</button>
     </div>
+  );
+}
+
+/** The event's days on the ticket: which ones it admits, and today among them. */
+function TicketDays({ schedule }: { schedule: TicketSchedule }) {
+  return (
+    <section className="ticket-days-strip" aria-label="입장 가능한 날">
+      {schedule.pass && <span className="ticket-pass">{schedule.pass}</span>}
+      <ol style={{ gridTemplateColumns: `repeat(${Math.min(schedule.days.length, 4)}, minmax(0, 1fr))` }}>
+        {schedule.days.map(day => {
+          const [, m, d] = day.date.split('-').map(Number);
+          const tone = day.today ? (day.admits && schedule.state === 'OPEN' ? 'today' : 'today-off')
+            : day.past ? 'off' : day.admits ? 'on' : 'off';
+          return (
+            <li key={day.date} className={`is-${tone}`} aria-current={day.today ? 'date' : undefined}>
+              <b>{day.label}</b>
+              <span>{m}.{d} {day.weekday}</span>
+              <small>{day.today ? (day.admits ? '오늘' : '오늘 · 입장 불가') : day.closed ? '휴관' : day.past ? '지남'
+                : day.admits ? '입장 가능' : '입장 불가'}</small>
+              {day.admits && !day.past && (day.opensAt || day.closesAt) && <small>{day.opensAt ?? ''}–{day.closesAt ?? ''}</small>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

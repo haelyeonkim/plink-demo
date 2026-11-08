@@ -48,7 +48,9 @@ public class AdmissionService {
             AdmissionRepository admissions, PresentationRepository grants, GateRepository gates,
             PresentationService presentations, TicketService ticketService, CouponService coupons,
             com.plink.ticket.config.TicketProperties properties,
-            com.plink.ticket.live.LiveEvents live, com.plink.ticket.live.LiveSnapshots snapshots) {
+            com.plink.ticket.live.LiveEvents live, com.plink.ticket.live.LiveSnapshots snapshots,
+            com.plink.ticket.schedule.ScheduleService schedule) {
+        this.schedule = schedule;
         this.coupons = coupons;
         this.properties = properties;
         this.live = live;
@@ -64,6 +66,7 @@ public class AdmissionService {
 
     private final com.plink.ticket.live.LiveEvents live;
     private final com.plink.ticket.live.LiveSnapshots snapshots;
+    private final com.plink.ticket.schedule.ScheduleService schedule;
 
     /**
      * Tells whoever is watching. Published after the ledger row exists, so a listener
@@ -118,6 +121,12 @@ public class AdmissionService {
         Presence presence = presence(ticket);
         String direction = resolveDirection(gate, requestedDirection, presence);
         Instant now = Instant.now();
+        // Coming in is for the days this ticket admits, while the event runs; going out
+        // is never refused.
+        if ("IN".equals(direction)) {
+            java.util.Optional<String> refused = schedule.refusal(session, ticket, now);
+            if (refused.isPresent()) throw deny(refused.get());
+        }
 
         // An accidental second read must not toggle the state: a face passing the camera
         // twice in a second is one arrival, not an arrival and a departure.

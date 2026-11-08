@@ -50,8 +50,14 @@ public class TicketRepository {
         t.inviteName = rs.getString("invite_name");
         t.inviteResends = rs.getInt("invite_resends");
         t.inviteResentAt = rs.getTimestamp("invite_resent_at");
+        long pass = rs.getLong("pass_id");
+        t.passId = rs.wasNull() ? null : pass;
         return t;
     };
+
+    public void setPass(long ticketId, Long passId) {
+        jdbc.update("UPDATE ticket SET pass_id = ? WHERE id = ?", passId, ticketId);
+    }
 
     public long insert(long sessionId, String ticketRef, String tokenHmac, String tokenCipher,
             String seat, String tier, String attributes, String issuedToEmail, String phone,
@@ -260,8 +266,13 @@ public class TicketRepository {
 
     /** One page of a session's tickets, oldest first. */
     public List<Ticket> search(long sessionId, Filter filter, String query, int limit, int offset) {
+        return search(sessionId, filter, query, null, limit, offset);
+    }
+
+    /** @param admitting the passes that admit on a chosen day, or null for every ticket */
+    public List<Ticket> search(long sessionId, Filter filter, String query, List<Long> admitting, int limit, int offset) {
         List<Object> args = new ArrayList<>();
-        String where = where(sessionId, filter, query, args);
+        String where = where(sessionId, filter, query, admitting, args);
         args.add(limit);
         args.add(offset);
         return jdbc.query("SELECT t.* FROM ticket t" + where + " ORDER BY t.id LIMIT ? OFFSET ?",
@@ -269,15 +280,28 @@ public class TicketRepository {
     }
 
     public long count(long sessionId, Filter filter, String query) {
+        return count(sessionId, filter, query, null);
+    }
+
+    public long count(long sessionId, Filter filter, String query, List<Long> admitting) {
         List<Object> args = new ArrayList<>();
-        Long found = jdbc.queryForObject("SELECT COUNT(*) FROM ticket t" + where(sessionId, filter, query, args),
+        Long found = jdbc.queryForObject("SELECT COUNT(*) FROM ticket t" + where(sessionId, filter, query, admitting, args),
             Long.class, args.toArray());
         return found == null ? 0 : found;
     }
 
-    private static String where(long sessionId, Filter filter, String query, List<Object> args) {
+    private static String where(long sessionId, Filter filter, String query, List<Long> admitting, List<Object> args) {
         StringBuilder sql = new StringBuilder(" WHERE t.session_id = ?");
         args.add(sessionId);
+        // A ticket without a pass comes every day; one with a pass, on its pass's days.
+        if (admitting != null) {
+            sql.append(" AND (t.pass_id IS NULL");
+            if (!admitting.isEmpty()) {
+                sql.append(" OR t.pass_id IN (").append(String.join(", ", java.util.Collections.nCopies(admitting.size(), "?"))).append(")");
+                args.addAll(admitting);
+            }
+            sql.append(")");
+        }
         switch (filter == null ? Filter.ALL : filter) {
             case UNCLAIMED -> sql.append(" AND t.status = 'ISSUED' AND t.holder_email IS NULL");
             case BOUND -> sql.append(" AND t.status = 'BOUND'");

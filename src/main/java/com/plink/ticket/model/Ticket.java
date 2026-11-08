@@ -25,6 +25,8 @@ public class Ticket {
     /** How often the inviter has mailed this unregistered invite again, and when last. */
     public int inviteResends;
     public Timestamp inviteResentAt;
+    /** The days this ticket admits, by its pass; null admits every day of the event. */
+    public Long passId;
 
     public boolean bound() { return "BOUND".equals(status); }
 

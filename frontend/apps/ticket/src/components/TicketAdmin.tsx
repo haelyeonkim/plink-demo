@@ -19,11 +19,12 @@ import { GateNameDialog, type FirstManager } from './GateDialogs';
 import ConsoleChat from './ConsoleChat';
 import ConsoleAds from './ConsoleAds';
 import ConsoleVenue from './ConsoleVenue';
+import ScheduleSettings from './ScheduleSettings';
 import ConsoleCoupons from './ConsoleCoupons';
 import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -55,12 +56,12 @@ const TAB_HELP: Partial<Record<Tab, ReactNode>> = {
   </>,
 };
 /** Settings is one page of sections; these are its sections, in order. */
-type SettingsTab = 'event' | 'policy' | 'face' | 'crowd' | 'invite' | 'fields';
+type SettingsTab = 'event' | 'schedule' | 'policy' | 'face' | 'crowd' | 'invite' | 'fields';
 /** The settings forms that wait for the save bar, in the order they are saved. */
 type SettingsKey = 'details' | 'policy' | 'face' | 'crowd' | 'invite';
 const SETTINGS_ORDER: SettingsKey[] = ['details', 'policy', 'face', 'crowd', 'invite'];
 const SETTINGS_TABS: Array<[SettingsTab, string]> = [
-  ['event', '이벤트 정보'], ['policy', '재입장 · 퇴장'], ['face', '얼굴 입장'], ['crowd', '혼잡도'], ['invite', '초대'],
+  ['event', '이벤트 정보'], ['schedule', '일정'], ['policy', '재입장 · 퇴장'], ['face', '얼굴 입장'], ['crowd', '혼잡도'], ['invite', '초대'],
   ['fields', '발급 항목'],
 ];
 /** What each choice of who sees a group's entry status means, in one line. */
@@ -186,6 +187,15 @@ export default function TicketAdmin() {
   const [ticketPage, setTicketPage] = useState<Paged<TicketRow>>(EMPTY_PAGE);
   const [ticketQuery, setTicketQuery] = useState('');
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>('ALL');
+  // The day whose visitors the list shows, for an event over several days; '' is every ticket.
+  const [ticketDay, setTicketDay] = useState('');
+  // The event's days and passes; empty for an event of one day.
+  const [schedule, setSchedule] = useState<ScheduleView | null>(null);
+  const loadSchedule = useCallback(async (id: number) => {
+    try { setSchedule(await read(await fetch(`/api/admin/sessions/${id}/schedule`)) as ScheduleView); }
+    catch { setSchedule(null); }
+  }, []);
+  useEffect(() => { setTicketDay(''); setSchedule(null); if (selected !== null) void loadSchedule(selected); }, [selected, loadSchedule]);
   // The page number belongs to one search: it is kept with the search it was chosen in,
   // so a new search reads its first page at once instead of the old page number first.
   const [ticketPaging, setTicketPaging] = useState({ key: '', page: 0 });
@@ -335,7 +345,7 @@ export default function TicketAdmin() {
 
   // A new search or filter starts from the first page; a new event starts clean.
   const ticketSearch = useDebounced(ticketQuery.trim());
-  const pagingKey = `${selected}|${ticketFilter}|${ticketSearch}`;
+  const pagingKey = `${selected}|${ticketFilter}|${ticketSearch}|${ticketDay}`;
   const ticketPageNo = ticketPaging.key === pagingKey ? ticketPaging.page : 0;
   const setTicketPageNo = (page: number) => setTicketPaging({ key: pagingKey, page });
   // A choice is about the rows on screen: a new search, filter or page starts it over.
@@ -399,12 +409,13 @@ export default function TicketAdmin() {
     const query = new URLSearchParams({
       page: String(ticketPageNo), size: String(PAGE_SIZE), filter: ticketFilter });
     if (ticketSearch) query.set('q', ticketSearch);
+    if (ticketDay) query.set('day', ticketDay);
     let current = true;
     fetch(`/api/admin/sessions/${selected}/tickets?${query}`).then(read)
       .then(page => { if (current) setTicketPage(page); })
       .catch(err => { if (current) setError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.'); });
     return () => { current = false; };
-  }, [selected, ticketPageNo, ticketFilter, ticketSearch, revision]);
+  }, [selected, ticketPageNo, ticketFilter, ticketSearch, ticketDay, revision]);
 
 
   useEffect(() => { void loadSessions(); }, [loadSessions]);
@@ -469,7 +480,7 @@ export default function TicketAdmin() {
   const issueTicket = (input: IssueInput) => act(async () => {
     const result = await read(await mutate(`/api/admin/sessions/${selected}/tickets`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: input.email, phone: input.phone, values: input.values, notify: input.notify }),
+      body: JSON.stringify({ email: input.email, phone: input.phone, values: input.values, notify: input.notify, pass: input.pass }),
     }));
     // The result card says what happened, so no toast repeats it.
     setIssued({ ...(result as IssuedTicket), from: 'issue', values: input.values, notify: input.notify });
@@ -1188,7 +1199,7 @@ export default function TicketAdmin() {
           )}
 
       {session && tab === 'issue' && (
-        <IssuePanel session={session} fields={fieldList} takenSeats={takenSeats} counts={counts} busy={busy}
+        <IssuePanel session={session} fields={fieldList} passes={schedule?.passes ?? []} days={schedule?.days ?? []} takenSeats={takenSeats} counts={counts} busy={busy}
           mode={issueMode} onMode={setIssueMode}
           issued={issued?.from === 'issue' ? issued : null} onIssue={issueTicket} onContinue={() => setIssued(null)}
           onBulk={issueBulk} onMail={mailIssued} checkTaken={checkTaken} onShowTickets={showIssued} />
@@ -1206,7 +1217,9 @@ export default function TicketAdmin() {
         const ids = picked.map(row => row.ticketId);
         const anyOff = picked.some(row => row.status === 'REVOKED');
         const anyOn = picked.some(row => row.status !== 'REVOKED');
-        const columns = 7 + fieldList.length;
+        const hasPasses = (schedule?.passes.length ?? 0) > 0;
+        const openDays = (schedule?.days ?? []).filter(day => !day.closed);
+        const columns = 7 + fieldList.length + (hasPasses ? 1 : 0);
         const open = openTicket;
         return (
         <div className="console-stack">
@@ -1225,6 +1238,16 @@ export default function TicketAdmin() {
               ...((counts.invited ?? 0) > 0 || ticketFilter === 'INVITED'
                 ? [['INVITED', '초대받은 입장권', counts.invited ?? 0] as [TicketFilter, string, number]] : []),
             ]} />
+          {openDays.length > 1 && (
+            <div className="chip-row ticket-days" role="group" aria-label="입장 가능한 날로 보기">
+              <button type="button" className={ticketDay === '' ? 'on' : ''} aria-pressed={ticketDay === ''}
+                onClick={() => setTicketDay('')}>모든 날</button>
+              {openDays.map(day => (
+                <button key={day.date} type="button" className={ticketDay === day.date ? 'on' : ''} aria-pressed={ticketDay === day.date}
+                  onClick={() => setTicketDay(day.date)}>{day.label} {dayShort(day)} 입장 가능</button>
+              ))}
+            </div>
+          )}
 
           {checked.size > 0 && (
             <div className="bulk-bar" role="region" aria-label="선택한 입장권 작업">
@@ -1256,6 +1279,7 @@ export default function TicketAdmin() {
                         onChange={() => setChecked(allOn ? new Set() : new Set(rows.map(row => row.ticketId)))} />
                     </th>
                     <th>입장권</th>
+                    {hasPasses && <th>입장권 종류</th>}
                     {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
                     <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th className="link-col" aria-label="링크" />
                   </tr>
@@ -1275,6 +1299,7 @@ export default function TicketAdmin() {
                           <button type="button" className="ticket-ref" aria-expanded={isOpen}
                             onClick={() => setOpenTicket(isOpen ? null : row)}>{row.ticketRef}</button>
                         </td>
+                        {hasPasses && <td className="field-col">{row.pass ?? '전 일정'}</td>}
                         {fieldList.map(field => <td key={field.id} className="field-col">{valueOf(row, field) ?? '–'}</td>)}
                         <td className="state-col"><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
                         {/* One line: where the holder is and since when, so a row stays one row high. */}
@@ -1719,6 +1744,19 @@ export default function TicketAdmin() {
                 </InfoTip>
               </label>
             </form>
+              </div>
+            </section>
+            <section id="settings-schedule" className="settings-section" aria-labelledby="settings-schedule-title">
+              <div className="settings-side">
+                <h3 id="settings-schedule-title">일정
+                  <InfoTip label="일정">
+                    <p>여러 날 진행하는 이벤트의 날짜와 날짜별 입장 시간, 휴관일을 정해요. 마지막 운영일의 입장 마감이 이벤트가 끝나는 시각이에요.</p>
+                    <p>입장권 종류를 만들면 토요일권, 주말권처럼 들어올 수 있는 날을 입장권마다 정할 수 있어요.</p>
+                  </InfoTip></h3>
+              </div>
+              <div className="settings-body">
+                <ScheduleSettings key={`schedule-${session.id}`} sessionId={session.id} startsAt={localInput(session.startsAt)}
+                  schedule={schedule} onChanged={() => loadSchedule(session.id)} onNotice={setNotice} onError={setError} />
               </div>
             </section>
             <section id="settings-policy" className="settings-section" aria-labelledby="settings-policy-title">
