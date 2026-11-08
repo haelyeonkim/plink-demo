@@ -73,6 +73,8 @@ public class GateController {
         result.put("sessionId", session.id);
         result.put("sessionName", session.name);
         result.put("exitScanRequired", session.exitScanRequired);
+        // A terminal at an event without face entry does not look for faces.
+        result.put("faceEnabled", session.faceEnabled);
         result.put("deviceBound", gate.boundDevice != null);
         // What this terminal is for. A booth terminal reads the same code, to give
         // something rather than to admit somebody.

@@ -28,9 +28,11 @@ public class SessionPolicyService {
     private final EventSessionRepository sessions;
     private final TicketFieldRepository fields;
     private final InviteQuotaRepository inviteQuotas;
+    private final com.plink.ticket.repository.FaceRepository faces;
 
     public SessionPolicyService(EventSessionRepository sessions, TicketFieldRepository fields,
-            InviteQuotaRepository inviteQuotas) {
+            InviteQuotaRepository inviteQuotas, com.plink.ticket.repository.FaceRepository faces) {
+        this.faces = faces;
         this.sessions = sessions;
         this.fields = fields;
         this.inviteQuotas = inviteQuotas;
@@ -46,8 +48,8 @@ public class SessionPolicyService {
     private record Crowd(int busy, int steady) {}
     private record DayClose(boolean exit, int hour) {}
     private record Geo(Double lat, Double lon, int radiusMeters, String mode) {}
-    private record Face(boolean required, boolean reentryRequiresFace, String liveness, String challengeOn,
-            int retentionDays) {}
+    private record Face(boolean enabled, boolean required, boolean reentryRequiresFace, String liveness,
+            String challengeOn, int retentionDays) {}
 
     /**
      * Applies a save.
@@ -74,8 +76,11 @@ public class SessionPolicyService {
             sessions.updateGeoPolicy(id, plan.geo.lat, plan.geo.lon, plan.geo.radiusMeters, plan.geo.mode);
         }
         if (plan.face != null) {
+            sessions.updateFaceEnabled(id, plan.face.enabled);
             sessions.updateFacePolicy(id, plan.face.required, plan.face.reentryRequiresFace,
                 plan.face.liveness, plan.face.challengeOn, plan.face.retentionDays);
+            // Turned off: the faces enrolled for it are not kept for an entry that no longer exists.
+            if (!plan.face.enabled && current.faceEnabled) faces.forgetSession(id);
         }
         if (plan.inviteStatus != null) sessions.updateInviteStatus(id, plan.inviteStatus);
         if (plan.inviteQuotas != null) inviteQuotas.replace(id, plan.inviteQuotas);
@@ -146,11 +151,17 @@ public class SessionPolicyService {
                 0, 100_000, "허용 반경은 0에서 100km 사이여야 해요."), geoMode);
         }
         Face face = null;
-        if (body.containsKey("faceRequired") || body.containsKey("reentryRequiresFace")
+        if (body.containsKey("faceEnabled") || body.containsKey("faceRequired") || body.containsKey("reentryRequiresFace")
                 || body.containsKey("faceLiveness") || body.containsKey("faceChallengeOn")
                 || body.containsKey("faceRetentionDays")) {
-            face = new Face(flag(body.get("faceRequired"), current.faceRequired),
-                flag(body.get("reentryRequiresFace"), current.reentryRequiresFace),
+            boolean enabled = flag(body.get("faceEnabled"), current.faceEnabled);
+            boolean required = flag(body.get("faceRequired"), current.faceRequired);
+            boolean reentry = flag(body.get("reentryRequiresFace"), current.reentryRequiresFace);
+            // Requiring a face where face entry is off would leave nobody a way in.
+            if (!enabled && (Boolean.TRUE.equals(body.get("faceRequired")) || Boolean.TRUE.equals(body.get("reentryRequiresFace")))) {
+                throw bad("얼굴 입장을 켜야 얼굴로만 입장하게 할 수 있어요.");
+            }
+            face = new Face(enabled, enabled && required, enabled && reentry,
                 word(body.get("faceLiveness"), current.faceLiveness, 32, "얼굴 생체 확인 방식을 확인해 주세요."),
                 word(body.get("faceChallengeOn"), current.faceChallengeOn, 16, "얼굴 추가 확인 조건을 확인해 주세요."),
                 within(number(body.get("faceRetentionDays"), current.faceRetentionDays), 0, 365,

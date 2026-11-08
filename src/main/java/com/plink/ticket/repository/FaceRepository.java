@@ -122,6 +122,26 @@ public class FaceRepository {
         return deleteTemplate(ticketId);
     }
 
+    /**
+     * Every face enrolled for one event, withdrawn and destroyed together: face entry was
+     * turned off, and what it was collected for no longer exists.
+     */
+    public int forgetSession(long sessionId) {
+        jdbc.update("UPDATE face_consent SET withdrawn_at = CURRENT_TIMESTAMP WHERE withdrawn_at IS NULL "
+            + "AND ticket_id IN (SELECT id FROM ticket WHERE session_id = ?)", sessionId);
+        int removed = jdbc.update("DELETE FROM face_template WHERE session_id = ?", sessionId);
+        ActivityLog.emit(Activity.of(Activity.FACE, "face.session_forgotten").session(sessionId)
+            .summary("얼굴 입장 끔 · 얼굴 " + removed + "건 삭제").put("templatesDeleted", removed));
+        return removed;
+    }
+
+    /** How many holders of an event have a face enrolled now. */
+    public int countEnrolled(long sessionId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM face_template WHERE session_id = ? AND revoked_at IS NULL",
+            Integer.class, sessionId);
+        return n == null ? 0 : n;
+    }
+
     public int purgeExpired(Timestamp now) {
         return jdbc.update("DELETE FROM face_template WHERE purge_after < ?", now);
     }

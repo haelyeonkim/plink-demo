@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
@@ -57,7 +58,14 @@ class FaceTrackTest {
     @Autowired AdmissionService admissions;
     @Autowired com.plink.ticket.repository.AdmissionRepository admissionRepository;
 
+    /** An event that admits by face: these tests are about that track. */
     private long newSession() {
+        long id = newSessionWithoutFace();
+        sessions.updateFaceEnabled(id, true);
+        return id;
+    }
+
+    private long newSessionWithoutFace() {
         return sessions.insert("얼굴 테스트 " + Secrets.randomAlnum(6), "테스트홀",
             Timestamp.from(Instant.now().plus(4, ChronoUnit.HOURS)),
             Timestamp.from(Instant.now().minus(30, ChronoUnit.MINUTES)));
@@ -247,6 +255,7 @@ class FaceTrackTest {
         long sessionId = sessions.insert("지난 이벤트", null,
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)),
             Timestamp.from(Instant.now().minus(40, ChronoUnit.DAYS)));
+        sessions.updateFaceEnabled(sessionId, true);
         sessions.updateFacePolicy(sessionId, false, false, "PASSIVE", "LOW_SCORE_ONLY", 7);
         Ticket ticket = boundTicket(sessionId, "holder@example.com");
         faces.consent(ticket, "holder@example.com", true);
@@ -323,5 +332,44 @@ class FaceTrackTest {
         assertTrue(assertThrows(ResponseStatusException.class,
             () -> faces.enrol(unbound, capture("eta")))
             .getReason().contains("패스키 등록을 먼저"));
+    }
+
+    @Autowired com.plink.ticket.service.SessionPolicyService policies;
+    @Autowired com.plink.ticket.repository.FaceRepository faceRows;
+
+    /** An event that does not admit by face takes no face, and a gate there looks for none. */
+    @Test void anEventWithoutFaceEntryTakesNoFace() {
+        long sessionId = newSessionWithoutFace();
+        Ticket ticket = boundTicket(sessionId, "noface@example.com");
+        assertEquals(false, faces.status(ticket).get("enabled"));
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+            () -> faces.consent(ticket, "noface@example.com", true));
+        assertEquals(HttpStatus.CONFLICT, refused.getStatusCode());
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
+            () -> faces.identify(sessions.findById(sessionId).orElseThrow(), List.of(new byte[] { 1 }), null, "g"))
+            .getStatusCode());
+    }
+
+    @Test void requiringAFaceNeedsFaceEntryOn() {
+        long sessionId = newSessionWithoutFace();
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
+            () -> policies.update(sessionId, java.util.Map.of("faceRequired", true))).getStatusCode());
+        policies.update(sessionId, java.util.Map.of("faceEnabled", true, "faceRequired", true));
+        assertTrue(sessions.findById(sessionId).orElseThrow().faceRequired);
+    }
+
+    /** Turned off, the faces collected for it go, and nothing still requires one at the door. */
+    @Test void turningFaceEntryOffForgetsTheFacesItCollected() {
+        long sessionId = newSession();
+        Ticket ticket = boundTicket(sessionId, "forget@example.com");
+        faces.consent(ticket, "forget@example.com", true);
+        faceRows.saveTemplate(ticket.id, sessionId, "test", 3, 0.9, "x", Timestamp.from(Instant.now().plus(1, ChronoUnit.DAYS)));
+        policies.update(sessionId, java.util.Map.of("faceRequired", true));
+        assertEquals(1, faceRows.countEnrolled(sessionId));
+
+        policies.update(sessionId, java.util.Map.of("faceEnabled", false));
+        assertEquals(0, faceRows.countEnrolled(sessionId));
+        assertTrue(faceRows.activeConsent(ticket.id).isEmpty());
+        assertFalse(sessions.findById(sessionId).orElseThrow().faceRequired);
     }
 }

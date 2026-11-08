@@ -191,7 +191,8 @@ export default function TicketPage() {
           setTicket(view);
           setLoadError('');
           if (view.locked) continue;
-          const face = await fetchFaceStatus(sessionId, token).catch(() => null);
+          // An event without face entry is not asked about faces at all.
+          const face = view.event.faceEnabled ? await fetchFaceStatus(sessionId, token).catch(() => null) : null;
           setFaceEnrolled(face?.enrolled ?? false);
         } catch (err) {
           setLoadError(err instanceof Error ? err.message : '입장권을 불러오지 못했어요.');
@@ -781,7 +782,7 @@ export default function TicketPage() {
 
         {ticket.claimed ? (
           <>
-            {faceEnrolled ? (
+            {faceEnrolled && ticket.event.faceEnabled ? (
               <p className="notice-text" role="status">
                 얼굴이 등록되어 있어요. 게이트 카메라를 보고 지나가시면 됩니다 - QR은 필요하지 않아요.
               </p>
@@ -853,8 +854,10 @@ export default function TicketPage() {
                     <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
                   </form>
                 )}
-                <FaceEnrolment sessionId={sessionId} token={token}
-                  inside={ticket.presence.inside} onChange={() => reload()} />
+                {ticket.event.faceEnabled && (
+                  <FaceEnrolment sessionId={sessionId} token={token}
+                    inside={ticket.presence.inside} onChange={() => reload()} />
+                )}
               </div>
             )}
           </>

@@ -2372,3 +2372,4 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 }
 .venue-draft p { margin: 0; font-size: 13px; line-height: 1.6; flex: 1 1 320px; }
 .venue-has-draft { color: #8a5000; font-weight: 700; }
+.settings-note { margin: 6px 0 0; font-size: 13px; line-height: 1.6; }

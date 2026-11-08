@@ -96,7 +96,7 @@ public class FaceService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "동의하지 않으면 얼굴 등록을 진행할 수 없어요. 패스키만으로도 입장할 수 있습니다.");
         }
-        EventSession session = ticketService.requireSession(ticket.sessionId);
+        EventSession session = requireEnabled(ticket.sessionId);
         Timestamp retainUntil = Timestamp.from(session.startsAt.toInstant()
             .plus(session.faceRetentionDays, ChronoUnit.DAYS));
         faces.recordConsent(ticket.id, email, properties.getFace().getConsentVersion(), PURPOSES, retainUntil);
@@ -111,6 +111,7 @@ public class FaceService {
 
     @Transactional
     public Map<String, Object> enrol(Ticket ticket, List<byte[]> frames) {
+        requireEnabled(ticket.sessionId);
         if (!ticket.bound()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "패스키 등록을 먼저 마쳐 주세요.");
@@ -189,6 +190,7 @@ public class FaceService {
 
     public Map<String, Object> status(Ticket ticket) {
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("enabled", ticketService.requireSession(ticket.sessionId).faceEnabled);
         result.put("consented", faces.activeConsent(ticket.id).isPresent());
         result.put("enrolled", faces.findByTicket(ticket.id).isPresent());
         // Why the screen may not offer enrolment, so it can say so rather than fail late.
@@ -198,6 +200,17 @@ public class FaceService {
         result.put("consentVersion", properties.getFace().getConsentVersion());
         result.put("purposes", PURPOSES);
         return result;
+    }
+
+    /** Face entry is the organiser's choice per event; where it is off, nothing face-related runs. */
+    private EventSession requireEnabled(long sessionId) {
+        EventSession session = ticketService.requireSession(sessionId);
+        if (!session.faceEnabled) throw disabled();
+        return session;
+    }
+
+    private static ResponseStatusException disabled() {
+        return new ResponseStatusException(HttpStatus.CONFLICT, "이 이벤트는 얼굴 입장을 쓰지 않아요.");
     }
 
     public static class Match {
@@ -217,6 +230,7 @@ public class FaceService {
      * misidentification takes.
      */
     public Match identify(EventSession session, List<byte[]> frames, String challenge, String gateId) {
+        if (!session.faceEnabled) throw disabled();
         TicketProperties.Face config = properties.getFace();
         // Is anybody there at all, before judging whether they are real. A gate spends
         // most of its day looking at an empty lane, and an empty lane scores badly on
