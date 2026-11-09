@@ -169,6 +169,9 @@ public class ContentController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "이 컨텐츠를 쓰고 있는 링크가 " + used + "개 있어요. 링크의 대상을 먼저 바꿔 주세요.");
         }
+        if (contents.hasArtworkRequests(content.id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "수신자 요청 이력이 있는 작품의 원본 컨텐츠는 삭제할 수 없어요.");
+        }
         contents.delete(content.id);
         return Map.of("deleted", true);
     }

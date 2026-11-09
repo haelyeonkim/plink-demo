@@ -1,3 +1,4 @@
+import { ArtworkRequestsProvider } from './ArtworkRequests';
 import Icon from '@shared/components/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
@@ -101,7 +102,7 @@ export default function AccessLink() {
   if (opened?.content) return (
     <section className="page-section">
       {statusNotice && <p className="hint-text" role="status">{statusNotice}</p>}
-      <ContentView title={opened.contentTitle ?? info.title ?? '공유된 컨텐츠'} body={opened.content} />
+      <ArtworkRequestsProvider key={shortCode} code={shortCode}><ContentView title={opened.contentTitle ?? info.title ?? '공유된 컨텐츠'} body={opened.content} recipientCode={shortCode} /></ArtworkRequestsProvider>
     </section>
   );
   if (opened) return (
@@ -120,7 +121,7 @@ export default function AccessLink() {
     <section className="page-section"><div className="access-card passkey-card">
       <div className="access-lock"><img src="/logo-small.svg" alt="패스링크" width="36" height="36" /></div>
       <p className="secure-label">PROTECTED LINK</p><h2>{info.title || '보호된 링크'}</h2>
-      {unavailable ? <p className="error-text" role="alert">{info.expired ? '이 링크는 만료되었어요.' : '열람 가능한 횟수를 모두 사용했어요.'}</p> : (
+      {unavailable ? <p className="error-text" role="alert">{info.expired ? '이 링크는 만료되었어요. 기존 요청은 자동 취소되지 않습니다. 변경이 필요하면 링크를 전달한 담당자에게 연락해 주세요.' : '열람 가능한 횟수를 모두 사용했어요.'}</p> : (
         <>
           <p className="passkey-status">
             {info.claimed ? '수신이 확정된 링크예요' : '지금 수신할 수 있는 링크예요'}

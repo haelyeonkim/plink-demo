@@ -1,3 +1,4 @@
+import AdminArtworkRequests from './components/ArtworkRequests';
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
 import { AppScope } from '@shared/scope';
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="exports" element={<DataExports />} />
           </Route>
           <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
+          <Route path="/admin/artworks/requests" element={<RequireAdmin scope="canAccounts"><AdminArtworkRequests /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/guide" element={<Guide />} />
           <Route path="/login" element={<Login />} />
