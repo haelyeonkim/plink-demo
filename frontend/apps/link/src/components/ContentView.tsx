@@ -1,3 +1,4 @@
+import { RecipientArtworkActions } from './ArtworkRequests';
 import ArtworkPrice from './ArtworkPrice';
 import type { ExhibitionBody } from '../types';
 
@@ -7,7 +8,7 @@ import type { ExhibitionBody } from '../types';
  * <p>The same shape the studio composes, rendered plainly: this is the destination of a
  * protected link, so it opens where the reader already is rather than sending them on.
  */
-export default function ContentView({ title, body }: { title: string; body: ExhibitionBody }) {
+export default function ContentView({ title, body, recipientCode }: { title: string; body: ExhibitionBody; recipientCode?: string }) {
   const artworks = body.artworks ?? [];
   return (
     <article className="content-view">
@@ -34,6 +35,7 @@ export default function ContentView({ title, body }: { title: string; body: Exhi
               )}
               {artwork.description && <p>{artwork.description}</p>}
               <ArtworkPrice value={artwork} />
+              {recipientCode && artwork.saleStatusLinked === 'true' && artwork.artworkId && <RecipientArtworkActions key={`${recipientCode}-${artwork.artworkId}`} code={recipientCode} artworkId={Number(artwork.artworkId)} saleStatus={artwork.saleStatus} />}
             </figcaption>
           </figure>
         ))}

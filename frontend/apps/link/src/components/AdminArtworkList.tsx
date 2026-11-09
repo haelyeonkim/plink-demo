@@ -69,7 +69,7 @@ export default function AdminArtworkList() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ saleStatus: value || null }),
       });
-      if (!response.ok) throw new Error('판매 상태를 변경하지 못했어요.');
+      if (!response.ok) throw new Error(response.status === 409 ? '활성 홀딩이나 판매 내역이 있습니다. 수신자 요청 목록에서 먼저 처리해 주세요.' : '판매 상태를 변경하지 못했어요.');
       setNotice('판매 상태를 변경했습니다. 연결된 링크에도 반영됩니다.');
       setRevision(current => current + 1);
     } catch (err) { setNotice(err instanceof Error ? err.message : '판매 상태를 변경하지 못했어요.'); }
@@ -80,6 +80,7 @@ export default function AdminArtworkList() {
       <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
       <span className="crumb" aria-current="page">작품 목록</span>
     </h2>
+    <p><Link className="btn-secondary" to="/admin/artworks/requests">수신자 요청 · 관심 / 홀딩 / 구매</Link></p>
     <p className="section-desc">전체 계정에서 직접 등록하거나 가져온 작품을 확인합니다.</p>
     {notice && <p role="status" className="hint-text">{notice}</p>}
     <form className="admin-artwork-filters" onSubmit={event => { event.preventDefault(); change(draft.trim(), status); }}>

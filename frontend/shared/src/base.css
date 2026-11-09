@@ -1424,3 +1424,18 @@ body:has(.save-bar) .toast-stack { bottom: calc(96px + env(safe-area-inset-botto
 .info-tip-bubble p { margin: 0; }
 .info-tip-bubble p + p { margin-top: 6px; }
 .info-tip-bubble a { color: #b9c8ff; text-decoration: underline; }
+
+/* Recipient artwork actions and the administrator's durable request timeline. */
+.artwork-request { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border, #ddd); }
+.artwork-request p { margin: 8px 0; }
+.artwork-request small { display: block; line-height: 1.6; margin-top: 8px; }
+.request-status { font-weight: 600; }
+.request-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.request-buttons button { white-space: normal; }
+.request-panel, .request-confirm { margin-top: 20px; padding: 20px; border: 1px solid var(--border, #ddd); border-radius: 12px; background: var(--surface, #fff); }
+.request-panel label, .request-confirm label { display: block; margin: 12px 0; }
+.request-panel textarea, .request-confirm textarea { display: block; width: 100%; min-height: 90px; }
+.request-panel input[type="datetime-local"] { display: block; margin-top: 8px; }
+.request-history { padding-left: 24px; }
+.request-history li { padding: 16px 0; border-bottom: 1px solid var(--border, #ddd); }
+.request-history p { margin: 6px 0; overflow-wrap: anywhere; }

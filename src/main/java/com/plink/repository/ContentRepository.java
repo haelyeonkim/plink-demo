@@ -95,6 +95,10 @@ public class ContentRepository {
             Integer.class, id, id);
     }
 
+    public boolean hasArtworkRequests(long id) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request r JOIN artwork a ON a.id=r.artwork_id WHERE a.source_content_id=?", Long.class, id) > 0;
+    }
+
     public void delete(long id) {
         jdbc.update("DELETE FROM link_content WHERE id = ?", id);
     }

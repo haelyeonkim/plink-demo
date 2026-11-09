@@ -2,9 +2,7 @@ package com.plink.service;
 
 import com.plink.model.LinkContent;
 import com.plink.repository.ContentRepository;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -19,13 +17,13 @@ public class ArtworkStatusService {
     public record Changed() {}
     public record Status(int position, Long artworkId, String saleStatus, boolean linked, Map<String, String> fields) {}
     private final com.plink.repository.ArtworkRepository artworks;
-    private final JdbcTemplate jdbc;
+    private final ArtworkRequestService requests;
     private final ContentRepository contents;
-    private final ApplicationEventPublisher events;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public ArtworkStatusService(JdbcTemplate jdbc, ContentRepository contents, ApplicationEventPublisher events, com.plink.repository.ArtworkRepository artworks) {
-        this.artworks = artworks; this.jdbc = jdbc; this.contents = contents; this.events = events;
+    public ArtworkStatusService(ContentRepository contents, com.plink.repository.ArtworkRepository artworks, ArtworkRequestService requests) {
+        this.requests = requests;
+        this.artworks = artworks; this.contents = contents;
     }
 
     public List<Status> statuses(long contentId) {
@@ -61,12 +59,7 @@ public class ArtworkStatusService {
 
     @Transactional
     public void change(long artworkId, Object value) {
-        if (value != null && !value.equals("hold") && !value.equals("sold")) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "판매 상태를 확인해 주세요.");
-        }
-        if (jdbc.update("UPDATE artwork SET sale_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                value, artworkId) != 1) throw missing();
-        events.publishEvent(new Changed());
+        requests.changeSaleStatus(artworkId, value);
     }
 
     private ResponseStatusException missing() {
