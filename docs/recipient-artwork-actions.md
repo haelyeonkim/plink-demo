@@ -1,5 +1,7 @@
 # 수신자 작품 액션 (1차)
 
+[처음 제안한 기능 설계안 원문](recipient-artwork-actions-design.md)
+
 전달 링크에서 패스키 인증한 수신자가 작품별로 관심, 홀딩 요청, 구매 의사를 전달한다. 작품 라이브러리에 연결된 작품만 대상이다. 관심·홀딩·구매 의사는 독립적으로 보존한다.
 
 ## 수신자와 관리자 흐름
@@ -53,7 +55,3 @@
 - `node scripts/check-artwork-requests-browser.mjs`: 격리된 H2 서버에서 실제 이메일 인증/가상 패스키, 관심, 홀딩 승인, 구매 의사/철회, 판매/취소, 9건의 이력, 390px 모바일 화면 확인.
 
 브라우저 재현: 프런트엔드에서 `BACKEND_URL=http://localhost:18082 npm run dev -- --host 127.0.0.1 --port 13002`를 실행한 뒤 위 스크립트를 실행한다. 스크립트는 새 메모리 DB와 임의 테스트 비밀번호를 사용하고 서버를 종료한다. 한글 글꼴이 없는 QA 환경에서는 `QA_FONT_PATH`에 로컬 OTF 글꼴을 지정할 수 있다. 글꼴은 캡처에만 적용하며 제품의 정적 자산에 포함하지 않는다.
-
-![수신자 모바일 화면](screenshots/recipient-artwork-actions.png)
-
-![관리자 요청과 변경 이력](screenshots/admin-artwork-requests.png)
