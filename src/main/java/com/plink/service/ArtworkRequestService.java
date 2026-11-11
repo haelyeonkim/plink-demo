@@ -351,7 +351,9 @@ public class ArtworkRequestService {
             .actor(type, actor, type.equals("RECIPIENT") ? before.recipientEmail() : null)
             .put("request", before.id()).put("artwork", before.artworkId()).put("artworkTitle", before.artworkTitle())
             .put("recipient", before.recipientId()).put("email", before.recipientEmail()).put("link", before.linkId())
-            .put("reason", reason == null || reason.isBlank() ? null : reason));
+            // Only the administrator's or system's reason: a recipient's own words (an inquiry, a cancellation
+            // request) stay in artwork_request_event, out of the activity log that can be exported to organisers.
+            .put("reason", type.equals("RECIPIENT") || reason == null || reason.isBlank() ? null : reason));
     }
     private ResponseStatusException denied() { return new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 링크를 다시 열어 주세요."); }
     private ResponseStatusException bad(String message) { return new ResponseStatusException(HttpStatus.BAD_REQUEST, message); }

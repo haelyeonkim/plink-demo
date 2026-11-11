@@ -342,6 +342,21 @@ class ArtworkRequestTest {
             r.delivery().recipient().email);
         assertThat(rows).singleElement().satisfies(row -> assertThat((String) row.get("summary")).startsWith("Blue · "));
     }
+    @Test void recipientsOwnWordsStayOutOfTheActivityLog() {
+        Reader r = reader(); var s = act(r, "REQUEST_HOLD", 0);
+        s = requests.admin(s.id(), new ArtworkRequestService.Command("REJECT", s.version(), UUID.randomUUID().toString(), null,
+            "작가 요청으로 홀딩이 어려워요", false), "admin");
+        requests.recipient(r.code(), r.artwork(), new ArtworkRequestService.Command("INQUIRE", s.version(), UUID.randomUUID().toString(),
+            null, "제 전화번호 010-0000-0000 으로 연락 주세요", false), r.session());
+        activity.flush();
+        var details = jdbc.queryForList("SELECT action, detail FROM activity_log WHERE action IN ('artwork.reject','artwork.inquire') "
+            + "AND detail LIKE ?", "%\"request\":" + s.id() + "%");
+        assertThat(details).extracting(row -> row.get("action")).containsExactlyInAnyOrder("artwork.reject", "artwork.inquire");
+        assertThat(details).allSatisfy(row -> assertThat((String) row.get("detail")).doesNotContain("010-0000-0000"));
+        assertThat(details).anySatisfy(row -> assertThat((String) row.get("detail")).contains("작가 요청으로 홀딩이 어려워요"));
+        // The administrator still reads the inquiry in the request's own history.
+        assertThat(requests.history(s.id())).anySatisfy(e -> assertThat(e.get("reason")).isEqualTo("제 전화번호 010-0000-0000 으로 연락 주세요"));
+    }
 
     @SuppressWarnings("unchecked")
     @Test void administratorExtendsAHeldHoldWithoutReleasingIt() {

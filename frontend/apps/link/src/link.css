@@ -1057,7 +1057,7 @@ select.artwork-status {
 .inbox-download:hover { border-color: var(--blue); color: var(--blue); }
 .inbox-foot { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 
-.request-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 24px 0 12px; }
+.request-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0 12px; }
 .request-count { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; border: 1px solid var(--line, #ddd); border-radius: 12px; background: var(--surface, #fff); color: inherit; text-align: left; cursor: pointer; }
 .request-count strong { font-size: 1.7rem; }
 .request-count strong small { font-size: .85rem; margin-left: 5px; }
