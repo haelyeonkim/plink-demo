@@ -17,13 +17,13 @@ public class ArtworkRequestController {
     public ArtworkRequestController(ArtworkRequestService requests, ArtworkRequestInbox inbox) { this.requests = requests; this.inbox = inbox; }
 
     @GetMapping({"/api/links/s/{code}/artwork-requests", "/api/links/s/{slug}/{code}/artwork-requests"})
-    public ResponseEntity<List<ArtworkRequestService.State>> mine(@PathVariable String code, HttpServletRequest request) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(requests.mine(code, request.getSession(false)));
+    public ResponseEntity<List<Map<String, Object>>> mine(@PathVariable String code, HttpServletRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(requests.mineWithNotices(code, request.getSession(false)));
     }
     @PostMapping({"/api/links/s/{code}/artwork-requests/{artworkId}", "/api/links/s/{slug}/{code}/artwork-requests/{artworkId}"})
-    public ArtworkRequestService.State act(@PathVariable String code, @PathVariable long artworkId,
+    public Map<String, Object> act(@PathVariable String code, @PathVariable long artworkId,
             @RequestBody ArtworkRequestService.Command command, HttpServletRequest request) {
-        return requests.recipient(code, artworkId, command, request.getSession(false));
+        return requests.view(requests.recipient(code, artworkId, command, request.getSession(false)));
     }
     @GetMapping({"/api/admin/artworks/requests", "/api/links/artwork-requests"})
     public ResponseEntity<Map<String, Object>> list(@RequestParam(defaultValue="all") String filter,

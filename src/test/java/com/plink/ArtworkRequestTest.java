@@ -34,6 +34,7 @@ class ArtworkRequestTest {
     @Autowired ContentImageService images;
     @Autowired JdbcTemplate jdbc;
     @Autowired MockMvc mvc;
+    @Autowired com.plink.activity.ActivityLog activity;
     final ObjectMapper json = new ObjectMapper();
     record Reader(long artwork, ArtworkDeliveryService.Delivery delivery, MockHttpSession session) {
         String code() { return delivery.recipient().shortCode; }
@@ -86,7 +87,13 @@ class ArtworkRequestTest {
         assertThatThrownBy(() -> statuses.change(r.artwork(), null)).isInstanceOf(ResponseStatusException.class);
         s = act(r, "REQUEST_CANCEL", version);
         s = requests.admin(s.id(), command("KEEP_SALE", s.version()), "admin");
-        assertThat(s.purchased()).isTrue(); assertThat(s.cancellationRequested()).isFalse();
+        assertThat(s.purchased()).isTrue(); assertThat(s.cancellationRequested()).isFalse(); assertThat(s.cancelRejected()).isTrue();
+        final long refused = s.version();
+        // A refused cancellation is asked about, not requested again from the same button.
+        assertThatThrownBy(() -> act(r, "REQUEST_CANCEL", refused)).isInstanceOf(ResponseStatusException.class);
+        s = act(r, "INQUIRE", s.version());
+        s = requests.admin(s.id(), command("ALLOW_RETRY", s.version()), "admin");
+        assertThat(s.cancelRejected()).isFalse(); assertThat(s.inquiryPending()).isFalse();
         s = act(r, "REQUEST_CANCEL", s.version());
         s = requests.admin(s.id(), command("CANCEL_SALE", s.version()), "admin");
         assertThat(s.purchased()).isFalse(); assertThat(s.purchaseIntent()).isFalse();
@@ -274,5 +281,65 @@ class ArtworkRequestTest {
             .andExpect(jsonPath("$.withdrawals").value(2));
         mvc.perform(get("/api/links/artwork-requests").with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("sort", "withdrawals"))
             .andExpect(jsonPath("$.items[0].withdrawalCount").value(2));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test void refusedHoldIsReopenedOnlyThroughAnInquiry() {
+        Reader r = reader(); var s = act(r, "REQUEST_HOLD", 0);
+        s = requests.admin(s.id(), new ArtworkRequestService.Command("REJECT", s.version(), UUID.randomUUID().toString(), null,
+            "전시·대여 일정으로 홀딩이 어려워요", false), "admin");
+        final long rejected = s.version();
+        assertThatThrownBy(() -> act(r, "REQUEST_HOLD", rejected)).isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("담당자에게 문의");
+        assertThatThrownBy(() -> requests.recipient(r.code(), r.artwork(),
+            new ArtworkRequestService.Command("INQUIRE", rejected, UUID.randomUUID().toString(), null, " ", false), r.session()))
+            .isInstanceOf(ResponseStatusException.class);
+        var view = requests.view(s);
+        assertThat((List<?>) view.get("notices")).anySatisfy(n -> assertThat((Map<String, Object>) n)
+            .containsEntry("kind", "hold").containsEntry("action", "REJECT").containsEntry("reason", "전시·대여 일정으로 홀딩이 어려워요"));
+        s = act(r, "INQUIRE", s.version());
+        assertThat(s.inquiryPending()).isTrue();
+        final long asked = s.version();
+        assertThatThrownBy(() -> act(r, "INQUIRE", asked)).isInstanceOf(ResponseStatusException.class);
+        s = requests.admin(s.id(), command("DECLINE_RETRY", s.version()), "admin");
+        assertThat(s.inquiryPending()).isFalse(); assertThat(s.holdState()).isEqualTo("REJECTED");
+        assertThat((List<?>) requests.view(s).get("notices")).anySatisfy(n -> assertThat((Map<String, Object>) n)
+            .containsEntry("action", "DECLINE_RETRY").containsEntry("reason", "처리 사유"));
+        s = act(r, "INQUIRE", s.version());
+        s = requests.admin(s.id(), command("ALLOW_RETRY", s.version()), "admin");
+        assertThat(s.holdState()).isEqualTo("NONE");
+        s = act(r, "REQUEST_HOLD", s.version());
+        assertThat(s.holdState()).isEqualTo("PENDING");
+        // The inquiry, not only the hold, appears in the administrator's queue.
+        assertThat(requests.history(s.id()).stream().map(e -> e.get("action")))
+            .containsSubsequence("REQUEST_HOLD", "ALLOW_RETRY", "INQUIRE", "DECLINE_RETRY", "INQUIRE", "REJECT", "REQUEST_HOLD");
+    }
+    @SuppressWarnings("unchecked")
+    @Test void requestClosedForAnotherRecipientIsExplainedInTheRecipientsWords() {
+        Reader a = reader();
+        Reader b = reader(a.delivery().link().getOwnerSub(), a.artwork());
+        var first = act(a, "REQUEST_HOLD", 0);
+        var second = act(b, "REQUEST_HOLD", 0);
+        requests.admin(first.id(), command("APPROVE", first.version()), "admin");
+        var closed = requests.mine(b.code(), b.session()).get(0);
+        assertThat(closed.holdState()).isEqualTo("CLOSED");
+        assertThat((List<?>) requests.view(closed).get("notices")).anySatisfy(n -> assertThat((Map<String, Object>) n)
+            .containsEntry("kind", "hold").containsEntry("reason", "다른 분께 홀딩이 확정되어 요청이 종료되었어요."));
+        assertThat(second.id()).isEqualTo(closed.id());
+    }
+    @Test void aFirstChoiceThatChangesNothingLeavesNoRequest() {
+        Reader r = reader();
+        act(r, "UNINTEREST", 0);
+        assertThat(requests.mine(r.code(), r.session())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request WHERE artwork_id=?", Integer.class, r.artwork())).isZero();
+        var s = act(r, "INTEREST", 0);
+        assertThat(s.version()).isEqualTo(1);
+    }
+    @Test void activityLogNamesTheArtworkAndRecipient() {
+        Reader r = reader(); act(r, "PURCHASE", 0);
+        activity.flush();
+        var rows = jdbc.queryForList("SELECT summary, actor_email FROM activity_log WHERE action='artwork.purchase' AND actor_email=?",
+            r.delivery().recipient().email);
+        assertThat(rows).singleElement().satisfies(row -> assertThat((String) row.get("summary")).startsWith("Blue · "));
     }
 }

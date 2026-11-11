@@ -23,7 +23,8 @@ public class ArtworkRequestService {
     public record Command(String action, Long version, String key, Instant holdUntil, String reason, Boolean releaseHold) {}
     public record State(long id, long artworkId, long recipientId, long linkId, String recipientEmail,
             String artworkTitle, boolean interested, String holdState, Timestamp holdUntil,
-            boolean purchaseIntent, boolean purchased, boolean cancellationRequested, long version, Timestamp updatedAt) {}
+            boolean purchaseIntent, boolean purchased, boolean cancellationRequested, long version, Timestamp updatedAt,
+            boolean cancelRejected, boolean inquiryPending) {}
     private final JdbcTemplate jdbc;
     private final LinkRecipientRepository recipients;
     private final LinkRepository links;
@@ -41,7 +42,8 @@ public class ArtworkRequestService {
         r.getLong("id"), r.getLong("artwork_id"), r.getLong("recipient_id"), r.getLong("link_id"),
         r.getString("recipient_email"), r.getString("artwork_title"), r.getBoolean("interested"),
         r.getString("hold_state"), r.getTimestamp("hold_until"), r.getBoolean("purchase_intent"),
-        r.getBoolean("purchased"), r.getBoolean("cancellation_requested"), r.getLong("version"), r.getTimestamp("updated_at"));
+        r.getBoolean("purchased"), r.getBoolean("cancellation_requested"), r.getLong("version"), r.getTimestamp("updated_at"),
+        r.getBoolean("cancel_rejected"), r.getBoolean("inquiry_pending"));
 
     private LinkRecipient authorize(String code, HttpSession session) {
         var recipient = recipients.findByCode(code).orElseThrow(() -> denied());
@@ -81,14 +83,18 @@ public class ArtworkRequestService {
         long contentId = links.findById(recipient.linkId).orElseThrow(() -> denied()).getContentId();
         if (artworks.findLinked(contentId).values().stream().noneMatch(a -> a.id() == artworkId)) throw denied();
         var states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
-        if (states.isEmpty()) {
+        boolean created = states.isEmpty();
+        if (created) {
             jdbc.update("INSERT INTO artwork_request (artwork_id, recipient_id, link_id, recipient_email, artwork_title, owner_sub, holder_id, link_title) "
                 + "SELECT id, ?, ?, ?, title, ?, ?, ? FROM artwork WHERE id = ?", recipient.id, recipient.linkId, recipient.email,
                 links.findById(recipient.linkId).orElseThrow().getOwnerSub(), recipient.holderId,
                 links.findById(recipient.linkId).orElseThrow().getTitle(), artworkId);
             states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
         }
-        return apply(states.get(0), command, "RECIPIENT", Long.toString(recipient.id));
+        State result = apply(states.get(0), command, "RECIPIENT", Long.toString(recipient.id));
+        // A first choice that changes nothing (clearing an interest never shown) leaves no empty request behind.
+        if (created && result.version() == 0) jdbc.update("DELETE FROM artwork_request WHERE id = ? AND version = 0", result.id());
+        return result;
     }
     @Transactional
     public State admin(long id, Command command, String actor) {
@@ -111,17 +117,22 @@ public class ArtworkRequestService {
         State s = get(initial.id());
         if (s.version() != c.version()) throw conflict("상태가 변경되었습니다. 새로고침 후 다시 시도해 주세요.");
         boolean admin = actorType.equals("ADMIN");
-        Set<String> allowed = admin ? Set.of("APPROVE", "REJECT", "RELEASE", "SELL", "CANCEL_SALE", "KEEP_SALE")
-            : Set.of("INTEREST", "UNINTEREST", "REQUEST_HOLD", "CANCEL_HOLD", "PURCHASE", "WITHDRAW", "REQUEST_CANCEL");
+        Set<String> allowed = admin ? Set.of("APPROVE", "REJECT", "RELEASE", "SELL", "CANCEL_SALE", "KEEP_SALE", "ALLOW_RETRY", "DECLINE_RETRY")
+            : Set.of("INTEREST", "UNINTEREST", "REQUEST_HOLD", "CANCEL_HOLD", "PURCHASE", "WITHDRAW", "REQUEST_CANCEL", "INQUIRE");
         if (!allowed.contains(c.action())) throw bad("허용되지 않는 액션입니다.");
         String sale = jdbc.queryForObject("SELECT sale_status FROM artwork WHERE id = ?", String.class, s.artworkId());
         boolean interested = s.interested(), purchase = s.purchaseIntent(), purchased = s.purchased(), cancel = s.cancellationRequested();
+        boolean cancelRejected = s.cancelRejected(), inquiry = s.inquiryPending();
         String hold = s.holdState(); Timestamp until = s.holdUntil();
-        if (s.purchased() && !Set.of("REQUEST_CANCEL", "CANCEL_SALE", "KEEP_SALE").contains(c.action())) throw conflict("판매 확정 후에는 취소 요청을 이용해 주세요.");
+        // What the recipient may not ask for again by themselves: after a sale, a refused cancellation; before it, a refused hold.
+        boolean blocked = s.purchased() ? s.cancelRejected() : hold.equals("REJECTED");
+        if (s.purchased() && !Set.of("REQUEST_CANCEL", "CANCEL_SALE", "KEEP_SALE", "INQUIRE", "ALLOW_RETRY", "DECLINE_RETRY").contains(c.action()))
+            throw conflict("판매 확정 후에는 취소 요청을 이용해 주세요.");
         switch (c.action()) {
             case "INTEREST" -> interested = true;
             case "UNINTEREST" -> interested = false;
             case "REQUEST_HOLD" -> {
+                if (hold.equals("REJECTED")) throw conflict("홀딩 요청이 거절된 상태예요. 다시 요청하려면 담당자에게 문의해 주세요.");
                 if (sale != null || hold.equals("PENDING")) throw conflict("현재 홀딩 요청을 할 수 없는 작품입니다.");
                 hold = "PENDING"; until = null;
             }
@@ -154,31 +165,109 @@ public class ArtworkRequestService {
             case "SELL" -> {
                 if (!purchase || "sold".equals(sale) || "hold".equals(sale) && !hold.equals("HELD")) throw conflict("판매 확정할 수 없는 요청입니다.");
                 release(s); setSale(s.artworkId(), "sold"); purchased = true; hold = "CLOSED"; until = null;
+                cancelRejected = false; inquiry = false;
                 closeOthers(s, "판매 확정으로 요청 종료", true);
             }
             case "REQUEST_CANCEL" -> {
+                if (purchased && cancelRejected) throw conflict("판매 취소 요청이 거절된 상태예요. 다시 요청하려면 담당자에게 문의해 주세요.");
                 if (!purchased || cancel) throw conflict("취소 요청할 수 없는 상태입니다.");
                 requireReason(c); cancel = true;
             }
             case "CANCEL_SALE" -> {
                 if (!purchased || !cancel) throw conflict("판매 취소 요청이 없습니다.");
                 requireReason(c); purchased = false; purchase = false; cancel = false; setSale(s.artworkId(), null);
+                cancelRejected = false; inquiry = false;
             }
             case "KEEP_SALE" -> {
                 if (!purchased || !cancel) throw conflict("판매 취소 요청이 없습니다.");
-                requireReason(c); cancel = false;
+                requireReason(c); cancel = false; cancelRejected = true;
+            }
+            case "INQUIRE" -> {
+                if (!blocked) throw conflict("지금은 바로 요청할 수 있어요. 문의 없이 다시 요청해 주세요.");
+                if (inquiry) throw conflict("이미 담당자에게 문의했어요. 확인을 기다려 주세요.");
+                requireReason(c); inquiry = true;
+            }
+            case "ALLOW_RETRY" -> {
+                if (!blocked) throw conflict("다시 요청을 허용할 거절 내역이 없습니다.");
+                if (purchased) cancelRejected = false; else hold = "NONE";
+                inquiry = false;
+            }
+            case "DECLINE_RETRY" -> {
+                if (!inquiry) throw conflict("답변할 문의가 없습니다.");
+                requireReason(c); inquiry = false;
             }
             default -> throw bad("요청 내용을 확인해 주세요.");
         }
         // A repeated choice with a fresh command key is also a no-op, not a new place in the queue.
         if (interested == s.interested() && purchase == s.purchaseIntent() && purchased == s.purchased()
-                && cancel == s.cancellationRequested() && hold.equals(s.holdState()) && Objects.equals(until, s.holdUntil())) return s;
+                && cancel == s.cancellationRequested() && hold.equals(s.holdState()) && Objects.equals(until, s.holdUntil())
+                && cancelRejected == s.cancelRejected() && inquiry == s.inquiryPending()) return s;
         jdbc.update("UPDATE artwork_request SET interested=?, hold_state=?, hold_until=?, purchase_intent=?, purchased=?, "
-            + "cancellation_requested=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            interested, hold, until, purchase, purchased, cancel, s.id());
+            + "cancellation_requested=?, cancel_rejected=?, inquiry_pending=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            interested, hold, until, purchase, purchased, cancel, cancelRejected, inquiry, s.id());
         State after = get(s.id());
         record(s, after, actorType, actorId, c.action(), c.reason(), c.key(), commandBody);
         return after;
+    }
+    /** The recipient's own state, with the reasons the administrator or the system gave for it. */
+    public Map<String, Object> view(State s) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (var component : State.class.getRecordComponents()) {
+            try { out.put(component.getName(), component.getAccessor().invoke(s)); }
+            catch (ReflectiveOperationException impossible) { throw new IllegalStateException(impossible); }
+        }
+        var events = jdbc.queryForList("SELECT action, actor_type, reason, occurred_at, before_state, after_state FROM artwork_request_event "
+            + "WHERE request_id = ? ORDER BY id DESC LIMIT 200", s.id());
+        List<Map<String, Object>> notices = new ArrayList<>();
+        if (Set.of("REJECTED", "CLOSED", "EXPIRED", "CANCELLED").contains(s.holdState())) {
+            for (var e : events) {
+                var before = json.readTree((String) e.get("before_state")); var after = json.readTree((String) e.get("after_state"));
+                if (after.path("holdState").asText("").equals(s.holdState()) && !before.path("holdState").asText("").equals(s.holdState())) {
+                    if (!"RECIPIENT".equals(e.get("actor_type"))) notices.add(notice("hold", e));
+                    break;
+                }
+            }
+        }
+        for (var e : events) {
+            var before = json.readTree((String) e.get("before_state")); var after = json.readTree((String) e.get("after_state"));
+            boolean changed = false;
+            for (String field : List.of("purchaseIntent", "purchased", "cancellationRequested", "cancelRejected"))
+                changed |= before.path(field).asBoolean(false) != after.path(field).asBoolean(false);
+            if (!changed) continue;
+            if (!"RECIPIENT".equals(e.get("actor_type"))) notices.add(notice("sale", e));
+            break;
+        }
+        var inquiry = events.stream().filter(e -> Set.of("INQUIRE", "ALLOW_RETRY", "DECLINE_RETRY").contains(e.get("action"))).findFirst();
+        if (inquiry.isPresent()) {
+            String action = (String) inquiry.get().get("action");
+            boolean latest = inquiry.get() == events.get(0);
+            boolean blocked = s.purchased() ? s.cancelRejected() : s.holdState().equals("REJECTED");
+            if (action.equals("INQUIRE") ? s.inquiryPending() : action.equals("DECLINE_RETRY") ? blocked && !s.inquiryPending() : latest)
+                notices.add(notice("inquiry", inquiry.get()));
+        }
+        out.put("notices", notices);
+        return out;
+    }
+    public List<Map<String, Object>> mineWithNotices(String code, HttpSession session) {
+        return mine(code, session).stream().map(this::view).toList();
+    }
+    private static final Map<String, String> RECIPIENT_REASONS = Map.of(
+        "홀딩 승인으로 다른 요청 종료", "다른 분께 홀딩이 확정되어 요청이 종료되었어요.",
+        "판매 확정으로 요청 종료", "작품이 판매되어 요청이 종료되었어요.",
+        "홀딩 기한 만료", "홀딩 기한이 지나 자동으로 해제되었어요.",
+        "관리자 작품 상태 변경", "작품 상태가 변경되어 요청이 종료되었어요.");
+    private static final Map<String, String> DEFAULT_REASONS = Map.of(
+        "RELEASE", "담당자가 홀딩을 해제했어요.", "SELL", "판매가 확정되었어요.",
+        "ALLOW_RETRY", "담당자가 다시 요청할 수 있도록 열어 두었어요.", "APPROVE", "홀딩이 승인되었어요.");
+    private Map<String, Object> notice(String kind, Map<String, Object> e) {
+        String reason = Objects.toString(e.get("reason"), "");
+        String action = (String) e.get("action");
+        // An inquiry is the recipient's own words; everything else is phrased for them.
+        String shown = action.equals("INQUIRE") ? reason
+            : RECIPIENT_REASONS.getOrDefault(reason, reason.isBlank() ? DEFAULT_REASONS.getOrDefault(action, "") : reason);
+        Map<String, Object> n = new LinkedHashMap<>();
+        n.put("kind", kind); n.put("action", action); n.put("reason", shown); n.put("at", e.get("occurred_at"));
+        return n;
     }
     private void requireReason(Command c) {
         if (c.reason() == null || c.reason().isBlank()) throw bad("사유를 입력해 주세요.");
@@ -243,8 +332,13 @@ public class ArtworkRequestService {
                 + "requested_at=CURRENT_TIMESTAMP, processing_state='UNREAD'"
                 + (timeColumn == null ? "" : ", " + timeColumn + "=CURRENT_TIMESTAMP") + " WHERE id=?", before.id());
         }
-        ActivityLog.emit(Activity.of(Activity.LINK, "artwork." + action.toLowerCase(Locale.ROOT)).actor(type, actor, null)
-            .put("request", before.id()).put("artwork", before.artworkId()).put("recipient", before.recipientId()).put("link", before.linkId()));
+        // Named, so the shared activity log reads without looking the ids up.
+        ActivityLog.emit(Activity.of(Activity.LINK, "artwork." + action.toLowerCase(Locale.ROOT))
+            .summary(before.artworkTitle() + " · " + before.recipientEmail())
+            .actor(type, actor, type.equals("RECIPIENT") ? before.recipientEmail() : null)
+            .put("request", before.id()).put("artwork", before.artworkId()).put("artworkTitle", before.artworkTitle())
+            .put("recipient", before.recipientId()).put("email", before.recipientEmail()).put("link", before.linkId())
+            .put("reason", reason == null || reason.isBlank() ? null : reason));
     }
     private ResponseStatusException denied() { return new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 링크를 다시 열어 주세요."); }
     private ResponseStatusException bad(String message) { return new ResponseStatusException(HttpStatus.BAD_REQUEST, message); }

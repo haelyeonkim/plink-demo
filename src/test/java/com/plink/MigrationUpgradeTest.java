@@ -45,7 +45,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO event_session(id,name,starts_at,test_event) VALUES (1,'Rehearsal',CURRENT_TIMESTAMP,TRUE)");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(27);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(28);
         current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT a.title,a.sale_status,a.archived,ca.artwork_id FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -85,7 +85,7 @@ class MigrationUpgradeTest {
         }
         var reconcile = Flyway.configure().dataSource(dataSource(url))
                 .locations("classpath:db/migration").outOfOrder(true).load();
-        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(26);
+        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(27);
         flyway(url, "classpath:db/migration").validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT a.sale_status FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -109,7 +109,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,actor_type,actor_id,action,before_state,after_state,reason,occurred_at) VALUES (1,1,'RECIPIENT','1','PURCHASE','{}','{}','',TIMESTAMP '2026-01-02 09:00:00')");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(1); current.validate();
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(2); current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT * FROM artwork_request WHERE id=1")) {
                 assertThat(r.next()).isTrue(); assertThat(r.getString("owner_sub")).isEqualTo("local:1");
@@ -121,6 +121,28 @@ class MigrationUpgradeTest {
                 assertThat(r.next()).isTrue(); assertThat(r.getString("owner_sub")).isNull();
                 assertThat(r.getTimestamp("requested_at")).isNotNull();
             }
+        }
+    }
+
+    @Test void retryBackfillKeepsOnlyTheLatestCancellationRefusal() throws Exception {
+        String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("59").load().migrate();
+        try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
+            s.execute("INSERT INTO link_content(id,owner_sub,title,body) VALUES (1,'local:1','Catalog','{}')");
+            s.execute("INSERT INTO artwork(id,owner_sub,source_content_id,position,title) VALUES (1,'local:1',1,0,'Work')");
+            s.execute("INSERT INTO artwork(id,owner_sub,source_content_id,position,title) VALUES (2,'local:1',1,1,'Other')");
+            s.execute("INSERT INTO artwork_request(id,artwork_id,recipient_id,link_id,recipient_email,artwork_title,purchased) VALUES (1,1,1,1,'a@example.test','Work',TRUE)");
+            s.execute("INSERT INTO artwork_request(id,artwork_id,recipient_id,link_id,recipient_email,artwork_title,purchased) VALUES (2,2,1,1,'a@example.test','Other',TRUE)");
+            // 1: sold, cancellation refused. 2: refused once, then sold again afterwards.
+            for (String row : new String[] {"(1,1,'SELL')", "(1,1,'KEEP_SALE')", "(2,2,'KEEP_SALE')", "(2,2,'SELL')"})
+                s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,action,actor_type,actor_id,before_state,after_state,reason) VALUES "
+                    + row.replace(")", ",'ADMIN','1','{}','{}','')"));
+        }
+        assertThat(flyway(url, "classpath:db/migration").migrate().migrationsExecuted).isEqualTo(1);
+        try (var c = dataSource(url).getConnection(); var s = c.createStatement();
+             var r = s.executeQuery("SELECT id, cancel_rejected, inquiry_pending FROM artwork_request ORDER BY id")) {
+            assertThat(r.next()).isTrue(); assertThat(r.getBoolean(2)).isTrue(); assertThat(r.getBoolean(3)).isFalse();
+            assertThat(r.next()).isTrue(); assertThat(r.getBoolean(2)).isFalse();
         }
     }
 }

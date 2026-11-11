@@ -22,12 +22,12 @@ public class ArtworkRequestInbox {
     public record Filter(String filter, String search, Long linkId, Long artworkId, String processing,
             String owner, LocalDate from, LocalDate to, boolean withdrawals, String sort, int page) {}
     public record Work(long version, String processingState, String assignee, String internalNote) {}
-    private static final String STATE = "CASE WHEN r.cancellation_requested THEN 'cancel' WHEN r.purchased THEN 'sold' "
+    private static final String STATE = "CASE WHEN r.inquiry_pending THEN 'inquiry' WHEN r.cancellation_requested THEN 'cancel' WHEN r.purchased THEN 'sold' "
         + "WHEN r.purchase_intent THEN 'purchase' WHEN r.hold_state='HELD' THEN 'held' "
         + "WHEN r.hold_state='PENDING' THEN 'pending' WHEN r.interested THEN 'interested' ELSE 'withdrawn' END";
     private static final String TIME = "COALESCE(CASE WHEN r.cancellation_requested OR r.purchased THEN r.requested_at WHEN r.purchase_intent THEN r.purchase_at "
         + "WHEN r.hold_state IN ('PENDING','HELD') THEN r.hold_requested_at WHEN r.interested THEN r.interest_at END,r.requested_at,r.updated_at)";
-    private static final Set<String> STATES = Set.of("all", "active", "cancel", "sold", "purchase", "held", "pending", "interested", "withdrawn");
+    private static final Set<String> STATES = Set.of("all", "active", "inquiry", "cancel", "sold", "purchase", "held", "pending", "interested", "withdrawn");
     private static final Set<String> WORK = Set.of("UNREAD", "REVIEWED", "CONTACTING", "DONE");
     private String scope(Authentication auth, String alias, List<Object> args) {
         if (auth == null || !(auth.getPrincipal() instanceof AdminPrincipal admin) || !(admin.owner || admin.canLinks))
@@ -73,19 +73,21 @@ public class ArtworkRequestInbox {
         jdbc.query("SELECT " + STATE + " AS state, COUNT(*) AS amount FROM artwork_request r WHERE " + where + " GROUP BY " + STATE,
             rs -> { counts.put(rs.getString("state"), rs.getLong("amount")); }, args.toArray());
         counts.put("active", counts.get("interested") + counts.get("pending") + counts.get("held") + counts.get("purchase"));
-        counts.put("all", counts.get("active") + counts.get("cancel") + counts.get("sold") + counts.get("withdrawn"));
+        counts.put("all", counts.get("active") + counts.get("inquiry") + counts.get("cancel") + counts.get("sold") + counts.get("withdrawn"));
         if (f.filter().equals("active")) where += " AND " + STATE + " IN ('interested','pending','held','purchase')";
         else if (!f.filter().equals("all")) { where += " AND " + STATE + "=?"; args.add(f.filter()); }
         long total = jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request r WHERE " + where, Long.class, args.toArray());
         List<Object> queryArgs = new ArrayList<>(countArgs); queryArgs.addAll(args); queryArgs.add(f.page() * 30);
-        String sql = "SELECT r.*, " + STATE + " AS current_state, " + TIME + " AS queue_at, " + withdrawals
+        String sql = "SELECT r.*, " + STATE + " AS current_state, " + TIME + " AS queue_at, "
+            + "(SELECT e.reason FROM artwork_request_event e WHERE e.request_id=r.id AND e.action='INQUIRE' ORDER BY e.id DESC LIMIT 1) AS inquiry_message, " + withdrawals
             + " AS withdrawal_count FROM artwork_request r WHERE " + where + " ORDER BY "
             + (f.sort().equals("withdrawals") ? "withdrawal_count DESC, " : "") + "queue_at ASC, r.id ASC LIMIT 30 OFFSET ?";
         var items = jdbc.query(sql, (r, n) -> {
             Map<String, Object> m = new LinkedHashMap<>();
             for (String key : List.of("id", "artwork_id", "recipient_id", "link_id", "recipient_email", "artwork_title", "interested", "hold_state",
                     "hold_until", "purchase_intent", "purchased", "cancellation_requested", "version", "updated_at", "first_requested_at", "queue_at",
-                    "processing_state", "assignee", "internal_note", "link_title", "owner_sub", "withdrawal_count", "current_state")) {
+                    "processing_state", "assignee", "internal_note", "link_title", "owner_sub", "withdrawal_count", "current_state",
+                    "cancel_rejected", "inquiry_pending", "inquiry_message")) {
                 StringBuilder camel = new StringBuilder(); boolean upper = false;
                 for (char c : key.toCharArray()) { if (c == '_') upper = true; else { camel.append(upper ? Character.toUpperCase(c) : c); upper = false; } }
                 m.put(camel.toString(), r.getObject(key));
