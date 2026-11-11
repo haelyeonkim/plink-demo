@@ -342,4 +342,36 @@ class ArtworkRequestTest {
             r.delivery().recipient().email);
         assertThat(rows).singleElement().satisfies(row -> assertThat((String) row.get("summary")).startsWith("Blue · "));
     }
+
+    @SuppressWarnings("unchecked")
+    @Test void administratorExtendsAHeldHoldWithoutReleasingIt() {
+        Reader r = reader(); var s = act(r, "REQUEST_HOLD", 0);
+        s = requests.admin(s.id(), command("APPROVE", s.version()), "admin");
+        Instant current = s.holdUntil().toInstant();
+        final var held = s;
+        // Not earlier, not the same, and not without a time.
+        for (Instant bad : new Instant[] { current.minusSeconds(60), current, null })
+            assertThatThrownBy(() -> requests.admin(held.id(), new ArtworkRequestService.Command("EXTEND", held.version(),
+                UUID.randomUUID().toString(), bad, "", false), "admin")).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> requests.recipient(r.code(), r.artwork(), new ArtworkRequestService.Command("EXTEND", held.version(),
+            UUID.randomUUID().toString(), current.plusSeconds(86400), "", false), r.session())).isInstanceOf(ResponseStatusException.class);
+        Instant later = current.plusSeconds(3 * 86400);
+        s = requests.admin(s.id(), new ArtworkRequestService.Command("EXTEND", s.version(), UUID.randomUUID().toString(), later,
+            "고객 요청으로 기한을 연장했어요", false), "admin");
+        assertThat(s.holdState()).isEqualTo("HELD"); assertThat(s.holdUntil().toInstant()).isEqualTo(later);
+        assertThat(statuses.statuses(r.delivery().link().getContentId()).get(0).saleStatus()).isEqualTo("hold");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM artwork_reservation WHERE artwork_id=?", Integer.class, r.artwork())).isOne();
+        assertThat((List<?>) requests.view(s).get("notices")).singleElement().satisfies(n -> assertThat((Map<String, Object>) n)
+            .containsEntry("action", "EXTEND").containsEntry("reason", "고객 요청으로 기한을 연장했어요"));
+        // The extended time is the one the expiry job honours.
+        expiry.expire();
+        assertThat(requests.mine(r.code(), r.session()).get(0).holdState()).isEqualTo("HELD");
+        // A hold that has already run out cannot be extended back to life.
+        jdbc.update("UPDATE artwork_request SET hold_until=? WHERE id=?", java.sql.Timestamp.from(Instant.now().minusSeconds(60)), s.id());
+        final var lapsed = requests.mine(r.code(), r.session()).get(0);
+        assertThatThrownBy(() -> requests.admin(lapsed.id(), new ArtworkRequestService.Command("EXTEND", lapsed.version(),
+            UUID.randomUUID().toString(), Instant.now().plusSeconds(86400), "", false), "admin")).isInstanceOf(ResponseStatusException.class);
+        expiry.expire();
+        assertThat(requests.mine(r.code(), r.session()).get(0).holdState()).isEqualTo("EXPIRED");
+    }
 }

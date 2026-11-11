@@ -17,7 +17,7 @@ const labels: Record<string, string> = {
   INTEREST: '관심 표시', UNINTEREST: '관심 해제', REQUEST_HOLD: '홀딩 요청', CANCEL_HOLD: '홀딩 취소',
   PURCHASE: '구매 의사 전달', WITHDRAW: '구매 의사 철회', APPROVE: '홀딩 승인', REJECT: '홀딩 거절',
   RELEASE: '홀딩 해제', SELL: '판매 확정', REQUEST_CANCEL: '판매 취소 요청', CANCEL_SALE: '판매 취소 승인', KEEP_SALE: '판매 취소 거절',
-  INQUIRE: '재요청 문의', ALLOW_RETRY: '재요청 허용', DECLINE_RETRY: '재요청 문의 답변',
+  INQUIRE: '재요청 문의', ALLOW_RETRY: '재요청 허용', DECLINE_RETRY: '재요청 문의 답변', EXTEND: '홀딩 기한 연장',
 };
 /**
  * Reasons an administrator picks from, so the recipient reads the same words for the same
@@ -30,12 +30,15 @@ const reasonPresets: Record<string, string[]> = {
   KEEP_SALE: ['배송·설치가 이미 진행되었어요', '취소 가능 기간이 지났어요', '계약 조건상 취소가 어려워요', CUSTOM],
   CANCEL_SALE: ['고객 요청을 받아 취소했어요', '결제가 완료되지 않았어요', CUSTOM],
   DECLINE_RETRY: ['이전 사유가 아직 해당돼요', '다른 고객과 거래가 진행 중이에요', CUSTOM],
+  EXTEND: ['고객 요청으로 기한을 연장했어요', '상담·결제가 진행 중이라 연장했어요', '작품 확인 일정에 맞춰 연장했어요', CUSTOM],
   ALLOW_RETRY: ['다시 요청하실 수 있어요', '조건이 바뀌어 다시 검토할 수 있어요', CUSTOM],
 };
 const reasonRequired = ['REJECT', 'CANCEL_SALE', 'KEEP_SALE', 'DECLINE_RETRY'];
 /** Shown to the recipient, unlike the internal note. */
-const reasonVisible = ['REJECT', 'RELEASE', 'KEEP_SALE', 'CANCEL_SALE', 'DECLINE_RETRY', 'ALLOW_RETRY'];
+const reasonVisible = ['EXTEND', 'REJECT', 'RELEASE', 'KEEP_SALE', 'CANCEL_SALE', 'DECLINE_RETRY', 'ALLOW_RETRY'];
 const date = (value: string) => new Date(value).toLocaleString('ko-KR');
+/** A time as a datetime-local input reads it: the device's own zone, to the minute. */
+const localInput = (value: string) => { const d = new Date(value); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 function summary(row: ArtworkRequest) {
   return [row.interested && '관심 있음', labels[row.holdState], row.purchaseIntent && !row.purchased && '구매 의사 있음',
     row.purchased && '판매 완료', row.cancellationRequested && '판매 취소 요청', row.cancelRejected && '판매 취소 거절됨',
@@ -255,7 +258,7 @@ export default function AdminArtworkRequests() {
         });
         if (!response.ok) throw new Error(response.status === 409 ? '요청이 변경되었습니다. 최신 내용을 확인한 뒤 다시 저장해 주세요.' : '처리 기록을 저장하지 못했습니다.');
       } else await send(`/api/links/artwork-requests/${operation.row.id}`, operation.row, operation.action,
-        { reason: composedReason, ...(operation.action === 'APPROVE' ? { holdUntil: new Date(until).toISOString() } : {}) });
+        { reason: composedReason, ...(['APPROVE', 'EXTEND'].includes(operation.action) ? { holdUntil: new Date(until).toISOString() } : {}) });
       setOperation(undefined); setRevision(value => value + 1);
     } catch (err) { setError(err instanceof Error ? err.message : '요청을 처리하지 못했습니다.'); setOperation(undefined); setRevision(value => value + 1); }
     finally { setBusy(false); }
@@ -310,7 +313,8 @@ export default function AdminArtworkRequests() {
             <small>최초 반응: {date(row.firstRequestedAt)}</small><strong>{workStates[row.processingState]}</strong><small>담당자: {row.assignee || '미지정'}</small>{row.holdUntil && <small>홀딩 종료: {date(row.holdUntil)}</small>}</td>
           <td><div className="request-buttons">
             {row.holdState === 'PENDING' && <><button className="btn-primary" onClick={() => start(row, 'APPROVE')}>승인</button><button className="btn-secondary" onClick={() => start(row, 'REJECT')}>거절</button></>}
-            {row.holdState === 'HELD' && <button className="btn-secondary" onClick={() => start(row, 'RELEASE')}>홀딩 해제</button>}
+            {row.holdState === 'HELD' && <><button className="btn-secondary" onClick={() => start(row, 'EXTEND')}>기한 연장</button>
+              <button className="btn-secondary" onClick={() => start(row, 'RELEASE')}>홀딩 해제</button></>}
             {row.purchaseIntent && !row.purchased && <button className="btn-primary" onClick={() => start(row, 'SELL')}>판매 확정</button>}
             {row.cancellationRequested && <><button className="btn-secondary" onClick={() => start(row, 'CANCEL_SALE')}>판매 취소 승인</button><button className="btn-secondary" onClick={() => start(row, 'KEEP_SALE')}>판매 취소 거절</button></>}
             {(row.purchased ? row.cancelRejected : row.holdState === 'REJECTED') && <button className={row.inquiryPending ? 'btn-primary' : 'btn-secondary'} onClick={() => start(row, 'ALLOW_RETRY')}>재요청 허용</button>}
@@ -327,6 +331,14 @@ export default function AdminArtworkRequests() {
     {operation && <div className="request-panel"><h3 ref={operationHeading} tabIndex={-1}>{operation.row.artworkTitle} · {operation.action === 'WORK' ? '담당 / 메모' : labels[operation.action]}</h3>
       <p>{operation.row.recipientEmail}</p>
       <form onSubmit={event => void submit(event)}>
+        {operation.action === 'EXTEND' && operation.row.holdUntil && <>
+          <p>현재 홀딩 종료: {date(operation.row.holdUntil)}</p>
+          <label>새 홀딩 종료 시각 (현재 기기 시간대)<input type="datetime-local" required value={until}
+            min={localInput(operation.row.holdUntil)} onChange={event => setUntil(event.target.value)} /></label>
+          <div className="request-buttons">{[1, 3, 7].map(days => <button key={days} type="button" className="btn-secondary"
+            onClick={() => setUntil(localInput(new Date(new Date(operation.row.holdUntil!).getTime() + days * 86400000).toISOString()))}>+{days}일</button>)}</div>
+          <p className="hint-text">홀딩을 해제하지 않고 같은 수신자에게 기한만 늘립니다. 현재 종료 시각보다 늦어야 합니다.</p>
+        </>}
         {operation.action === 'APPROVE' && <label>홀딩 종료 시각 (현재 기기 시간대)<input type="datetime-local" required value={until} onChange={event => setUntil(event.target.value)} /></label>}
         {operation.action === 'SELL' && <p>이 수신자의 판매를 확정하며 다른 수신자의 대기 요청은 종료됩니다.</p>}
         {operation.action === 'CANCEL_SALE' && <p>판매 상태를 미판매로 변경합니다. 결제 환불은 담당자가 별도로 처리해야 합니다.</p>}

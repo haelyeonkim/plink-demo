@@ -69,6 +69,7 @@ public final class ActivityLabels {
             {"artwork.cancel_sale", "작품 판매 취소 승인"}, {"artwork.keep_sale", "작품 판매 취소 거절"},
             {"artwork.closed", "작품 요청 종료"}, {"artwork.inquire", "작품 재요청 문의"},
             {"artwork.allow_retry", "작품 재요청 허용"}, {"artwork.decline_retry", "작품 재요청 문의 거절"},
+            {"artwork.extend", "작품 홀딩 기한 연장"},
             {"admin.login", "관리자 로그인"}, {"google.login", "Google 로그인"},
             {"google.login_failed", "Google 로그인 실패"}, {"logout", "로그아웃"},
             {"otp.sent", "인증번호 보냄"}, {"otp.verify", "인증번호 확인"},

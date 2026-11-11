@@ -117,7 +117,7 @@ public class ArtworkRequestService {
         State s = get(initial.id());
         if (s.version() != c.version()) throw conflict("상태가 변경되었습니다. 새로고침 후 다시 시도해 주세요.");
         boolean admin = actorType.equals("ADMIN");
-        Set<String> allowed = admin ? Set.of("APPROVE", "REJECT", "RELEASE", "SELL", "CANCEL_SALE", "KEEP_SALE", "ALLOW_RETRY", "DECLINE_RETRY")
+        Set<String> allowed = admin ? Set.of("APPROVE", "REJECT", "RELEASE", "SELL", "CANCEL_SALE", "KEEP_SALE", "ALLOW_RETRY", "DECLINE_RETRY", "EXTEND")
             : Set.of("INTEREST", "UNINTEREST", "REQUEST_HOLD", "CANCEL_HOLD", "PURCHASE", "WITHDRAW", "REQUEST_CANCEL", "INQUIRE");
         if (!allowed.contains(c.action())) throw bad("허용되지 않는 액션입니다.");
         String sale = jdbc.queryForObject("SELECT sale_status FROM artwork WHERE id = ?", String.class, s.artworkId());
@@ -157,6 +157,13 @@ public class ArtworkRequestService {
                 jdbc.update("INSERT INTO artwork_reservation (artwork_id, request_id) VALUES (?, ?)", s.artworkId(), s.id());
                 setSale(s.artworkId(), "hold"); hold = "HELD"; until = Timestamp.from(c.holdUntil());
                 closeOthers(s, "홀딩 승인으로 다른 요청 종료", false);
+            }
+            case "EXTEND" -> {
+                // The hold stays with the same recipient throughout: no release, no gap another request could take.
+                if (!hold.equals("HELD")) throw conflict("연장할 확정 홀딩이 없습니다.");
+                if (c.holdUntil() == null || until == null || !c.holdUntil().isAfter(until.toInstant()))
+                    throw bad("현재 홀딩 종료 시각보다 늦은 시각을 입력해 주세요.");
+                until = Timestamp.from(c.holdUntil());
             }
             case "REJECT" -> {
                 if (!hold.equals("PENDING")) throw conflict("승인 대기 중인 요청만 거절할 수 있습니다.");
@@ -219,6 +226,11 @@ public class ArtworkRequestService {
         var events = jdbc.queryForList("SELECT action, actor_type, reason, occurred_at, before_state, after_state FROM artwork_request_event "
             + "WHERE request_id = ? ORDER BY id DESC LIMIT 200", s.id());
         List<Map<String, Object>> notices = new ArrayList<>();
+        if (s.holdState().equals("HELD")) {
+            // Only an extension still in force: one that a later release or approval replaced says nothing now.
+            events.stream().filter(e -> !"RECIPIENT".equals(e.get("actor_type")) && Set.of("APPROVE", "EXTEND").contains(e.get("action")))
+                .findFirst().filter(e -> e.get("action").equals("EXTEND")).ifPresent(e -> notices.add(notice("hold", e)));
+        }
         if (Set.of("REJECTED", "CLOSED", "EXPIRED", "CANCELLED").contains(s.holdState())) {
             for (var e : events) {
                 var before = json.readTree((String) e.get("before_state")); var after = json.readTree((String) e.get("after_state"));
@@ -258,7 +270,8 @@ public class ArtworkRequestService {
         "관리자 작품 상태 변경", "작품 상태가 변경되어 요청이 종료되었어요.");
     private static final Map<String, String> DEFAULT_REASONS = Map.of(
         "RELEASE", "담당자가 홀딩을 해제했어요.", "SELL", "판매가 확정되었어요.",
-        "ALLOW_RETRY", "담당자가 다시 요청할 수 있도록 열어 두었어요.", "APPROVE", "홀딩이 승인되었어요.");
+        "ALLOW_RETRY", "담당자가 다시 요청할 수 있도록 열어 두었어요.", "APPROVE", "홀딩이 승인되었어요.",
+        "EXTEND", "담당자가 홀딩 기한을 연장했어요.");
     private Map<String, Object> notice(String kind, Map<String, Object> e) {
         String reason = Objects.toString(e.get("reason"), "");
         String action = (String) e.get("action");
