@@ -232,6 +232,7 @@ export default function LinkAdmin() {
           <span className="page-actions">
             {/* Content is what a link points at, so it is made from here rather than
                 from a menu of its own. */}
+            <Link className="btn-secondary" to="/links/requests">작품 요청</Link>
             <Link className="btn-secondary" to="/links/contents">컨텐츠</Link>
             <Link className="btn-primary" to="/links/new">링크 추가</Link>
           </span>
@@ -255,6 +256,7 @@ export default function LinkAdmin() {
                 {detail.expiresAt ? ` · ${shortDate(detail.expiresAt)}까지` : ''}{detail.hasPassword ? ' · 비밀번호 보호' : ''}</p>
             </div>
             <div className="console-actions">
+              <Link className="btn-secondary" to={`/links/requests?linkId=${detail.id}`}>작품 요청</Link>
               {(tab === 'overview' || tab === 'links') && <Link className="btn-primary" to="?tab=issue">수신자 발급</Link>}
             </div>
           </div>

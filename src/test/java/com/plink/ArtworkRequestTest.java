@@ -199,4 +199,80 @@ class ArtworkRequestTest {
         requests.admin(s.id(), command("APPROVE", s.version()), "admin");
         assertThatThrownBy(() -> statuses.change(r.artwork(), "sold")).isInstanceOf(ResponseStatusException.class);
     }
+
+    Reader ownedReader(String owner) {
+        long content = contents.insert(owner, "Inbox catalog", "EXHIBITION", "{\"artworks\":[{\"title\":\"Inbox work\"}]}");
+        artworks.replace(content, owner, List.of(Map.of("title", "Inbox work")));
+        long artwork = jdbc.queryForObject("SELECT id FROM artwork WHERE source_content_id=?", Long.class, content);
+        return reader(owner, artwork);
+    }
+    @Test void inboxScopesListSummaryHistoryAndMutationsAndKeepsPrivateNotesPrivate() throws Exception {
+        Reader mine = ownedReader("local:998"), other = ownedReader("local:999");
+        var one = act(mine, "PURCHASE", 0); var two = act(other, "PURCHASE", 0);
+        String base = "/api/links/artwork-requests";
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(other.artwork())))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0)).andExpect(jsonPath("$.counts.active").value(0));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(mine.artwork())))
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.counts.purchase").value(1));
+        for (String suffix : List.of("/history", "/recipient-history", "/work-history")) {
+            mvc.perform(get(base+"/"+two.id()+suffix).with(AdminArtworkTest.admin(false))).andExpect(status().isNotFound());
+        }
+        String work = "{\"version\":"+one.version()+",\"processingState\":\"CONTACTING\",\"assignee\":\"담당자 김\",\"internalNote\":\"비공개 상담 내용\"}";
+        mvc.perform(post(base+"/"+two.id()+"/work").with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(work)).andExpect(status().isNotFound());
+        mvc.perform(post(base+"/"+two.id()).with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(json.writeValueAsString(command("SELL", two.version())))).andExpect(status().isNotFound());
+        mvc.perform(post(base+"/"+one.id()+"/work").with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(work)).andExpect(status().isNoContent());
+        mvc.perform(post(base+"/"+one.id()+"/work").with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(work)).andExpect(status().isConflict());
+        mvc.perform(get(base+"/"+one.id()+"/work-history").with(AdminArtworkTest.admin(false)))
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].after.processing_state").value("CONTACTING"))
+            .andExpect(jsonPath("$.items[0].after.internal_note").value("비공개 상담 내용"));
+        mvc.perform(get(mine.url()).session(mine.session())).andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].internalNote").doesNotExist()).andExpect(jsonPath("$[0].assignee").doesNotExist());
+        var changed = act(mine, "WITHDRAW", one.version()+1);
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(mine.artwork())))
+            .andExpect(jsonPath("$.items[0].processingState").value("UNREAD"))
+            .andExpect(jsonPath("$.items[0].internalNote").value("비공개 상담 내용"));
+        assertThat(changed.purchaseIntent()).isFalse();
+    }
+    @Test void queueDoesNotMoveOnAdminWorkOrDuplicateChoicesAndSummaryHasNoDoubleCounting() throws Exception {
+        Reader first = ownedReader("local:998"), second = reader("local:998", first.artwork());
+        var one = act(first, "INTEREST", 0); one = act(first, "REQUEST_HOLD", one.version()); one = act(first, "PURCHASE", one.version());
+        var two = act(second, "PURCHASE", 0);
+        jdbc.update("UPDATE artwork_request SET purchase_at=TIMESTAMP '2026-01-01 10:00:00' WHERE id=?", one.id());
+        jdbc.update("UPDATE artwork_request SET purchase_at=TIMESTAMP '2026-01-02 10:00:00' WHERE id=?", two.id());
+        var duplicate = act(first, "PURCHASE", one.version());
+        assertThat(duplicate.version()).isEqualTo(one.version()); assertThat(requests.history(one.id())).hasSize(3);
+        String base = "/api/links/artwork-requests";
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())))
+            .andExpect(jsonPath("$.items[0].id").value(one.id())).andExpect(jsonPath("$.counts.active").value(2))
+            .andExpect(jsonPath("$.counts.purchase").value(2)).andExpect(jsonPath("$.counts.pending").value(0));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("filter", "interested"))
+            .andExpect(jsonPath("$.total").value(0)).andExpect(jsonPath("$.counts.purchase").value(2));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("from", "2026-01-02").param("to", "2026-01-02"))
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value(two.id()));
+        one = act(first, "WITHDRAW", one.version()); one = act(first, "PURCHASE", one.version());
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())))
+            .andExpect(jsonPath("$.items[0].id").value(two.id()));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("withdrawals", "true"))
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].withdrawalCount").value(1));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("from", "2026-02-02").param("to", "2026-01-01"))
+            .andExpect(status().isBadRequest());
+    }
+    @Test void recipientTimelineUsesVerifiedHolderAndAppliesOwnerBoundaryAcrossLinks() throws Exception {
+        Reader first = ownedReader("local:998"), second = ownedReader("local:998"), other = ownedReader("local:999"), sameEmail = ownedReader("local:998");
+        var one = act(first, "PURCHASE", 0); act(first, "WITHDRAW", one.version());
+        var two = act(second, "PURCHASE", 0); act(second, "WITHDRAW", two.version());
+        var hidden = act(other, "PURCHASE", 0); act(other, "WITHDRAW", hidden.version());
+        var unverified = act(sameEmail, "PURCHASE", 0); act(sameEmail, "WITHDRAW", unverified.version());
+        jdbc.update("UPDATE artwork_request SET holder_id=123456 WHERE id IN (?,?,?)", one.id(), two.id(), hidden.id());
+        jdbc.update("UPDATE artwork_request SET recipient_email=? WHERE id=?", first.delivery().recipient().email, unverified.id());
+        String url = "/api/links/artwork-requests/"+one.id()+"/recipient-history";
+        mvc.perform(get(url).with(AdminArtworkTest.admin(false))).andExpect(jsonPath("$.total").value(4))
+            .andExpect(jsonPath("$.purchases").value(2)).andExpect(jsonPath("$.withdrawals").value(2));
+        mvc.perform(get(url).with(AdminArtworkTest.admin(true))).andExpect(jsonPath("$.total").value(6))
+            .andExpect(jsonPath("$.withdrawals").value(3));
+        mvc.perform(get(url).with(AdminArtworkTest.admin(false)).param("page", "1")).andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.withdrawals").value(2));
+        mvc.perform(get("/api/links/artwork-requests").with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("sort", "withdrawals"))
+            .andExpect(jsonPath("$.items[0].withdrawalCount").value(2));
+    }
 }

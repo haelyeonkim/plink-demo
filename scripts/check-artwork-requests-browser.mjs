@@ -83,7 +83,7 @@ try {
   await page.locator('.request-status').filter({ hasText: '홀딩 확정' }).waitFor({ timeout: 25000 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'Mobile page overflows');
   await mkdir(`${root}docs/screenshots`, { recursive: true });
-  await screenshot(page, 'recipient-artwork-actions');
+  await screenshot(page, 'recipient-artwork-inbox');
   await page.getByRole('button', { name: '구매 의사 전달', exact: true }).click();
   await page.getByRole('button', { name: '구매 의사 철회', exact: true }).click();
   assert.equal(await page.getByLabel('홀딩도 함께 취소').isChecked(), false);
@@ -106,9 +106,37 @@ try {
   await operator.getByRole('button', { name: '이력', exact: true }).click();
   await operator.locator('.request-history li').first().waitFor();
   assert.equal(await operator.locator('.request-history li').count(), 9);
-  await screenshot(operator, 'admin-artwork-requests');
+  assert.ok((await operator.locator('.request-counts').innerText()).includes('전체 반응'));
+  await operator.getByRole('button', { name: '담당 / 메모', exact: true }).click();
+  const form = operator.locator('.request-panel form');
+  await form.getByLabel('처리 상태').selectOption('CONTACTING');
+  await form.getByLabel('담당자', { exact: true }).fill('김 담당');
+  await form.getByLabel('내부 메모').fill('비공개: 다음 주 상담 예정');
+  await form.getByRole('button', { name: '처리 확인', exact: true }).click();
+  await operator.locator('tbody').getByText('담당자: 김 담당', { exact: true }).waitFor();
+  await operator.getByText('저장한 메모: 비공개: 다음 주 상담 예정', { exact: true }).waitFor();
+  assert.ok((await operator.locator('.request-panel').innerText()).includes('철회 1회'));
+  const publicState = await call(recipient, `/api/links/s/${delivery.recipient.shortCode}/artwork-requests`);
+  assert.equal(JSON.stringify(publicState).includes('비공개'), false);
+  await operator.getByRole('button', { name: '이력 닫기', exact: true }).click();
+  // URL-backed controlled inputs commit after React Router's navigation transition.
+  await operator.getByLabel('구매의사 철회 이력 있음').click();
+  await operator.waitForURL(url => url.searchParams.get('withdrawals') === 'true');
+  await operator.locator('input[type="checkbox"]:checked').waitFor();
+  assert.equal(await operator.getByLabel('구매의사 철회 이력 있음').isChecked(), true);
+  await operator.locator('tbody tr').waitFor();
+  assert.equal(await operator.locator('tbody tr').count(), 1);
+  await operator.getByRole('button', { name: '이 작품 요청 모아보기', exact: true }).click();
+  await operator.locator('tbody tr').waitFor();
+  assert.ok(operator.url().includes(`artworkId=${artworkId}`));
+  await operator.getByRole('button', { name: '이력', exact: true }).click();
+  await operator.getByText('저장한 메모: 비공개: 다음 주 상담 예정', { exact: true }).waitFor();
+  await screenshot(operator, 'admin-artwork-inbox');
+  await operator.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await operator.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'Admin mobile page overflows');
+  await screenshot(operator, 'admin-artwork-inbox-mobile');
   assert.deepEqual(errors, []);
-  console.log('PASS: real passkey + email verification, interest, hold approval, purchase/withdraw, sale/cancellation, durable timeline, mobile layout.');
+  console.log('PASS: real passkey + email verification, interest, hold approval, purchase/withdraw, sale/cancellation, durable timeline, summary, withdrawal filter, artwork grouping, private workflow notes/audit, mobile layout.');
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');

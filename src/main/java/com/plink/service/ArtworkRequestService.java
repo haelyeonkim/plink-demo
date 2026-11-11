@@ -53,23 +53,6 @@ public class ArtworkRequestService {
         var recipient = authorize(code, session);
         return jdbc.query("SELECT * FROM artwork_request WHERE recipient_id = ? ORDER BY id", row, recipient.id);
     }
-    public Map<String, Object> list(String filter, int page, String search) {
-        if (page < 0 || page > 100000 || search.length() > 200) throw bad("검색 조건을 확인해 주세요.");
-        String where = switch (filter) {
-            case "all" -> "1=1";
-            case "pending" -> "hold_state = 'PENDING'";
-            case "held" -> "hold_state = 'HELD'";
-            case "purchase" -> "purchase_intent = TRUE AND purchased = FALSE";
-            case "cancel" -> "cancellation_requested = TRUE";
-            case "interested" -> "interested = TRUE";
-            default -> throw bad("검색 조건을 확인해 주세요.");
-        };
-        where += " AND (LOWER(artwork_title) LIKE ? OR LOWER(recipient_email) LIKE ?)";
-        String term = "%" + search.toLowerCase(Locale.ROOT) + "%";
-        return Map.of("items", jdbc.query("SELECT * FROM artwork_request WHERE " + where
-            + " ORDER BY updated_at DESC, id DESC LIMIT 30 OFFSET ?", row, term, term, page * 30),
-            "total", jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request WHERE " + where, Long.class, term, term));
-    }
     public List<Map<String, Object>> history(long id) {
         return jdbc.query("SELECT * FROM artwork_request_event WHERE request_id = ? ORDER BY id DESC LIMIT 200", (r, n) -> {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -99,8 +82,10 @@ public class ArtworkRequestService {
         if (artworks.findLinked(contentId).values().stream().noneMatch(a -> a.id() == artworkId)) throw denied();
         var states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
         if (states.isEmpty()) {
-            jdbc.update("INSERT INTO artwork_request (artwork_id, recipient_id, link_id, recipient_email, artwork_title) "
-                + "SELECT id, ?, ?, ?, title FROM artwork WHERE id = ?", recipient.id, recipient.linkId, recipient.email, artworkId);
+            jdbc.update("INSERT INTO artwork_request (artwork_id, recipient_id, link_id, recipient_email, artwork_title, owner_sub, holder_id, link_title) "
+                + "SELECT id, ?, ?, ?, title, ?, ?, ? FROM artwork WHERE id = ?", recipient.id, recipient.linkId, recipient.email,
+                links.findById(recipient.linkId).orElseThrow().getOwnerSub(), recipient.holderId,
+                links.findById(recipient.linkId).orElseThrow().getTitle(), artworkId);
             states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
         }
         return apply(states.get(0), command, "RECIPIENT", Long.toString(recipient.id));
@@ -185,6 +170,9 @@ public class ArtworkRequestService {
             }
             default -> throw bad("요청 내용을 확인해 주세요.");
         }
+        // A repeated choice with a fresh command key is also a no-op, not a new place in the queue.
+        if (interested == s.interested() && purchase == s.purchaseIntent() && purchased == s.purchased()
+                && cancel == s.cancellationRequested() && hold.equals(s.holdState()) && Objects.equals(until, s.holdUntil())) return s;
         jdbc.update("UPDATE artwork_request SET interested=?, hold_state=?, hold_until=?, purchase_intent=?, purchased=?, "
             + "cancellation_requested=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             interested, hold, until, purchase, purchased, cancel, s.id());
@@ -244,6 +232,17 @@ public class ArtworkRequestService {
     private void record(State before, State after, String type, String actor, String action, String reason, String key, String command) {
         jdbc.update("INSERT INTO artwork_request_event (request_id, artwork_id, actor_type, actor_id, action, before_state, after_state, reason, command_key, command_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             before.id(), before.artworkId(), type, actor, action, json.writeValueAsString(before), json.writeValueAsString(after), reason == null ? "" : reason, key, command);
+        if (type.equals("RECIPIENT")) {
+            String timeColumn = switch (action) {
+                case "INTEREST" -> "interest_at";
+                case "REQUEST_HOLD" -> "hold_requested_at";
+                case "PURCHASE" -> "purchase_at";
+                default -> null;
+            };
+            jdbc.update("UPDATE artwork_request SET first_requested_at=COALESCE(first_requested_at,CURRENT_TIMESTAMP), "
+                + "requested_at=CURRENT_TIMESTAMP, processing_state='UNREAD'"
+                + (timeColumn == null ? "" : ", " + timeColumn + "=CURRENT_TIMESTAMP") + " WHERE id=?", before.id());
+        }
         ActivityLog.emit(Activity.of(Activity.LINK, "artwork." + action.toLowerCase(Locale.ROOT)).actor(type, actor, null)
             .put("request", before.id()).put("artwork", before.artworkId()).put("recipient", before.recipientId()).put("link", before.linkId()));
     }

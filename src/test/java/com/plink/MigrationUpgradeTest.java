@@ -45,7 +45,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO event_session(id,name,starts_at,test_event) VALUES (1,'Rehearsal',CURRENT_TIMESTAMP,TRUE)");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(26);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(27);
         current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT a.title,a.sale_status,a.archived,ca.artwork_id FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -85,12 +85,42 @@ class MigrationUpgradeTest {
         }
         var reconcile = Flyway.configure().dataSource(dataSource(url))
                 .locations("classpath:db/migration").outOfOrder(true).load();
-        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(25);
+        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(26);
         flyway(url, "classpath:db/migration").validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT a.sale_status FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
             assertThat(r.next()).isTrue();
             assertThat(r.getString(1)).isEqualTo("sold");
+        }
+    }
+
+    @Test void inboxBackfillsExistingHistoryAndRetainsDeletedInvitationRecords() throws Exception {
+        String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("58").load().migrate();
+        try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
+            s.execute("INSERT INTO link_content(id,owner_sub,title,body) VALUES (1,'local:1','Catalog','{}')");
+            s.execute("INSERT INTO artwork(id,owner_sub,source_content_id,position,title) VALUES (1,'local:1',1,0,'Work')");
+            s.execute("INSERT INTO protected_link(id,short_code,owner_sub,title,content_id) VALUES (1,'inbox','local:1','Delivery',1)");
+            s.execute("INSERT INTO holder(id,email,user_handle) VALUES (1,'reader@example.test','reader-handle')");
+            s.execute("INSERT INTO link_recipient(id,link_id,short_code,email,holder_id) VALUES (1,1,'reader','reader@example.test',1)");
+            s.execute("INSERT INTO artwork_request(id,artwork_id,recipient_id,link_id,recipient_email,artwork_title,purchase_intent) VALUES (1,1,1,1,'reader@example.test','Work',TRUE)");
+            s.execute("INSERT INTO artwork_request(id,artwork_id,recipient_id,link_id,recipient_email,artwork_title) VALUES (2,1,2,2,'old@example.test','Work')");
+            s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,actor_type,actor_id,action,before_state,after_state,reason,occurred_at) VALUES (1,1,'RECIPIENT','1','INTEREST','{}','{}','',TIMESTAMP '2026-01-01 09:00:00')");
+            s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,actor_type,actor_id,action,before_state,after_state,reason,occurred_at) VALUES (1,1,'RECIPIENT','1','PURCHASE','{}','{}','',TIMESTAMP '2026-01-02 09:00:00')");
+        }
+        var current = flyway(url, "classpath:db/migration");
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(1); current.validate();
+        try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
+            try (var r = s.executeQuery("SELECT * FROM artwork_request WHERE id=1")) {
+                assertThat(r.next()).isTrue(); assertThat(r.getString("owner_sub")).isEqualTo("local:1");
+                assertThat(r.getLong("holder_id")).isEqualTo(1); assertThat(r.getString("link_title")).isEqualTo("Delivery");
+                assertThat(r.getTimestamp("first_requested_at").toLocalDateTime()).isEqualTo(java.time.LocalDateTime.parse("2026-01-01T09:00:00"));
+                assertThat(r.getTimestamp("purchase_at").toLocalDateTime()).isEqualTo(java.time.LocalDateTime.parse("2026-01-02T09:00:00"));
+            }
+            try (var r = s.executeQuery("SELECT * FROM artwork_request WHERE id=2")) {
+                assertThat(r.next()).isTrue(); assertThat(r.getString("owner_sub")).isNull();
+                assertThat(r.getTimestamp("requested_at")).isNotNull();
+            }
         }
     }
 }
