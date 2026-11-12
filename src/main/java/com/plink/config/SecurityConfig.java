@@ -100,6 +100,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/data", "/api/admin/data/**")
                     .access(scope(AdminPrincipal.ACCOUNTS, false))
                 .requestMatchers("/api/admin/**").access(scope(AdminPrincipal.TICKETS, true))
+                .requestMatchers("/api/links/artwork-requests", "/api/links/artwork-requests/**")
+                    .hasAnyAuthority(AdminPrincipal.LINKS, AdminPrincipal.ACCOUNTS)
                 .requestMatchers("/api/links", "/api/links/**").access(scope(AdminPrincipal.LINKS, true))
                 // Content is written by whoever may issue links; it exists only for them.
                 .requestMatchers("/api/contents", "/api/contents/**").access(scope(AdminPrincipal.LINKS, true))

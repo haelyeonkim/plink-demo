@@ -13,7 +13,7 @@ const ADMIN = '관리자';
  */
 const MENUS: Record<BrandName, Array<[string, string]>> = {
   site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/guide', '가이드']],
-  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/guide', '가이드']],
+  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/links/requests', '작품 요청'], ['/guide', '가이드']],
   ticket: [['/tickets', '이벤트'], ['/guide', '가이드']],
 };
 
