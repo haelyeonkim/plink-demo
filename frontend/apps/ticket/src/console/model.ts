@@ -12,6 +12,8 @@ export interface SessionRow {
   reentryRequiresFace: boolean;
   /** A rehearsal: recipient emails are shown in full in the console's lists. */
   testEvent: boolean;
+  /** When an event over days ends; null for an event of one day. */
+  scheduleEndsAt?: string | null;
   /** Close open entries once the venue's day turns over, at this hour (venue time). */
   dayCloseExit: boolean; dayCloseHour: number;
   seats: string[]; tiers: string[];
@@ -57,10 +59,18 @@ export interface TicketRow {
 }
 
 /** Whether an event is still ahead, is today, or has been, by the calendar day. */
-export function eventWhen(startsAt: string): 'upcoming' | 'today' | 'past' {
+/**
+ * Where an event stands. One that runs over days is on from its start until its last day
+ * closes; one without days is on the day it starts.
+ */
+export function eventWhen(startsAt: string, endsAt?: string | null): 'upcoming' | 'today' | 'past' {
   const start = new Date(startsAt);
   const day = (d: Date) => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
   const today = day(new Date());
+  if (endsAt) {
+    if (Date.now() >= new Date(endsAt).getTime()) return 'past';
+    return day(start) <= today ? 'today' : 'upcoming';
+  }
   return day(start) === today ? 'today' : day(start) < today ? 'past' : 'upcoming';
 }
 

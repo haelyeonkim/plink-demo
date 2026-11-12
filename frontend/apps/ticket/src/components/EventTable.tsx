@@ -17,7 +17,7 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
   const [showTest, setShowTest] = useState(true);
 
   const rows = [...sessions]
-    .map(row => ({ row, when: eventWhen(row.startsAt) }))
+    .map(row => ({ row, when: eventWhen(row.startsAt, row.scheduleEndsAt) }))
     .sort((a, b) => {
       const pa = a.when === 'past', pb = b.when === 'past';
       if (pa !== pb) return pa ? 1 : -1;

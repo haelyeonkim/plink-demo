@@ -14,7 +14,7 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
   /** Booth notices waiting for the organiser's approval. */
   adsPending?: number;
 }) {
-  const when = eventWhen(session.startsAt);
+  const when = eventWhen(session.startsAt, session.scheduleEndsAt);
   const groups: Array<[string, ConsoleNavEntry<ConsoleTab>[]]> = [
     ['', [{ key: 'overview', label: '개요', icon: NAV_ICONS.overview }]],
     ['입장권', [

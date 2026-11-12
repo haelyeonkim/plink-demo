@@ -5,6 +5,12 @@ import { dayShort, hourLabel, read, type PassRow, type ScheduleDay, type Schedul
 import { passDays } from './IssuePanel';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+/** As the server allows: about two years. */
+const MAX_DAYS = 800;
+/** A long schedule shows this many days until it is opened in full. */
+const FOLDED = 14;
+/** Passes choose days one by one only for a schedule this short; past that, every day. */
+const PICKABLE = 31;
 
 function iso(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -15,7 +21,7 @@ function between(start: string, end: string, kept: ScheduleDay[]): ScheduleDay[]
   const out: ScheduleDay[] = [];
   const from = new Date(`${start}T00:00:00`);
   const to = new Date(`${end}T00:00:00`);
-  for (const d = new Date(from); d <= to && out.length < 31; d.setDate(d.getDate() + 1)) {
+  for (const d = new Date(from); d <= to && out.length < MAX_DAYS; d.setDate(d.getDate() + 1)) {
     const date = iso(d);
     out.push(kept.find(k => k.date === date)
       ?? { date, label: `DAY ${out.length + 1}`, weekday: WEEK[d.getDay()], opensAt: null, closesAt: null, closed: false });
@@ -36,6 +42,7 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
   const saved = schedule?.days ?? [];
   const [days, setDays] = useState<ScheduleDay[]>(saved);
   const [busy, setBusy] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
   useEffect(() => { setDays(schedule?.days ?? []); }, [schedule]);
   const dirty = JSON.stringify(days) !== JSON.stringify(saved);
   const first = days[0]?.date ?? startsAt.slice(0, 10);
@@ -79,7 +86,7 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
           <table className="console-table schedule-table">
             <thead><tr><th>날짜</th><th>이름</th><th>입장 시작</th><th>입장 마감</th><th>운영</th></tr></thead>
             <tbody>
-              {days.map(day => (
+              {(unfolded || days.length <= FOLDED ? days : days.slice(0, FOLDED)).map(day => (
                 <tr key={day.date} className={day.closed ? 'is-off' : ''}>
                   <td><b>{dayShort(day)}</b></td>
                   <td><input aria-label={`${dayShort(day)} 이름`} maxLength={20} value={day.label}
@@ -96,6 +103,10 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
             </tbody>
           </table>
         </div>
+        {days.length > FOLDED && (
+          <button className="btn-tiny schedule-fold" type="button" onClick={() => setUnfolded(value => !value)}>
+            {unfolded ? '앞의 14일만 보기' : `나머지 ${(days.length - FOLDED).toLocaleString()}일도 보기`}</button>
+        )}
         <p className="muted settings-note">시간을 비워 두면 그날 하루 종일 입장할 수 있어요. 마지막 운영일의 입장 마감이 지나면 이벤트가 끝나고,
           입장권은 '종료됨'이 돼요.</p>
         <div className="button-row">
@@ -149,7 +160,8 @@ function PassEditor({ pass, days, busy, onSave, onDelete }: {
       <div className="chip-row" role="group" aria-label={`${pass.name} 입장 가능한 날`}>
         <button type="button" className={chosen === null ? 'on' : ''} aria-pressed={chosen === null}
           onClick={() => setChosen(chosen === null ? [] : null)}>전 일정</button>
-        {days.map(day => (
+        {days.length > PICKABLE && <span className="muted pass-long">일정이 {PICKABLE}일보다 길면 날짜별로 고를 수 없고 전 일정만 돼요.</span>}
+        {days.length <= PICKABLE && days.map(day => (
           <button key={day.date} type="button" disabled={day.closed}
             className={chosen !== null && chosen.includes(day.date) ? 'on' : ''}
             aria-pressed={chosen !== null && chosen.includes(day.date)} onClick={() => toggle(day.date)}>

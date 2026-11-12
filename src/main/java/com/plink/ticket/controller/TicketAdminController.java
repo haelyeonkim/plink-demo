@@ -1197,6 +1197,8 @@ public class TicketAdminController {
         row.put("startsAt", session.startsAt.toInstant().toString());
         row.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         row.put("testEvent", session.testEvent);
+        // An event over days runs until its last day closes, not just on the day it starts.
+        row.put("scheduleEndsAt", schedule.endsAt(session).map(Instant::toString).orElse(null));
         row.put("dayCloseExit", session.dayCloseExit);
         row.put("dayCloseHour", session.dayCloseHour);
         row.put("reentryMode", session.reentryMode);
