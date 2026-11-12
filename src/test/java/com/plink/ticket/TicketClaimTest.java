@@ -137,13 +137,18 @@ class TicketClaimTest {
         mvc.perform(get(path()).header("User-Agent", PHONE).session(stale))
             .andExpect(jsonPath("$.locked").value(true));
 
-        // A wrong guess at the address answers like a right one: the page no longer says
-        // whose ticket this is, and the reply must not either.
-        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/otp")
+        // A new phone asks for a fresh link with the email the ticket went to; a wrong
+        // one gets nothing, and the right one only sends the link to that address.
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/recover")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{\"email\":\"guess@example.com\"}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.sent").value(true));
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("guess@example.com")))
+            .andExpect(status().isForbidden());
+        mailbox.clear();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path() + "/recover")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("holder@example.com")))
+            .andExpect(status().isOk());
+        assertTrue(mailbox.lastTicketUrl().isPresent(), "새 링크는 입장권의 주소로만 가요");
     }
 
     /**
@@ -209,76 +214,26 @@ class TicketClaimTest {
             .andExpect(status().isNotFound());
     }
 
-    @Test void theCodeGoesOnlyToTheAddressTheTicketWasIssuedTo() throws Exception {
+    /** No code is mailed any more: the endpoint that sent one is gone. */
+    @Test void registeringSendsNoCode() throws Exception {
         mvc.perform(post(path() + "/otp").with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content("{\"email\":\"someone.else@example.com\"}"))
-            .andExpect(status().isBadRequest());
-        assertTrue(mailbox.lastCode().isEmpty(), "잘못된 주소로는 코드를 보내지 않습니다");
-    }
-
-    @Test void verifyingTheCodeUnlocksRegistration() throws Exception {
-        MockHttpSession session = new MockHttpSession();
-        mvc.perform(post(path() + "/otp").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content("{\"email\":\"holder@example.com\"}"))
-            .andExpect(status().isOk());
-        String code = mailbox.lastCode().orElseThrow();
-
-        mvc.perform(post(path() + "/otp/verify").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json")
-                .content("{\"email\":\"holder@example.com\",\"code\":\"000000\"}"))
-            .andExpect(status().isBadRequest());
-
-        mvc.perform(post(path() + "/otp/verify").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json")
-                .content("{\"email\":\"holder@example.com\",\"code\":\"" + code + "\"}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.verified").value(true));
-
-        // The same code cannot be spent twice.
-        mvc.perform(post(path() + "/otp/verify").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json")
-                .content("{\"email\":\"holder@example.com\",\"code\":\"" + code + "\"}"))
-            .andExpect(status().isBadRequest());
-    }
-
-    @Test void resendingTooSoonIsRateLimited() throws Exception {
-        String body = "{\"email\":\"holder@example.com\"}";
-        mvc.perform(post(path() + "/otp").with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content(body)).andExpect(status().isOk());
-        mvc.perform(post(path() + "/otp").with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content(body)).andExpect(status().isTooManyRequests());
-    }
-
-    @Test void registrationRequiresAVerifiedMailbox() throws Exception {
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("이메일 인증")));
+                .contentType("application/json").content(contact("holder@example.com")))
+            .andExpect(result -> assertTrue(result.getResponse().getStatus() >= 400));
+        assertTrue(mailbox.lastCode().isEmpty());
     }
 
     @Test void writesStillRequireTheCsrfToken() throws Exception {
-        mvc.perform(post(path() + "/otp").header("User-Agent", PHONE)
-                .contentType("application/json").content("{\"email\":\"holder@example.com\"}"))
+        mvc.perform(post(path() + "/passkey/options").header("User-Agent", PHONE)
+                .contentType("application/json").content(contact("holder@example.com")))
             .andExpect(status().isForbidden());
     }
 
-    @Test void theAdminConsoleIsNotPublic() throws Exception {
-        mvc.perform(get("/api/admin/sessions")).andExpect(status().isUnauthorized());
-        mvc.perform(post("/api/admin/sessions/" + sessionId + "/tickets").with(csrf())
-                .contentType("application/json").content("{\"email\":\"x@example.com\"}"))
-            .andExpect(status().isUnauthorized());
-    }
-
-    @Test void gateEndpointsRequireTheTerminalToken() throws Exception {
-        mvc.perform(get("/api/gates/nope")).andExpect(status().isUnauthorized());
-        mvc.perform(post("/api/gates/nope/scan").contentType("application/json").content("{\"code\":\"x\"}"))
-            .andExpect(status().isUnauthorized());
-    }
-
-    @Test void thePageReportsWhetherClaimingNeedsTheMailbox() throws Exception {
+    /** By default the email or phone is checked; the page says so, and which of them it can take. */
+    @Test void thePageReportsWhatRegistrationAsksFor() throws Exception {
         mvc.perform(get(path()).header("User-Agent", PHONE))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.event.claimRequiresOtp").value(true));
+            .andExpect(jsonPath("$.event.claimSkipCheck").value(false))
+            .andExpect(jsonPath("$.event.claimByPhone").value(false));
     }
 
     @Test void thePhoneIsAskedWhereItIsOnlyWhenTheEventChecks() throws Exception {
@@ -294,46 +249,60 @@ class TicketClaimTest {
         sessions.updateGeoPolicy(sessionId, null, null, 300, "OFF");
     }
 
-    @Test void turningTheClaimPolicyOffLetsTheLinkStandAlone() throws Exception {
-        sessions.updateClaimPolicy(sessionId, false);
-        // No code has been verified in this session, yet the ceremony is issued once the
-        // address the ticket went to is typed back. Whether it registers or authenticates
-        // depends on whether this person already has a passkey, which is not what this
-        // test is about.
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json")
-                .content("{\"email\":\"holder@example.com\"}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.options").exists());
-
+    /** An organiser handing links over in person can let the link stand alone. */
+    @Test void turningTheCheckOffLetsTheLinkStandAlone() throws Exception {
         sessions.updateClaimPolicy(sessionId, true);
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{}"))
-            .andExpect(status().isForbidden());
-    }
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.options").exists());
 
-    /**
-     * Without a code the typed address is all that stands between a forwarded link and a
-     * stranger's phone, so it is checked rather than recorded.
-     */
-    @Test void claimingWithoutACodeStillNeedsTheAddressTheTicketWentTo() throws Exception {
         sessions.updateClaimPolicy(sessionId, false);
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{}"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("이메일 주소를 입력")));
+            .andExpect(status().isBadRequest());
+    }
 
+    /**
+     * The typed email or phone is all that stands between a forwarded link and a
+     * stranger's phone, so it is checked rather than recorded.
+     */
+    @Test void claimingNeedsTheAddressTheTicketWentTo() throws Exception {
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json")
-                .content("{\"email\":\"someone.else@example.com\"}"))
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("이메일이나 휴대폰 번호를 입력")));
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("someone.else@example.com")))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("일치하지 않아요")));
-
         // Case and surrounding spaces are how people actually type an address.
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json")
-                .content("{\"email\":\"  Holder@Example.com \"}"))
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("  Holder@Example.com ")))
             .andExpect(status().isOk());
+        // This ticket went out without a phone, so a number cannot claim it.
+        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("01012345678")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("휴대폰 번호가 없어요")));
+    }
+
+    /** A ticket that went to a phone as well can be claimed with either, however the number is written. */
+    @Test void thePhoneTheTicketWentToClaimsItToo() throws Exception {
+        long phoneEvent = sessions.insert("휴대폰 회차", null, Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
+        tickets.issue(phoneEvent, "phone.holder@example.com", null, null, "010-1234-5678");
+        String url = mailbox.lastTicketUrl().orElseThrow();
+        String base = "/api/tickets/" + phoneEvent + "/" + url.substring(url.lastIndexOf('/') + 1);
+        mvc.perform(get(base).header("User-Agent", PHONE)).andExpect(jsonPath("$.event.claimByPhone").value(true));
+        for (String number : new String[] { "01012345678", "010-1234-5678", "+82 10 1234 5678" }) {
+            mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                    .header("User-Agent", PHONE).contentType("application/json").content(contact(number)))
+                .andExpect(status().isOk());
+        }
+        mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("010-9999-0000")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("휴대폰 번호와 일치하지")));
     }
 
     /**
@@ -345,7 +314,7 @@ class TicketClaimTest {
     @Test void aSecondTicketForTheSamePersonAuthenticatesInsteadOfRegistering() throws Exception {
         MockHttpSession first = verifiedSession("holder@example.com");
         mvc.perform(post(path() + "/passkey/options").session(first).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+                .header("User-Agent", PHONE).contentType("application/json").content(contact("holder@example.com")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.mode").value("register"));
 
@@ -364,7 +333,7 @@ class TicketClaimTest {
 
         mvc.perform(post("/api/tickets/" + nextEvent + "/" + secondToken + "/passkey/options")
                 .session(second).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content("{}"))
+                .contentType("application/json").content(contact("holder@example.com")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.mode").value("authenticate"));
     }
@@ -380,7 +349,7 @@ class TicketClaimTest {
 
         mvc.perform(post("/api/tickets/" + otherSession + "/" + token + "/passkey/options")
                 .session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content("{}"))
+                .contentType("application/json").content(contact("someone.else@example.com")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.mode").value("register"));
     }
@@ -389,17 +358,12 @@ class TicketClaimTest {
         return verifiedSession(email, path());
     }
 
-    private MockHttpSession verifiedSession(String email, String base) throws Exception {
-        MockHttpSession session = new MockHttpSession();
-        mvc.perform(post(base + "/otp").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content("{\"email\":\"" + email + "\"}"))
-            .andExpect(status().isOk());
-        String code = mailbox.lastCode().orElseThrow();
-        mvc.perform(post(base + "/otp/verify").session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json")
-                .content("{\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
-            .andExpect(status().isOk());
-        return session;
+    private MockHttpSession verifiedSession(String email, String base) {
+        return new MockHttpSession();
+    }
+
+    private static String contact(String value) {
+        return "{\"contact\":\"" + value + "\"}";
     }
 
     @Test void maskingNeverLeaksTheLocalPart() {

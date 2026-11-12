@@ -4,7 +4,6 @@ import com.plink.activity.Activity;
 import com.plink.activity.ActivityLog;
 import com.plink.ticket.face.FaceService;
 import com.plink.ticket.model.Ticket;
-import com.plink.ticket.service.EmailOtpService;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
 import com.plink.ticket.service.TransferService;
@@ -33,14 +32,13 @@ public class TicketController {
     private final TicketPasskeyService passkeyService;
     private final TransferService transfers;
     private final FaceService faces;
-    private final EmailOtpService otp;
     private final com.plink.ticket.repository.AdmissionRepository admissions;
     private final com.plink.ticket.live.LiveSnapshots snapshots;
     private final com.plink.ticket.service.CouponService coupons;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
             TransferService transfers, FaceService faces,
-            EmailOtpService otp, com.plink.ticket.repository.AdmissionRepository admissions,
+            com.plink.ticket.repository.AdmissionRepository admissions,
             com.plink.ticket.live.LiveSnapshots snapshots, com.plink.ticket.service.CouponService coupons) {
         this.coupons = coupons;
         this.admissions = admissions;
@@ -49,7 +47,6 @@ public class TicketController {
         this.passkeyService = passkeyService;
         this.transfers = transfers;
         this.faces = faces;
-        this.otp = otp;
     }
 
     @GetMapping
@@ -78,40 +75,6 @@ public class TicketController {
     }
 
     /**
-     * Sends a verification code. The address must match the one this link was sent to, so
-     * claiming needs both the link and that mailbox.
-     */
-    @PostMapping("/otp")
-    public Map<String, Object> requestOtp(@PathVariable long sessionId, @PathVariable String token,
-            @RequestBody Map<String, String> body) {
-        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        String email = EmailOtpService.normalize(body.get("email"));
-        boolean claimed = isClaimed(resolved);
-        if (!email.equalsIgnoreCase(expectedEmail(resolved))) {
-            // On a registered ticket the page no longer shows whose it is, so a wrong
-            // guess and a right one answer alike; only the right one gets mail.
-            if (claimed) return Collections.singletonMap("sent", true);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이 링크에 등록된 이메일이 아니에요.");
-        }
-        otp.issue(email, purpose(resolved),
-            claimed ? "입장권 재발급 인증번호" : "입장권 등록 인증번호",
-            resolved.viaTransfer() ? "양도받은 입장권을 등록하기 위한 인증번호예요."
-                : claimed ? "입장권을 새 기기로 옮기기 위한 인증번호예요."
-                : "입장권 등록을 위한 인증번호예요.");
-        return Collections.singletonMap("sent", true);
-    }
-
-    @PostMapping("/otp/verify")
-    public Map<String, Object> verifyOtp(@PathVariable long sessionId, @PathVariable String token,
-            @RequestBody Map<String, String> body, HttpSession session) {
-        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        String email = EmailOtpService.normalize(body.get("email"));
-        otp.verify(email, purpose(resolved), body.get("code"));
-        passkeyService.markEmailVerified(session, resolved.ticket.id, email);
-        return Collections.singletonMap("verified", true);
-    }
-
-    /**
      * Registration options when unclaimed, assertion options once bound. The intent says
      * what the assertion is for: opening a QR, or signing off a transfer.
      */
@@ -120,8 +83,9 @@ public class TicketController {
             @RequestBody(required = false) Map<String, String> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         Map<String, String> input = body == null ? Map.of() : body;
+        // "contact" is the email or phone typed back to register; "email" is what older pages sent.
         return passkeyService.start(resolved, input.get("intent"), input.get("direction"),
-            input.get("toEmail"), input.get("email"), session,
+            input.get("toEmail"), input.get("contact") != null ? input.get("contact") : input.get("email"), session,
             decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
     }
 
@@ -171,11 +135,11 @@ public class TicketController {
         if (resolved.viaTransfer()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "보낸 사람만 취소할 수 있어요.");
         }
-        // Cancelling gives the ticket back, so it needs the same mailbox proof as a claim.
-        passkeyService.verifiedEmail(session, resolved.ticket.id)
-            .filter(email -> email.equalsIgnoreCase(resolved.ticket.holderEmail))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-                "이메일 인증을 먼저 완료해 주세요."));
+        // Cancelling gives the ticket back to its sender: only on the phone that holds it,
+        // once its passkey has answered.
+        if (!passkeyService.canView(session, resolved.ticket)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 본인 확인을 먼저 해 주세요.");
+        }
         return transfers.cancel(resolved.ticket);
     }
 
@@ -186,14 +150,20 @@ public class TicketController {
      */
     @PostMapping("/recover")
     public Map<String, Object> recover(@PathVariable long sessionId, @PathVariable String token,
-            HttpSession session) {
+            @RequestBody(required = false) Map<String, String> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         if (resolved.viaTransfer()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "양도 링크에서는 재발급할 수 없어요.");
         }
-        String email = passkeyService.verifiedEmail(session, resolved.ticket.id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
-        return tickets.reissue(resolved.ticket, email);
+        // On the registered phone the passkey has answered; on a new one, the email or the
+        // phone the ticket went to is typed back. Either way the new link goes only there.
+        Ticket ticket = resolved.ticket;
+        if (!passkeyService.canView(session, ticket)) {
+            String mismatch = TicketService.contactMismatch(body == null ? null : body.get("contact"),
+                ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail, ticket.phone);
+            if (mismatch != null) throw new ResponseStatusException(HttpStatus.FORBIDDEN, mismatch);
+        }
+        return tickets.reissue(ticket);
     }
 
     /**
@@ -232,7 +202,7 @@ public class TicketController {
         // A face is a way through the door: only the holder's own phone may add or remove
         // one, whatever the claim policy lets the link alone do.
         requireViewer(resolved, session);
-        String email = requireVerifiedEmail(resolved, session);
+        String email = holderEmail(resolved);
         return faces.consent(resolved.ticket, email, Boolean.TRUE.equals(body.get("agreed")));
     }
 
@@ -241,7 +211,6 @@ public class TicketController {
             @RequestBody Map<String, Object> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         requireViewer(resolved, session);
-        requireVerifiedEmail(resolved, session);
         return faces.enrol(resolved.ticket, Frames.decode(body.get("frames")));
     }
 
@@ -250,37 +219,12 @@ public class TicketController {
             HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         requireViewer(resolved, session);
-        requireVerifiedEmail(resolved, session);
         return faces.withdraw(resolved.ticket);
     }
 
-    /**
-     * Face enrolment follows the session's claim policy: where claiming needed the
-     * mailbox, so does this. Device recovery and cancelling a transfer always ask for it,
-     * because both take a ticket away from a device that already holds it.
-     */
-    private String requireVerifiedEmail(TicketService.Resolved resolved, HttpSession session) {
-        return passkeyService.verifiedEmail(session, resolved.ticket.id).orElseGet(() -> {
-            if (tickets.requireSession(resolved.ticket.sessionId).claimRequiresOtp) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요.");
-            }
-            return resolved.ticket.holderEmail != null
-                ? resolved.ticket.holderEmail : resolved.ticket.issuedToEmail;
-        });
-    }
-
-    private boolean isClaimed(TicketService.Resolved resolved) {
-        return !resolved.viaTransfer() && resolved.ticket.claimed();
-    }
-
-    private String expectedEmail(TicketService.Resolved resolved) {
-        if (resolved.viaTransfer()) return resolved.claim.toEmail;
-        return isClaimed(resolved) ? resolved.ticket.holderEmail : resolved.ticket.issuedToEmail;
-    }
-
-    private String purpose(TicketService.Resolved resolved) {
-        if (resolved.viaTransfer()) return "ticket-transfer:" + resolved.claim.id;
-        return (isClaimed(resolved) ? "ticket-recover:" : "ticket-claim:") + resolved.ticket.id;
+    /** The address the ticket's face consent is recorded against: its holder's. */
+    private static String holderEmail(TicketService.Resolved resolved) {
+        return resolved.ticket.holderEmail != null ? resolved.ticket.holderEmail : resolved.ticket.issuedToEmail;
     }
 
     private static Double decimal(String value) {

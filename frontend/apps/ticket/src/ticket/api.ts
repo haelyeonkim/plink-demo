@@ -42,7 +42,10 @@ export interface TicketView {
     exitScanRequired: boolean;
     reentryMode: string;
     /** When false, opening the link is the whole claim: no verification code is sent. */
-    claimRequiresOtp: boolean;
+    /** Registering needs no email or phone typed back: the organiser chose so. */
+    claimSkipCheck: boolean;
+    /** The ticket went to a phone too, so the number can be typed instead of the email. */
+    claimByPhone?: boolean;
     /** Whether the event admits by face; when off, the ticket says nothing about faces. */
     faceEnabled?: boolean;
     /** Opening a code is checked against the venue: only then is the phone's position asked for. */
@@ -102,18 +105,6 @@ export async function fetchCrowding(sessionId: string, token: string): Promise<C
   return read(await fetch(`${ticketBase(sessionId, token)}/crowding`)) as Promise<Crowding>;
 }
 
-export async function requestOtp(sessionId: string, token: string, email: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/otp`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-  }));
-}
-
-export async function verifyOtp(sessionId: string, token: string, email: string, code: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/otp/verify`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }),
-  }));
-}
-
 /**
  * Opens an entry or exit code on the browser whose passkey already opened this ticket.
  * Refused with 403 once that proof has lapsed; the page asks for the passkey again.
@@ -135,8 +126,11 @@ export async function cancelTransfer(sessionId: string, token: string) {
   return read(await mutate(`${ticketBase(sessionId, token)}/transfer/cancel`, { method: 'POST' }));
 }
 
-export async function reissueTicket(sessionId: string, token: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/recover`, { method: 'POST' }));
+/** A fresh link to the ticket's own email; from a phone without the passkey, the email or phone is typed back. */
+export async function reissueTicket(sessionId: string, token: string, contact?: string) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/recover`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact: contact ?? null }),
+  }));
 }
 
 export interface FaceStatus {

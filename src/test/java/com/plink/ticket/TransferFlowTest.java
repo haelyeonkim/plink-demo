@@ -248,7 +248,7 @@ class TransferFlowTest {
         transfers.initiate(ticket, "recipient@example.com", null, null);
         Transfer transfer = transferRepository.findPendingByTicket(ticket.id).orElseThrow();
 
-        tickets.reissue(ticketRepository.findById(ticket.id).orElseThrow(), "sender@example.com");
+        tickets.reissue(ticketRepository.findById(ticket.id).orElseThrow());
         assertEquals("CANCELLED", transferRepository.findByClaimToken(transfer.toTokenHmac).orElseThrow().status);
         assertTrue(mailbox.sent.stream().anyMatch(m -> m[0].equals("recipient@example.com")
             && m[1].contains("취소")), "받는 사람에게 취소를 알립니다");

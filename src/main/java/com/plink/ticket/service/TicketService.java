@@ -449,6 +449,31 @@ public class TicketService {
     }
 
     /** Digits only, so a number typed with dashes or spaces still matches. */
+    /**
+     * Whether what a holder typed is the email or the phone number this ticket went to.
+     *
+     * @return null when it is, else what to tell them
+     */
+    public static String contactMismatch(String typed, String email, String phone) {
+        String value = typed == null ? "" : typed.strip();
+        if (value.isEmpty()) return "입장권을 받은 이메일이나 휴대폰 번호를 입력해 주세요.";
+        if (value.contains("@")) {
+            return email != null && EmailOtpService.normalize(value).equalsIgnoreCase(email) ? null
+                : "입장권을 받은 이메일과 일치하지 않아요. 받으신 주소를 다시 확인해 주세요.";
+        }
+        String digits = phoneDigits(value);
+        if (digits.length() < 9) return "이메일이나 휴대폰 번호를 다시 확인해 주세요.";
+        if (phone == null) return "이 입장권에는 휴대폰 번호가 없어요. 입장권을 받은 이메일을 입력해 주세요.";
+        return digits.equals(phoneDigits(phone)) ? null
+            : "입장권을 받은 휴대폰 번호와 일치하지 않아요. 번호를 다시 확인해 주세요.";
+    }
+
+    /** A Korean number as it is dialled at home: +82 10 ... and 010 ... are one number. */
+    private static String phoneDigits(String raw) {
+        String digits = raw.replaceAll("\\D", "");
+        return digits.startsWith("82") && digits.length() >= 11 ? "0" + digits.substring(2) : digits;
+    }
+
     public static String normalizePhone(String raw) {
         if (raw == null || raw.isBlank()) return null;
         String digits = raw.replaceAll("[^0-9+]", "");
@@ -464,7 +489,7 @@ public class TicketService {
      * the old link stops resolving at the same moment.
      */
     @Transactional
-    public Map<String, Object> reissue(Ticket resolved, String verifiedEmail) {
+    public Map<String, Object> reissue(Ticket resolved) {
         // Read again under the lock: the ticket may have been transferred, revoked or
         // recovered since the page resolved it, and the checks below are about now.
         Ticket ticket = tickets.lockById(resolved.id)
@@ -472,19 +497,22 @@ public class TicketService {
         if (ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
         }
+        // The new link goes only where the ticket already went: whoever asked for it, it
+        // lands with the holder.
         String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
-        if (!verifiedEmail.equalsIgnoreCase(recipient)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "입장권에 등록된 이메일로만 재발급할 수 있어요.");
-        }
         if (ticket.reissueCount >= properties.getRebindMaxPerTicket()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "재발급 가능 횟수를 모두 사용했어요. 안내 데스크에서 도움을 받아 주세요.");
         }
         EventSession session = requireSession(ticket.sessionId);
         String url = urlFor(ticket.sessionId, rotate(ticket, recipient));
-        AfterCommit.run(() -> mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
-            "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
-            + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요."));
+        String phone = ticket.phone;
+        AfterCommit.run(() -> {
+            mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
+                "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
+                + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요.");
+            if (phone != null) sms.send(phone, smsText(session, url));
+        });
 
         ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.reissued_by_holder").session(ticket.sessionId)
             .ticket(ticket.id).summary(recipient).put("email", recipient)
@@ -662,7 +690,10 @@ public class TicketService {
         event.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         event.put("exitScanRequired", session.exitScanRequired);
         event.put("reentryMode", session.reentryMode);
-        event.put("claimRequiresOtp", session.claimRequiresOtp);
+        // Whether registering asks for the email or phone the ticket went to.
+        event.put("claimSkipCheck", session.claimSkipCheck);
+        // Which of the two the holder can type: a ticket issued without a phone takes email only.
+        event.put("claimByPhone", !resolved.viaTransfer() && ticket.phone != null);
         // An event that does not admit by face says nothing about faces on its tickets.
         event.put("faceEnabled", session.faceEnabled);
         // The phone asks for its position only when the event will look at it.

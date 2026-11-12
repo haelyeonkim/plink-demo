@@ -4,7 +4,8 @@ export interface SessionRow {
   id: number; name: string; venue: string | null; startsAt: string; gateOpensAt: string | null;
   reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
-  claimRequiresOtp: boolean;
+  /** Registering needs no email or phone typed back; off unless the organiser turns it on. */
+  claimSkipCheck: boolean;
   faceEnabled: boolean;
   /** Holders with a face enrolled now: what turning face entry off would delete. */
   faceEnrolled: number;
