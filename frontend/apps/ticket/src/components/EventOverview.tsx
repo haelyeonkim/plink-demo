@@ -23,7 +23,7 @@ interface Todo { tone: 'warn' | 'info' | 'done'; title: string; detail: string; 
 export default function EventOverview({ session, summary, occupancy, gates }: {
   session: SessionRow; summary: TicketSummary | null; occupancy: Occupancy | null; gates: GateRow[];
 }) {
-  const when = eventWhen(session.startsAt);
+  const when = eventWhen(session.startsAt, session.scheduleEndsAt);
   const counts = summary?.counts ?? { all: 0, unclaimed: 0, bound: 0, inside: 0, revoked: 0, live: 0 };
   const doors = gates.filter(gate => gate.role !== 'BOOTH');
   const terminals = gates.filter(gate => gate.role === 'BOOTH');

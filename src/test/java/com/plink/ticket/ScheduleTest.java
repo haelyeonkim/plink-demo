@@ -197,4 +197,21 @@ class ScheduleTest {
         assertEquals(HttpStatus.FORBIDDEN, refused.getStatusCode());
         assertTrue(refused.getReason().contains("다음 입장일"), refused.getReason());
     }
+
+    /** A showcase left open for a year and more is one schedule, and ends when its last day does. */
+    @Test void aLongScheduleIsOneSchedule() {
+        long id = sessions.insert("긴 이벤트 " + Secrets.randomAlnum(6), null, Timestamp.from(at("2030-01-01T10:00")), null);
+        java.util.List<Map<String, Object>> days = new java.util.ArrayList<>();
+        for (java.time.LocalDate d = java.time.LocalDate.parse("2030-01-01"); !d.isAfter(java.time.LocalDate.parse("2031-02-24")); d = d.plusDays(1)) {
+            days.add(Map.of("date", d.toString()));
+        }
+        assertEquals(420, days.size());
+        schedule.saveDays(id, days);
+        assertEquals(at("2031-02-25T00:00"), schedule.endsAt(event(id)).orElseThrow());
+        assertEquals(Optional.empty(), schedule.refusal(event(id), ticket(id, null), at("2030-08-15T12:00")));
+
+        java.util.List<Map<String, Object>> tooMany = new java.util.ArrayList<>();
+        for (int i = 0; i < 801; i++) tooMany.add(Map.of("date", java.time.LocalDate.parse("2030-01-01").plusDays(i).toString()));
+        assertEquals(HttpStatus.BAD_REQUEST, status(() -> schedule.saveDays(id, tooMany)));
+    }
 }

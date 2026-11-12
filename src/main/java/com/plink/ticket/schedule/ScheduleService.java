@@ -36,7 +36,8 @@ import java.util.regex.Pattern;
 @Service
 public class ScheduleService {
     private static final Pattern TIME = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
-    private static final int MAX_DAYS = 31;
+    /** About two years: a showcase left open, not a festival, is the long end. */
+    private static final int MAX_DAYS = 800;
     private static final int MAX_PASSES = 20;
     private static final String[] WEEK = { "월", "화", "수", "목", "금", "토", "일" };
 
@@ -182,6 +183,12 @@ public class ScheduleService {
             return Optional.of("오늘 입장이 마감됐어요.");
         }
         return Optional.empty();
+    }
+
+    /** When the event ends: its last open day's close. Empty for an event without days. */
+    public Optional<Instant> endsAt(EventSession event) {
+        List<ScheduleRepository.Day> days = repo.days(event.id);
+        return days.isEmpty() ? Optional.empty() : endsAt(event, days);
     }
 
     /** Whether the event's last open day has closed. An event without days never ends. */

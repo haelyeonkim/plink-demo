@@ -2430,3 +2430,6 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 }
 .ticket-not-today { background: #fff7e6; border: 1px solid #f3dcae; color: #5e3800; }
 .ticket-ended { background: #f3f5f9; color: #33405e; font-weight: 600; }
+.schedule-fold { align-self: flex-start; }
+.pass-long { font-size: 12.5px; align-self: center; }
+.ticket-days-span { align-self: center; font-size: 12px; color: var(--muted); }

@@ -1164,16 +1164,16 @@ export default function TicketAdmin() {
                 {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
             </div>
             <div className="console-actions">
-              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt) === 'today')) && (
+              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today')) && (
                 <span className={`live-state live-${liveState}`} role="status">
                   {liveState === 'open' ? '실시간 연결됨' : liveState === 'retrying' ? '연결이 끊겨 다시 연결하는 중' : '연결 중'}
                   {updatedAt && ` · ${[updatedAt.getHours(), updatedAt.getMinutes(), updatedAt.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')} 갱신`}
                 </span>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt) === 'today' && (
+              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                 <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt) === 'upcoming' && (
+              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'upcoming' && (
                 <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
               )}
               {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
@@ -2065,7 +2065,7 @@ export default function TicketAdmin() {
                 <p>입장권, 입·퇴장 기록, 등록된 단말이 함께 사라지고 되돌릴 수 없어요.</p>
               </div>
               <div className="settings-body">
-                {eventWhen(session.startsAt) === 'today' && (
+                {eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                   <p className="error-text">오늘 진행 중인 이벤트입니다. 이벤트가 끝난 뒤에 지우는 것을 권해요.</p>
                 )}
                 <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 이벤트 삭제…</button>

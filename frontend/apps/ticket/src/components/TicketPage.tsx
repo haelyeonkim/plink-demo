@@ -1174,11 +1174,20 @@ function RotatingCode({ grant, ticket, movement, used, coupon, onAnother, onDone
 
 /** The event's days on the ticket: which ones it admits, and today among them. */
 function TicketDays({ schedule }: { schedule: TicketSchedule }) {
+  // A long schedule shows the days around today, and says how long it runs.
+  const all = schedule.days;
+  const at = all.findIndex(day => day.today || !day.past);
+  const from = all.length <= 4 ? 0 : Math.max(0, Math.min(at < 0 ? all.length - 4 : at, all.length - 4));
+  const shown = all.slice(from, from + 4);
+  const span = (date: string) => { const [y, m, d] = date.split('-').map(Number); return `${y}.${m}.${d}`; };
   return (
     <section className="ticket-days-strip" aria-label="입장 가능한 날">
       {schedule.pass && <span className="ticket-pass">{schedule.pass}</span>}
-      <ol style={{ gridTemplateColumns: `repeat(${Math.min(schedule.days.length, 4)}, minmax(0, 1fr))` }}>
-        {schedule.days.map(day => {
+      {all.length > 4 && (
+        <span className="ticket-days-span">{span(all[0].date)} – {span(all[all.length - 1].date)} · {all.length.toLocaleString()}일</span>
+      )}
+      <ol style={{ gridTemplateColumns: `repeat(${Math.min(shown.length, 4)}, minmax(0, 1fr))` }}>
+        {shown.map(day => {
           const [, m, d] = day.date.split('-').map(Number);
           const tone = day.today ? (day.admits && schedule.state === 'OPEN' ? 'today' : 'today-off')
             : day.past ? 'off' : day.admits ? 'on' : 'off';
