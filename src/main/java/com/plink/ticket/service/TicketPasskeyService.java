@@ -34,7 +34,6 @@ import java.util.Optional;
 @Service
 public class TicketPasskeyService {
     private static final String PENDING = "plink.ticket.passkey.pending";
-    private static final String OTP_PREFIX = "plink.ticket.otp.";
     /** Public so the live channel can read it from the handshake's copy of the session. */
     public static final String VIEW_PREFIX = "plink.ticket.viewer.";
     /** How long one passkey check keeps a registered ticket open in this browser. */
@@ -91,11 +90,6 @@ public class TicketPasskeyService {
         }
     }
 
-    /** Marks this browser session as having proved control of the ticket's email inbox. */
-    public void markEmailVerified(HttpSession session, long ticketId, String email) {
-        session.setAttribute(OTP_PREFIX + ticketId, email);
-    }
-
     /**
      * Marks this browser as the holder's: it has just answered the ticket's passkey. A
      * registered ticket shows nothing of itself until this is true, so the link alone,
@@ -135,10 +129,7 @@ public class TicketPasskeyService {
         }
     }
 
-    public Optional<String> verifiedEmail(HttpSession session, long ticketId) {
-        Object value = session.getAttribute(OTP_PREFIX + ticketId);
-        return Optional.ofNullable(value == null ? null : value.toString());
-    }
+
 
     /**
      * Chooses the ceremony. A recipient opening a transfer link always registers, whatever
@@ -151,7 +142,7 @@ public class TicketPasskeyService {
     }
 
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
-            String rawToEmail, String rawClaimEmail, HttpSession session,
+            String rawToEmail, String rawContact, HttpSession session,
             Double lat, Double lon, Double accuracy) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Ticket ticket = resolved.ticket;
@@ -163,25 +154,16 @@ public class TicketPasskeyService {
         if (!claimed) {
             String expected = resolved.viaTransfer() ? resolved.claim.toEmail : ticket.issuedToEmail;
             EventSession claimSession = ticketService.requireSession(ticket.sessionId);
-            // With the policy off, holding the link is the whole claim. That is the
-            // trade the organiser chose; the address is still recorded either way.
-            Optional<String> proven = verifiedEmail(session, ticket.id)
-                .filter(value -> value.equalsIgnoreCase(expected));
-            if (claimSession.claimRequiresOtp) {
-                proven.orElseThrow(() -> new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "이메일 인증을 먼저 완료해 주세요."));
-            } else if (proven.isEmpty()) {
-                // The address is typed rather than proved. That is weaker than a code and
-                // is meant to be: it does not stop someone determined, it stops a link
-                // that was forwarded by mistake being claimed by whoever opened it.
-                String typed = EmailOtpService.normalize(rawClaimEmail == null ? "" : rawClaimEmail);
-                if (typed.isEmpty()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "입장권을 받은 이메일 주소를 입력해 주세요.");
-                }
-                if (!typed.equalsIgnoreCase(expected)) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "입장권을 받은 이메일과 일치하지 않아요. 받으신 주소를 다시 확인해 주세요.");
+            // The email or the phone the ticket went to, typed back. It does not stop
+            // someone determined; it stops a link forwarded by mistake being claimed by
+            // whoever opened it. An organiser who hands links over in person may switch
+            // it off, and then holding the link is the whole claim.
+            if (!claimSession.claimSkipCheck) {
+                String mismatch = TicketService.contactMismatch(rawContact, expected,
+                    resolved.viaTransfer() ? null : ticket.phone);
+                if (mismatch != null) {
+                    throw new ResponseStatusException(rawContact == null || rawContact.isBlank()
+                        ? HttpStatus.BAD_REQUEST : HttpStatus.FORBIDDEN, mismatch);
                 }
             }
             String email = expected;

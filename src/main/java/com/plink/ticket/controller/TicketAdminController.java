@@ -1211,7 +1211,7 @@ public class TicketAdminController {
         row.put("transferMax", session.transferMax);
         row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
         row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
-        row.put("claimRequiresOtp", session.claimRequiresOtp);
+        row.put("claimSkipCheck", session.claimSkipCheck);
         row.put("faceEnabled", session.faceEnabled);
         // How many faces turning it off would delete, so the console can say so first.
         row.put("faceEnrolled", faceRows.countEnrolled(session.id));

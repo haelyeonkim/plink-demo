@@ -34,7 +34,7 @@ public class EventSessionRepository {
         s.transferMax = rs.getInt("transfer_max");
         s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
         s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
-        s.claimRequiresOtp = rs.getBoolean("claim_requires_otp");
+        s.claimSkipCheck = rs.getBoolean("claim_skip_check");
         s.faceEnabled = rs.getBoolean("face_enabled");
         s.faceRequired = rs.getBoolean("face_required");
         s.reentryRequiresFace = rs.getBoolean("reentry_requires_face");
@@ -117,8 +117,8 @@ public class EventSessionRepository {
         return jdbc.update("DELETE FROM event_session WHERE id = ?", id);
     }
 
-    public void updateClaimPolicy(long id, boolean requiresOtp) {
-        jdbc.update("UPDATE event_session SET claim_requires_otp = ? WHERE id = ?", requiresOtp, id);
+    public void updateClaimPolicy(long id, boolean skipCheck) {
+        jdbc.update("UPDATE event_session SET claim_skip_check = ? WHERE id = ?", skipCheck, id);
     }
 
     public void updateInviteStatus(long id, String status) {

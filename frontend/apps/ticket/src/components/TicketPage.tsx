@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket, requestOtp, verifyOtp,
+  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket,
   type CommunitySummary, type InviteView, type TicketCoupon, type TicketSchedule, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
@@ -52,8 +52,10 @@ function inAppBrowser(): boolean {
   return IN_APP.some(pattern => pattern.test(navigator.userAgent));
 }
 
-function ticketRequiresNoOtp(ticket: TicketView | null): boolean {
-  return ticket != null && ticket.event.claimRequiresOtp === false;
+/** What the registration form asks to be typed: the email, or the email or phone. */
+function contactLabel(ticket: TicketView, welcoming: boolean): string {
+  if (welcoming) return ticket.event.claimByPhone ? '초대받은 이메일 또는 휴대폰 번호' : '초대받은 이메일';
+  return ticket.event.claimByPhone ? '입장권을 받은 이메일 또는 휴대폰 번호' : '입장권을 받은 이메일';
 }
 
 /**
@@ -102,9 +104,8 @@ export default function TicketPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  // The email or phone number the ticket went to, typed back to register or recover it.
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [stage, setStage] = useState<'email' | 'code' | 'passkey'>('email');
   const [grant, setGrant] = useState<Grant | null>(null);
   const [faceEnrolled, setFaceEnrolled] = useState(false);
   const [transferTo, setTransferTo] = useState('');
@@ -392,21 +393,9 @@ export default function TicketPage() {
     } finally { setBusy(false); }
   }
 
-  const sendCode = () => guard(async () => {
-    await requestOtp(sessionId, token, email);
-    setStage('code');
-    setNotice('인증번호를 보냈어요. 메일함을 확인해 주세요.');
-  });
-
-  const checkCode = () => guard(async () => {
-    await verifyOtp(sessionId, token, email, code);
-    setStage('passkey');
-    setNotice('이메일 확인이 끝났어요. 이제 이 기기를 입장권에 등록해 주세요.');
-  });
-
   const claim = () => guard(async () => {
     const result = await sealed('claim', onStage =>
-      runCeremony(sessionId, token, { email: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
+      runCeremony(sessionId, token, { contact: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
     const viaTransfer = result.mode === 'register' ? result.viaTransfer
       : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
     setNotice(viaTransfer
@@ -489,18 +478,11 @@ export default function TicketPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket?.locked]);
 
-  // The holder on a new phone has no passkey here: the mailbox proves it is theirs, and
-  // a fresh link goes to it.
+  // The holder on a new phone has no passkey here: the email or phone the ticket went to
+  // is typed back, and a fresh link goes to that email - never to whoever typed it.
   const [recovering, setRecovering] = useState(false);
-  const sendRecoveryCode = () => guard(async () => {
-    await requestOtp(sessionId, token, email);
-    setStage('code');
-    // The server answers alike for any address, so the page cannot say more than this.
-    setNotice('입장권을 받은 주소가 맞다면 인증번호가 메일로 갔어요. 메일함을 확인해 주세요.');
-  });
-  const recoverByEmail = () => guard(async () => {
-    await verifyOtp(sessionId, token, email, code);
-    const result = await reissueTicket(sessionId, token);
+  const recoverByContact = () => guard(async () => {
+    const result = await reissueTicket(sessionId, token, email.trim());
     recoveredRef.current = true;
     setRecovering(false);
     setRecoveredTo(String(result.sentTo));
@@ -570,35 +552,24 @@ export default function TicketPage() {
           {/* Not on the registered phone: the only way forward is a new link to the
               mailbox, which retires this one. */}
           <button className="manage-toggle" aria-expanded={recovering}
-            onClick={() => { setRecovering(value => !value); setStage('email'); setError(''); }}>
+            onClick={() => { setRecovering(value => !value); setError(''); }}>
             휴대폰을 바꿨거나 패스키가 없어요
             <span className="entity-chevron" aria-hidden="true">{recovering ? '▴' : '▾'}</span>
           </button>
           {recovering && (
             <div className="manage-panel">
               <p className="hint-text">
-                입장권을 받은 이메일로 인증하면 새 링크를 보내 드려요. 새 링크로 이 휴대폰에 다시
-                등록하면 이전 기기와 지금 링크는 사용할 수 없게 됩니다.
+                입장권을 받은 이메일이나 휴대폰 번호를 입력하면, 그 입장권의 이메일로 새 링크를 보내 드려요.
+                새 링크로 이 휴대폰에 다시 등록하면 이전 기기와 지금 링크는 사용할 수 없게 됩니다.
               </p>
-              {stage !== 'code' ? (
-                <form onSubmit={e => { e.preventDefault(); sendRecoveryCode(); }}>
-                  <div className="field">
-                    <label htmlFor="recover-email">입장권을 받은 이메일</label>
-                    <input id="recover-email" type="email" autoComplete="email" required
-                      value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-                  </div>
-                  <button className="btn-secondary" type="submit" disabled={busy}>인증번호 받기</button>
-                </form>
-              ) : (
-                <form onSubmit={e => { e.preventDefault(); recoverByEmail(); }}>
-                  <div className="field">
-                    <label htmlFor="recover-code">인증번호 6자리</label>
-                    <input id="recover-code" inputMode="numeric" maxLength={6} required
-                      value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} />
-                  </div>
-                  <button className="btn-secondary" type="submit" disabled={busy}>확인하고 새 링크 받기</button>
-                </form>
-              )}
+              <form onSubmit={e => { e.preventDefault(); recoverByContact(); }}>
+                <div className="field">
+                  <label htmlFor="recover-contact">입장권을 받은 이메일 또는 휴대폰 번호</label>
+                  <input id="recover-contact" autoComplete="email" required value={email}
+                    onChange={e => setEmail(e.target.value)} placeholder="you@example.com 또는 01012345678" />
+                </div>
+                <button className="btn-secondary" type="submit" disabled={busy || !email.trim()}>새 링크 받기</button>
+              </form>
             </div>
           )}
         </div>
@@ -617,7 +588,8 @@ export default function TicketPage() {
     );
   }
 
-  const skipOtp = ticketRequiresNoOtp(ticket);
+  // An organiser who hands links over in person may let the link stand alone.
+  const skipCheck = ticket.event.claimSkipCheck === true;
 
 
   // An event over several days: which of them this ticket admits, and whether it is over.
@@ -880,59 +852,33 @@ export default function TicketPage() {
           <>
             {!welcoming && <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>}
             <p className="hint-text">
-              {welcoming
-                ? skipOtp ? '초대받은 이메일을 적으면 이 휴대폰에 입장권이 등록돼요.'
-                  : '초대받은 이메일로 본인 확인을 한 뒤 이 휴대폰에 입장권이 등록돼요.'
+              {skipCheck
+                ? '이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
                 : ticket.role === 'RECIPIENT'
-                ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
-                : skipOtp
-                  ? '입장권을 받은 이메일 주소를 입력하면 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
-                  : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
+                ? '양도받은 이메일을 입력하면 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
+                : welcoming
+                  ? (ticket.event.claimByPhone ? '초대받은 이메일이나 휴대폰 번호를 적으면' : '초대받은 이메일을 적으면')
+                    + ' 이 휴대폰에 입장권이 등록돼요.'
+                  : (ticket.event.claimByPhone ? '입장권을 받은 이메일이나 휴대폰 번호를 입력하면' : '입장권을 받은 이메일을 입력하면')
+                    + ' 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'}
             </p>
-            {skipOtp ? (
-              /* No code to prove the inbox, so the address is typed instead: it catches a
-                 link that reached the wrong person by mistake. */
-              <form onSubmit={e => { e.preventDefault(); claim(); }}>
+            {/* The email or phone the ticket went to, typed back: it catches a link that
+                reached the wrong person by mistake. Off when the organiser chose so. */}
+            <form onSubmit={e => { e.preventDefault(); claim(); }}>
+              {!skipCheck && (
                 <div className="field">
-                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '입장권을 받은 이메일'}</label>
-                  <input id="ticket-email" type="email" autoComplete="email" required
-                    value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+                  <label htmlFor="ticket-email">{contactLabel(ticket, welcoming)}</label>
+                  <input id="ticket-email" type={ticket.event.claimByPhone ? 'text' : 'email'}
+                    inputMode={ticket.event.claimByPhone ? 'text' : 'email'} autoComplete="email" required
+                    value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder={ticket.event.claimByPhone ? 'you@example.com 또는 01012345678' : 'you@example.com'} />
                 </div>
-                <button className="btn-primary" type="submit"
-                  disabled={busy || !email.trim() || !supportsPasskeys()}>
-                  이 휴대폰에 등록하기
-                </button>
-              </form>
-            ) : (<>
-            {stage === 'email' && (
-              <form onSubmit={e => { e.preventDefault(); sendCode(); }}>
-                <div className="field">
-                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '이메일'}</label>
-                  <input id="ticket-email" type="email" autoComplete="email" required
-                    value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-                </div>
-                <button className="btn-primary" type="submit" disabled={busy}>인증번호 받기</button>
-              </form>
-            )}
-            {stage === 'code' && (
-              <form onSubmit={e => { e.preventDefault(); checkCode(); }}>
-                <div className="field">
-                  <label htmlFor="ticket-code">인증번호 6자리</label>
-                  <input id="ticket-code" inputMode="numeric" maxLength={6} required
-                    value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} />
-                </div>
-                <button className="btn-primary" type="submit" disabled={busy}>확인</button>
-                <button className="btn-secondary" type="button" onClick={() => setStage('email')} disabled={busy}>
-                  이메일 다시 입력
-                </button>
-              </form>
-            )}
-            {stage === 'passkey' && (
-              <button className="btn-primary" onClick={claim} disabled={busy || !supportsPasskeys()}>
+              )}
+              <button className="btn-primary" type="submit"
+                disabled={busy || (!skipCheck && !email.trim()) || !supportsPasskeys()}>
                 이 휴대폰에 등록하기
               </button>
-            )}
-            </>)}
+            </form>
             {welcoming && (
               <p className="invite-hero-foot">이 입장권은 내 이름으로 발급됐어요.<br />등록하면 초대한 분의 일행으로 묶여요.</p>
             )}

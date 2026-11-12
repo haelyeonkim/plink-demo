@@ -68,8 +68,8 @@ export async function runCeremony(
   sessionId: string, token: string,
   options_: {
     direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER' | 'VIEW'; toEmail?: string;
-    /** The address the ticket was issued to, typed back when no code was required. */
-    email?: string;
+    /** The email or phone number the ticket was issued to, typed back to register it. */
+    contact?: string;
     /**
      * Told where the ceremony has got to. A callback that returns a promise is waited
      * for, so a screen narrating the steps can hold the authenticator back until the

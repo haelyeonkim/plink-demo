@@ -1014,7 +1014,7 @@ export default function TicketAdmin() {
         reentryGraceMinutes: Number(data.get('reentryGraceMinutes')),
         reentryCooldownSeconds: Number(data.get('reentryCooldownSeconds')),
         exitScanRequired: data.get('exitScanRequired') === 'on',
-        claimRequiresOtp: data.get('claimRequiresOtp') === 'on',
+        claimSkipCheck: data.get('claimSkipCheck') === 'on',
         unmatchedExit: data.get('unmatchedExit'),
         dayCloseExit: data.get('dayCloseExit') === 'on',
         dayCloseHour: Number(data.get('dayCloseHour') ?? 0),
@@ -1832,12 +1832,12 @@ export default function TicketAdmin() {
                 </div>
               </div>
               <label className="field-inline">
-                <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
-                등록 시 이메일 인증 필요
-                <InfoTip label="등록 시 이메일 인증">
-                  이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
-                  뿌리는 이벤트라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
-                  인증을 요구합니다.
+                <input name="claimSkipCheck" type="checkbox" defaultChecked={session.claimSkipCheck} />
+                등록할 때 이메일·휴대폰 확인 안 함
+                <InfoTip label="등록할 때 이메일·휴대폰 확인 안 함">
+                  기본으로는 관람객이 입장권을 받은 <b>이메일이나 휴대폰 번호</b>를 입력해야 등록돼요. 잘못 전달된 링크를
+                  다른 사람이 등록하는 것을 막아 줘요. 현장에서 링크를 직접 나눠 줄 때처럼 확인이 필요 없을 때만 켜세요.
+                  켜면 링크를 가진 사람이 곧 보유자가 됩니다.
                 </InfoTip>
               </label>
             </form>
