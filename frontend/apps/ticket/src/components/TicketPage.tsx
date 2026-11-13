@@ -97,6 +97,22 @@ function dayTimeText(value: string): string {
     + d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 }
 
+/**
+ * When the event is: its start for one day, or its first and last open days for an event
+ * over days, whose hours the list of days says.
+ */
+function whenText(event: { startsAt: string; schedule?: TicketSchedule | null }, one: (value: string) => string): string {
+  const open = (event.schedule?.days ?? []).filter(day => !day.closed);
+  if (open.length < 2) return one(event.startsAt);
+  const say = (day: { date: string; weekday: string }, year: boolean) => {
+    const [y, m, d] = day.date.split('-').map(Number);
+    return `${year ? `${y}. ` : ''}${m}. ${d}. (${day.weekday})`;
+  };
+  const first = open[0], last = open[open.length - 1];
+  const years = first.date.slice(0, 4) !== last.date.slice(0, 4);
+  return `${say(first, years)} – ${say(last, years)}`;
+}
+
 export default function TicketPage() {
   const { sessionId = '', token = '' } = useParams<{ sessionId: string; token: string }>();
   const [ticket, setTicket] = useState<TicketView | null>(null);
@@ -531,7 +547,7 @@ export default function TicketPage() {
           <p className="eyebrow center"><span></span> {ticket.event.name}</p>
           <h2>본인 확인이 필요해요</h2>
           <dl className="ticket-meta">
-            <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
+            <dt>일시</dt><dd>{whenText(ticket.event, timeText)}</dd>
             {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           </dl>
           <p className="hint-text">
@@ -702,7 +718,7 @@ export default function TicketPage() {
             <p><b>{invitation.by}</b> 님이 초대했어요</p>
             <h2>{ticket.event.name}에<br />함께 가요</h2>
             <dl className="invite-hero-facts">
-              <dt>일시</dt><dd>{dayTimeText(ticket.event.startsAt)}</dd>
+              <dt>일시</dt><dd>{whenText(ticket.event, dayTimeText)}</dd>
               {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
               <dt>일행</dt><dd>{invitation.groupSize}명이 함께해요</dd>
             </dl>
@@ -725,7 +741,7 @@ export default function TicketPage() {
         </>)}
 
         {!welcoming && <dl className="ticket-meta">
-          <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
+          <dt>일시</dt><dd>{whenText(ticket.event, timeText)}</dd>
           {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           {ticket.tier && <><dt>등급</dt><dd>{ticket.tier}</dd></>}
           <dt>등록 이메일</dt><dd>{ticket.holderEmailMasked}</dd>

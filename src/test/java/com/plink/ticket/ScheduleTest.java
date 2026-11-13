@@ -86,6 +86,36 @@ class ScheduleTest {
         assertFalse(schedule.ended(event(id), at("2031-01-01T12:00")));
     }
 
+    @Test void theDaysSayWhenTheEventStarts() {
+        long id = sessions.insert("시작 이벤트 " + Secrets.randomAlnum(6), null,
+            Timestamp.from(at("2030-05-01T19:00")), Timestamp.from(at("2030-05-01T18:00")));
+        sessions.updateDayClose(id, false, 4);
+        schedule.saveDays(id, List.of(
+            Map.of("date", "2030-05-10", "label", "DAY 0", "closed", true),
+            Map.of("date", "2030-05-11", "label", "DAY 1", "opensAt", "10:00", "closesAt", "21:00"),
+            Map.of("date", "2030-05-12", "label", "DAY 2")));
+        // The first open day at its opening; each day's hours replace the single door time.
+        assertEquals(at("2030-05-11T10:00"), event(id).startsAt.toInstant());
+        assertNull(event(id).gateOpensAt);
+
+        // Saving the details cannot pull the start away from the days.
+        admin.updateSession(id, Map.of("name", "이름만 바꿈", "startsAt", "2030-06-01T00:00:00Z",
+            "gateOpensAt", "2030-05-31T23:00:00Z"));
+        assertEquals("이름만 바꿈", event(id).name);
+        assertEquals(at("2030-05-11T10:00"), event(id).startsAt.toInstant());
+        assertNull(event(id).gateOpensAt);
+
+        // A first day open all day starts when the venue's day turns.
+        schedule.saveDays(id, List.of(Map.of("date", "2030-05-12", "label", "DAY 2")));
+        assertEquals(at("2030-05-12T04:00"), event(id).startsAt.toInstant());
+
+        // Back to one day: the start stays, and the details set it again.
+        schedule.saveDays(id, List.of());
+        assertEquals(at("2030-05-12T04:00"), event(id).startsAt.toInstant());
+        admin.updateSession(id, Map.of("name", "하루", "startsAt", "2030-06-01T10:00:00Z"));
+        assertEquals(Instant.parse("2030-06-01T10:00:00Z"), event(id).startsAt.toInstant());
+    }
+
     @Test void aPassAdmitsOnlyOnItsDays() {
         long id = threeDays();
         Ticket everyDay = ticket(id, null);

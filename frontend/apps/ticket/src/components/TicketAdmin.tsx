@@ -24,7 +24,7 @@ import ConsoleCoupons from './ConsoleCoupons';
 import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, eventTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -1160,7 +1160,7 @@ export default function TicketAdmin() {
           <div className="console-head">
             <div>
               <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
-              <p>{dayTime(session.startsAt)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
+              <p>{eventTime(session)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
                 {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
             </div>
             <div className="console-actions">
@@ -1708,7 +1708,7 @@ export default function TicketAdmin() {
                   <InfoTip label="이벤트 정보">관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</InfoTip></h3>
               </div>
               <div className="settings-body">
-            <form key={`details-${session.id}`} className="settings-form" ref={settingsForms.details}
+            <form key={`details-${session.id}`} id="settings-details" className="settings-form" ref={settingsForms.details}
               onChange={() => markSettingsDirty('details')}
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="field">
@@ -1718,22 +1718,6 @@ export default function TicketAdmin() {
               <div className="field">
                 <label htmlFor="event-venue">장소</label>
                 <input id="event-venue" name="venue" defaultValue={session.venue ?? ''} />
-              </div>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="event-starts">이벤트 시각</label>
-                  <input id="event-starts" name="startsAt" type="datetime-local" required
-                    defaultValue={localInput(session.startsAt)} />
-                </div>
-                <div className="field">
-                  <label htmlFor="event-gate">입장 시각 (선택)
-                    <InfoTip label="입장 시각">
-                      입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
-                      있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
-                    </InfoTip></label>
-                  <input id="event-gate" name="gateOpensAt" type="datetime-local"
-                    defaultValue={localInput(session.gateOpensAt)} />
-                </div>
               </div>
               <label className="field-inline">
                 <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
@@ -1750,13 +1734,34 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-schedule-title">일정
                   <InfoTip label="일정">
-                    <p>여러 날 진행하는 이벤트의 날짜와 날짜별 입장 시간, 휴관일을 정해요. 마지막 운영일의 입장 마감이 이벤트가 끝나는 시각이에요.</p>
-                    <p>입장권 종류를 만들면 토요일권, 주말권처럼 들어올 수 있는 날을 입장권마다 정할 수 있어요.</p>
+                    <p>이벤트가 언제 열리는지 정해요. 하루짜리는 시작 시각과 입장 시작 시각을, 여러 날은 날짜별 입장 시간과 휴관일을 정해요.</p>
+                    <p>여러 날이면 첫 운영일의 입장 시작이 이벤트 시작, 마지막 운영일의 입장 마감이 이벤트 끝이에요.
+                      입장권 종류를 만들면 토요일권, 주말권처럼 들어올 수 있는 날을 입장권마다 정할 수 있어요.</p>
                   </InfoTip></h3>
               </div>
               <div className="settings-body">
                 <ScheduleSettings key={`schedule-${session.id}`} sessionId={session.id} startsAt={localInput(session.startsAt)}
-                  schedule={schedule} onChanged={() => loadSchedule(session.id)} onNotice={setNotice} onError={setError} />
+                  gateOpensAt={localInput(session.gateOpensAt)}
+                  schedule={schedule} onChanged={async () => { await loadSchedule(session.id); await loadSessions(); }}
+                  onNotice={setNotice} onError={setError}>
+                  {/* One day: its times belong to the event's details and save with them. */}
+                  <div className="form-row">
+                    <div className="field">
+                      <label htmlFor="event-starts">시작 시각</label>
+                      <input id="event-starts" name="startsAt" type="datetime-local" required form="settings-details"
+                        defaultValue={localInput(session.startsAt)} onChange={() => markSettingsDirty('details')} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="event-gate">입장 시작 (선택)
+                        <InfoTip label="입장 시작">
+                          정하면 그 전에는 게이트가 입장을 거부해요. 비워 두면 언제든 입장할 수 있어요.
+                          시각을 바꿔도 이미 발급한 입장권은 그대로 쓰여요.
+                        </InfoTip></label>
+                      <input id="event-gate" name="gateOpensAt" type="datetime-local" form="settings-details"
+                        defaultValue={localInput(session.gateOpensAt)} onChange={() => markSettingsDirty('details')} />
+                    </div>
+                  </div>
+                </ScheduleSettings>
               </div>
             </section>
             <section id="settings-policy" className="settings-section" aria-labelledby="settings-policy-title">

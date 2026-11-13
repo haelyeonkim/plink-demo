@@ -15,6 +15,8 @@ export interface SessionRow {
   testEvent: boolean;
   /** When an event over days ends; null for an event of one day. */
   scheduleEndsAt?: string | null;
+  /** The first and last open days of an event over days, as "2026-11-21"; null for one day. */
+  scheduleFirstDay?: string | null; scheduleLastDay?: string | null;
   /** Close open entries once the venue's day turns over, at this hour (venue time). */
   dayCloseExit: boolean; dayCloseHour: number;
   seats: string[]; tiers: string[];
@@ -239,6 +241,23 @@ export function dayTime(value: string | null): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} (${'일월화수목금토'[d.getDay()]}) `
     + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * When the event is, as a list or a header says it: "11.08 (일) 10:00" for an event of
+ * one day, "11.21 (토) – 11.23 (월)" for one over days, with the years when they differ.
+ */
+export function eventTime(session: Pick<SessionRow, 'startsAt' | 'scheduleFirstDay' | 'scheduleLastDay'>): string {
+  const first = session.scheduleFirstDay, last = session.scheduleLastDay;
+  if (!first || !last) return dayTime(session.startsAt);
+  const say = (iso: string, year: boolean) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const weekday = '일월화수목금토'[new Date(y, m - 1, d).getDay()];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${year ? `${y}.` : ''}${pad(m)}.${pad(d)} (${weekday})`;
+  };
+  const years = first.slice(0, 4) !== last.slice(0, 4);
+  return first === last ? say(first, false) : `${say(first, years)} – ${say(last, years)}`;
 }
 
 /** "09:30": the time alone, for a day the row has already named. */

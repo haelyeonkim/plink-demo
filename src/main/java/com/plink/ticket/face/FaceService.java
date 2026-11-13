@@ -38,7 +38,9 @@ public class FaceService {
 
     public FaceService(FaceRepository faces, TicketRepository tickets, TicketService ticketService,
             FaceEmbedder embedder, TemplateCipher cipher, TicketProperties properties,
-            com.plink.ticket.repository.AdmissionRepository admissions) {
+            com.plink.ticket.repository.AdmissionRepository admissions,
+            com.plink.ticket.schedule.ScheduleService schedule) {
+        this.schedule = schedule;
         this.faces = faces;
         this.tickets = tickets;
         this.ticketService = ticketService;
@@ -46,6 +48,14 @@ public class FaceService {
         this.cipher = cipher;
         this.properties = properties;
         this.admissions = admissions;
+    }
+
+    private final com.plink.ticket.schedule.ScheduleService schedule;
+
+    /** Faces are kept for the retention days after the event: after its last day, when it runs over days. */
+    private Timestamp keptUntil(EventSession session) {
+        java.time.Instant from = schedule.endsAt(session).orElse(session.startsAt.toInstant());
+        return Timestamp.from(from.plus(session.faceRetentionDays, ChronoUnit.DAYS));
     }
 
     public static final String PURPOSES = "게이트 본인 확인, 중복 등록 방지";
@@ -97,8 +107,7 @@ public class FaceService {
                 "동의하지 않으면 얼굴 등록을 진행할 수 없어요. 패스키만으로도 입장할 수 있습니다.");
         }
         EventSession session = requireEnabled(ticket.sessionId);
-        Timestamp retainUntil = Timestamp.from(session.startsAt.toInstant()
-            .plus(session.faceRetentionDays, ChronoUnit.DAYS));
+        Timestamp retainUntil = keptUntil(session);
         faces.recordConsent(ticket.id, email, properties.getFace().getConsentVersion(), PURPOSES, retainUntil);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -162,8 +171,7 @@ public class FaceService {
         }
 
         EventSession session = ticketService.requireSession(ticket.sessionId);
-        Timestamp purgeAfter = Timestamp.from(session.startsAt.toInstant()
-            .plus(session.faceRetentionDays, ChronoUnit.DAYS));
+        Timestamp purgeAfter = keptUntil(session);
         faces.saveTemplate(ticket.id, ticket.sessionId, vector.algoVersion, vector.values.length,
             vector.quality, cipher.seal(vector.values), purgeAfter);
         faces.recordAttempt(ticket.sessionId, ticket.id, null, "ENROL", "ENROLLED",

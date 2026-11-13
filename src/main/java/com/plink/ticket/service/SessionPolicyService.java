@@ -29,10 +29,13 @@ public class SessionPolicyService {
     private final TicketFieldRepository fields;
     private final InviteQuotaRepository inviteQuotas;
     private final com.plink.ticket.repository.FaceRepository faces;
+    private final com.plink.ticket.schedule.ScheduleService schedule;
 
     public SessionPolicyService(EventSessionRepository sessions, TicketFieldRepository fields,
-            InviteQuotaRepository inviteQuotas, com.plink.ticket.repository.FaceRepository faces) {
+            InviteQuotaRepository inviteQuotas, com.plink.ticket.repository.FaceRepository faces,
+            com.plink.ticket.schedule.ScheduleService schedule) {
         this.faces = faces;
+        this.schedule = schedule;
         this.sessions = sessions;
         this.fields = fields;
         this.inviteQuotas = inviteQuotas;
@@ -70,7 +73,11 @@ public class SessionPolicyService {
         if (plan.seatsSent) writeThrough(id, "좌석", "SEAT", plan.seats);
         if (plan.tiersSent) writeThrough(id, "등급", "TIER", plan.tiers);
         if (plan.crowd != null) sessions.updateCrowdLevels(id, plan.crowd.busy, plan.crowd.steady);
-        if (plan.dayClose != null) sessions.updateDayClose(id, plan.dayClose.exit, plan.dayClose.hour);
+        if (plan.dayClose != null) {
+            sessions.updateDayClose(id, plan.dayClose.exit, plan.dayClose.hour);
+            // A day's hours are read from the hour it turns, so the first day's opening moves with it.
+            schedule.syncStart(id);
+        }
         if (plan.claimSkipCheck != null) sessions.updateClaimPolicy(id, plan.claimSkipCheck);
         if (plan.geo != null) {
             sessions.updateGeoPolicy(id, plan.geo.lat, plan.geo.lon, plan.geo.radiusMeters, plan.geo.mode);
