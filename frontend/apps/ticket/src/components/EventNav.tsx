@@ -1,5 +1,5 @@
 import ConsoleNav, { NAV_ICONS, type ConsoleNavEntry } from '@shared/components/ConsoleNav';
-import { dayTime, eventWhen, type SessionRow } from '../console/model';
+import { eventTime, eventWhen, type SessionRow } from '../console/model';
 
 export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'venue' | 'settings';
 
@@ -45,7 +45,7 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
       card={<>
         <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'out' : 'in'}`}>{WHEN_LABEL[when]}</span>
         <strong>{session.name}</strong>
-        <span>{dayTime(session.startsAt)}{session.venue ? <><br />{session.venue}</> : null}</span>
+        <span>{eventTime(session)}{session.venue ? <><br />{session.venue}</> : null}</span>
       </>} />
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { clock, dayTime, eventWhen, percent, type SessionRow } from '../console/model';
+import { clock, eventTime, eventWhen, percent, type SessionRow } from '../console/model';
 
 type Period = 'all' | 'active' | 'past';
 
@@ -94,8 +94,8 @@ export default function EventTable({ sessions, loading }: { sessions: SessionRow
                     <Link to={`/tickets/admin/${row.id}`}>{row.name}</Link>
                     {row.testEvent && <span className="pill pill-warn">테스트</span>}
                   </td>
-                  <td>{dayTime(row.startsAt)}</td>
-                  <td className="muted">{row.gateOpensAt ? clock(row.gateOpensAt) : '–'}</td>
+                  <td>{eventTime(row)}</td>
+                  <td className="muted">{row.scheduleFirstDay ? '날짜별' : row.gateOpensAt ? clock(row.gateOpensAt) : '–'}</td>
                   <td className="muted">{row.venue || '–'}</td>
                   <td className="num strong">{issued.toLocaleString()}</td>
                   <td>

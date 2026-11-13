@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { mutate } from '@shared/auth';
 import InfoTip from '@shared/components/InfoTip';
 import { dayShort, hourLabel, read, type PassRow, type ScheduleDay, type ScheduleView } from '../console/model';
@@ -30,13 +30,16 @@ function between(start: string, end: string, kept: ScheduleDay[]): ScheduleDay[]
 }
 
 /**
- * An event over several days: its days, with hours and rest days, and the kinds of
- * ticket by the days they admit. Saved on its own, not by the settings bar: a pass
- * names days, so the days have to exist first.
+ * When the event runs. One day is its start and door time, which {@code children} holds
+ * and the event's details save. Over several days it is the days, with hours and rest
+ * days, and the kinds of ticket by the days they admit; the first day's opening becomes
+ * the event's start. Days save on their own, not by the settings bar: a pass names days,
+ * so the days have to exist first.
  */
-export default function ScheduleSettings({ sessionId, startsAt, schedule, onChanged, onNotice, onError }: {
-  sessionId: number; startsAt: string; schedule: ScheduleView | null;
+export default function ScheduleSettings({ sessionId, startsAt, gateOpensAt, schedule, onChanged, onNotice, onError, children }: {
+  sessionId: number; startsAt: string; gateOpensAt: string; schedule: ScheduleView | null;
   onChanged: () => Promise<void> | void; onNotice: (text: string) => void; onError: (text: string) => void;
+  children: ReactNode;
 }) {
   const base = `/api/admin/sessions/${sessionId}/schedule`;
   const saved = schedule?.days ?? [];
@@ -65,12 +68,18 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
 
   return (
     <div className="schedule-settings">
-      {days.length === 0 ? (
+      {days.length === 0 ? (<>
+        {children}
         <div className="schedule-empty">
-          <p>하루짜리 이벤트예요. 여러 날 진행하면 일정을 만들어 날짜별 입장 시간과 입장권 종류를 정할 수 있어요.</p>
-          <button className="btn-secondary" type="button" onClick={() => setDays(between(first, first, []))}>일정 만들기</button>
+          <p>여러 날 진행하면 날짜별 입장 시간과 휴관일, 입장권 종류를 정할 수 있어요.</p>
+          <button className="btn-secondary" type="button" onClick={() => {
+            // The day already set carries over: its date, and its door time as the first day's opening.
+            const [day] = between(first, first, []);
+            const opens = (gateOpensAt || startsAt).slice(11, 16);
+            setDays([{ ...day, opensAt: opens || null }]);
+          }}>여러 날 진행하기</button>
         </div>
-      ) : (<>
+      </>) : (<>
         <div className="schedule-range">
           <label>시작일<input type="date" value={first} max={last}
             onChange={e => { if (e.target.value) setDays(between(e.target.value, last < e.target.value ? e.target.value : last, days)); }} /></label>
@@ -107,18 +116,19 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
           <button className="btn-tiny schedule-fold" type="button" onClick={() => setUnfolded(value => !value)}>
             {unfolded ? '앞의 14일만 보기' : `나머지 ${(days.length - FOLDED).toLocaleString()}일도 보기`}</button>
         )}
-        <p className="muted settings-note">시간을 비워 두면 그날 하루 종일 입장할 수 있어요. 마지막 운영일의 입장 마감이 지나면 이벤트가 끝나고,
-          입장권은 '종료됨'이 돼요.</p>
+        <p className="muted settings-note">시간을 비워 두면 그날 하루 종일 입장할 수 있어요. 첫 운영일의 입장 시작이 이벤트 시작이 되고,
+          마지막 운영일의 입장 마감이 지나면 이벤트가 끝나 입장권은 '종료됨'이 돼요.</p>
         <div className="button-row">
           <button className="btn-primary" type="button" disabled={busy || !dirty}
             onClick={() => void send(`${base}/days`, 'PUT', { days }, '일정을 저장했어요. 입장권과 게이트에 바로 반영돼요.')}>일정 저장</button>
-          {dirty && <button className="btn-secondary" type="button" onClick={() => setDays(saved)}>되돌리기</button>}
+          {dirty && <button className="btn-secondary" type="button" onClick={() => setDays(saved)}>
+            {saved.length === 0 ? '취소' : '되돌리기'}</button>}
           {saved.length > 0 && (
             <button className="btn-tiny btn-tiny-danger" type="button" disabled={busy} onClick={() => {
-              if (window.confirm('일정을 없애면 하루짜리 이벤트처럼 모든 입장권이 날짜와 상관없이 입장해요. 없앨까요?')) {
-                void send(`${base}/days`, 'PUT', { days: [] }, '일정을 없앴어요.');
+              if (window.confirm('하루짜리 이벤트로 바꾸면 모든 입장권이 날짜와 상관없이 입장해요. 시작 시각은 첫 운영일로 남아요. 바꿀까요?')) {
+                void send(`${base}/days`, 'PUT', { days: [] }, '하루짜리 이벤트로 바꿨어요.');
               }
-            }}>일정 없애기</button>
+            }}>하루짜리로 바꾸기</button>
           )}
         </div>
       </>)}

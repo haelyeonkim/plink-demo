@@ -98,6 +98,11 @@ public class EventSessionRepository {
             + "WHERE id = ?", name, venue, startsAt, gateOpensAt, id);
     }
 
+    /** When the event starts, as its schedule's first day says, with no separate door time. */
+    public void updateStart(long id, Timestamp startsAt) {
+        jdbc.update("UPDATE event_session SET starts_at = ?, gate_opens_at = NULL WHERE id = ?", startsAt, id);
+    }
+
     public void updateDayClose(long id, boolean dayCloseExit, int dayCloseHour) {
         jdbc.update("UPDATE event_session SET day_close_exit = ?, day_close_hour = ? WHERE id = ?",
             dayCloseExit, dayCloseHour, id);

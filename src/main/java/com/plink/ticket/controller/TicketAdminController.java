@@ -162,6 +162,11 @@ public class TicketAdminController {
         Timestamp gateOpensAt = body.get("gateOpensAt") == null || body.get("gateOpensAt").isBlank()
             ? null
             : timestamp(body.get("gateOpensAt"), "입장 시각을 ISO 형식으로 입력해 주세요.");
+        if (schedule.scheduled(id)) {
+            // The days say when it starts and when each day's doors open.
+            startsAt = current.startsAt;
+            gateOpensAt = null;
+        }
         if (gateOpensAt != null && gateOpensAt.after(startsAt)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "입장 시각은 시작 시각보다 앞서야 해요.");
@@ -1199,6 +1204,9 @@ public class TicketAdminController {
         row.put("testEvent", session.testEvent);
         // An event over days runs until its last day closes, not just on the day it starts.
         row.put("scheduleEndsAt", schedule.endsAt(session).map(Instant::toString).orElse(null));
+        java.util.Optional<java.time.LocalDate[]> span = schedule.span(session);
+        row.put("scheduleFirstDay", span.map(s -> s[0].toString()).orElse(null));
+        row.put("scheduleLastDay", span.map(s -> s[1].toString()).orElse(null));
         row.put("dayCloseExit", session.dayCloseExit);
         row.put("dayCloseHour", session.dayCloseHour);
         row.put("reentryMode", session.reentryMode);

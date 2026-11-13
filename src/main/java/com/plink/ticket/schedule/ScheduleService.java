@@ -31,7 +31,8 @@ import java.util.regex.Pattern;
  * turning at four in the morning, a day that closes at 01:00 closes after it opened.
  *
  * <p>An event with no days set has no schedule: every ticket enters any day and the event
- * never ends, as before.
+ * never ends, as before. An event with days takes its start from them: its first open day,
+ * at that day's opening, and each day's hours replace the single door time.
  */
 @Service
 public class ScheduleService {
@@ -101,6 +102,7 @@ public class ScheduleService {
             List<LocalDate> kept = pass.days().stream().filter(seen::contains).toList();
             if (kept.size() != pass.days().size()) repo.updatePass(pass.id(), pass.name(), kept);
         }
+        syncStart(event, days);
         return console(sessionId);
     }
 
@@ -185,6 +187,36 @@ public class ScheduleService {
         return Optional.empty();
     }
 
+    /** Whether the event runs by days, which then say when it starts and when doors open. */
+    public boolean scheduled(long sessionId) {
+        return !repo.days(sessionId).isEmpty();
+    }
+
+    /**
+     * Moves the event's start to its first open day's opening, after the days or the hour
+     * the day turns at change. An event without days, or with every day closed, keeps the
+     * start it was given.
+     */
+    public void syncStart(long sessionId) {
+        EventSession event = requireSession(sessionId);
+        syncStart(event, repo.days(sessionId));
+    }
+
+    private void syncStart(EventSession event, List<ScheduleRepository.Day> days) {
+        days.stream().filter(d -> !d.closed()).findFirst().ifPresent(first -> {
+            Instant start = dayStart(event, first.date());
+            if (first.opensAt() != null) start = start.plusSeconds(shifted(first.opensAt(), event.dayCloseHour) * 60L);
+            sessions.updateStart(event.id, java.sql.Timestamp.from(start));
+        });
+    }
+
+    /** The first and last open days, for saying how long the event runs. Empty without days. */
+    public Optional<LocalDate[]> span(EventSession event) {
+        List<ScheduleRepository.Day> open = repo.days(event.id).stream().filter(d -> !d.closed()).toList();
+        if (open.isEmpty()) return Optional.empty();
+        return Optional.of(new LocalDate[] { open.get(0).date(), open.get(open.size() - 1).date() });
+    }
+
     /** When the event ends: its last open day's close. Empty for an event without days. */
     public Optional<Instant> endsAt(EventSession event) {
         List<ScheduleRepository.Day> days = repo.days(event.id);
@@ -202,12 +234,16 @@ public class ScheduleService {
     }
 
     private Optional<Instant> endsAt(EventSession event, List<ScheduleRepository.Day> days) {
-        ZoneId zone = properties.venueZoneId();
         return days.stream().filter(d -> !d.closed()).reduce((a, b) -> b).map(last -> {
-            Instant start = last.date().atStartOfDay().plusHours(event.dayCloseHour).atZone(zone).toInstant();
+            Instant start = dayStart(event, last.date());
             return last.closesAt() == null ? start.plusSeconds(24 * 3600)
                 : start.plusSeconds(shifted(last.closesAt(), event.dayCloseHour) * 60L);
         });
+    }
+
+    /** When a venue day begins: its date at the hour the day turns. */
+    private Instant dayStart(EventSession event, LocalDate date) {
+        return date.atStartOfDay().plusHours(event.dayCloseHour).atZone(properties.venueZoneId()).toInstant();
     }
 
     // ---- On the holder's ticket ----
