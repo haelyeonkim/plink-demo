@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket,
+  ApiError, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket,
   type CommunitySummary, type InviteView, type TicketCoupon, type TicketSchedule, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
@@ -124,8 +124,6 @@ export default function TicketPage() {
   const [email, setEmail] = useState('');
   const [grant, setGrant] = useState<Grant | null>(null);
   const [faceEnrolled, setFaceEnrolled] = useState(false);
-  const [transferTo, setTransferTo] = useState('');
-  const [showTransfer, setShowTransfer] = useState(false);
   // Everything that is not "get me through the door" folds away, so the ticket itself
   // fits the screen a person is holding in a queue.
   const [manage, setManage] = useState(false);
@@ -228,8 +226,8 @@ export default function TicketPage() {
   // The gate pushes its verdict down this channel, so the phone learns the moment it is
   // scanned rather than on the next poll. The polling below stays as the fallback for a
   // network that will not carry a socket.
-  // Opened only for a registered ticket this phone has proved: a locked ticket's channel,
-  // or a transfer link's, would be refused anyway.
+  // Opened only for a registered ticket this phone has proved: a locked ticket's channel
+  // would be refused anyway.
   const showing = ticket !== null && !ticket.locked && ticket.claimed;
   useEffect(() => {
     if (!showing) return;
@@ -410,13 +408,9 @@ export default function TicketPage() {
   }
 
   const claim = () => guard(async () => {
-    const result = await sealed('claim', onStage =>
+    await sealed('claim', onStage =>
       runCeremony(sessionId, token, { contact: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
-    const viaTransfer = result.mode === 'register' ? result.viaTransfer
-      : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
-    setNotice(viaTransfer
-      ? '양도받은 입장권을 이 기기에 등록했어요. 보낸 사람의 링크는 이제 사용할 수 없어요.'
-      : '입장권을 등록했어요.');
+    setNotice('입장권을 등록했어요.');
     await reload();
   });
 
@@ -460,22 +454,6 @@ export default function TicketPage() {
     setUsed(null);
     setCodeFor(group.first);
     setGrant(opened);
-  });
-
-  const startTransfer = () => guard(async () => {
-    const result = await runCeremony(sessionId, token, { intent: 'TRANSFER', toEmail: transferTo });
-    if (result.mode === 'authenticate' && result.intent === 'TRANSFER') {
-      setNotice(`${result.transfer.toEmail} 님에게 양도 링크를 보냈어요. 상대가 등록을 마치기 전까지 취소할 수 있어요.`);
-      setShowTransfer(false);
-      setTransferTo('');
-      await reload();
-    }
-  });
-
-  const stopTransfer = () => guard(async () => {
-    await cancelTransfer(sessionId, token);
-    setNotice('양도를 취소했어요.');
-    await reload();
   });
 
   /** Proves this phone holds the ticket, which is what opens the rest of the page. */
@@ -673,7 +651,7 @@ export default function TicketPage() {
           )}
           {view === 'chat' && (chatOpen
             ? <TicketChat sessionId={sessionId} token={token} tick={chatTick} counts={counts} onSeen={markChat} />
-            : <p className="console-none">{entered ? community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.' : '입장한 뒤에 볼 수 있어요.'}</p>)}
+            : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
@@ -698,7 +676,7 @@ export default function TicketPage() {
       onOpen={() => openGroup(false)} onInvite={() => openGroup(true)} />
   ) : null;
   // An invitee's link, before they register: the page opens on who asked them along.
-  const invitation = ticket.role === 'HOLDER' ? ticket.invitation ?? null : null;
+  const invitation = ticket.invitation ?? null;
   const welcoming = invitation !== null && !ticket.claimed && !ticket.claimExpired;
 
   return (
@@ -764,15 +742,6 @@ export default function TicketPage() {
         {notice && <p className="notice-text" role="status">{notice}</p>}
         {error && <p className="error-text" role="alert">{error}</p>}
 
-        {ticket.transfer && (
-          <div className="warn-text" role="status">
-            <b>양도 진행 중</b> - {ticket.transfer.toEmail} 님이 등록을 마치면 이 링크는 사용할 수 없게 됩니다.
-            {ticket.role === 'HOLDER' && (
-              <button className="btn-tiny" onClick={stopTransfer} disabled={busy}>양도 취소</button>
-            )}
-          </div>
-        )}
-
         {ticket.claimed ? (
           <>
             {schedule && <TicketDays schedule={schedule} />}
@@ -800,21 +769,14 @@ export default function TicketPage() {
             <section className="room-tiles" aria-labelledby="room-title">
               <h3 id="room-title">장내 소식</h3>
               {entered ? (<>
-                {chatOpen ? (
-                  <button type="button" className="room-tile" onClick={() => go('chat')}>
-                    <b>장내 채팅{newChat && <em>새</em>}</b>
-                    {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
-                    <small>{community?.lastMessage
-                      ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
-                      : '아직 메시지가 없어요'}</small>
-                  </button>
-                ) : (
-                  /* Stepped out: the room's talk stays in the room until they come back. */
-                  <div className="room-tile is-closed" aria-disabled="true">
-                    <b>장내 채팅</b>
-                    <small>{community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.'}</small>
-                  </div>
-                )}
+                {/* Open from the first entry on, stepped out or not. */}
+                <button type="button" className="room-tile" onClick={() => go('chat')}>
+                  <b>장내 채팅{newChat && <em>새</em>}</b>
+                  {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
+                  <small>{community?.lastMessage
+                    ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
+                    : '아직 메시지가 없어요'}</small>
+                </button>
                 <button type="button" className="room-tile" onClick={() => go('ads')}>
                   <b>알림판{newAds && <em>새</em>}</b>
                   <small>{community?.topAd
@@ -837,23 +799,8 @@ export default function TicketPage() {
             {manage && (
               <div className="manage-panel">
                 <div className="button-row">
-                  {!ticket.transfer && !ticket.presence.inside && (
-                    <button className="btn-secondary" onClick={() => setShowTransfer(value => !value)} disabled={busy}>
-                      {showTransfer ? '양도 취소' : '양도하기'}
-                    </button>
-                  )}
                   <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
                 </div>
-                {showTransfer && !ticket.transfer && !ticket.presence.inside && (
-                  <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
-                    <div className="field">
-                      <label htmlFor="transfer-to">받는 사람 이메일</label>
-                      <input id="transfer-to" type="email" required value={transferTo}
-                        onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
-                    </div>
-                    <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
-                  </form>
-                )}
                 {ticket.event.faceEnabled && (
                   <FaceEnrolment sessionId={sessionId} token={token}
                     inside={ticket.presence.inside} onChange={() => reload()} />
@@ -866,12 +813,10 @@ export default function TicketPage() {
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
         ) : (
           <>
-            {!welcoming && <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>}
+            {!welcoming && <h3>입장권 등록</h3>}
             <p className="hint-text">
               {skipCheck
                 ? '이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
-                : ticket.role === 'RECIPIENT'
-                ? '양도받은 이메일을 입력하면 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
                 : welcoming
                   ? (ticket.event.claimByPhone ? '초대받은 이메일이나 휴대폰 번호를 적으면' : '초대받은 이메일을 적으면')
                     + ' 이 휴대폰에 입장권이 등록돼요.'

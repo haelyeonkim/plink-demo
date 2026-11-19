@@ -1416,7 +1416,7 @@ export default function TicketAdmin() {
                       onClick={() => staffMove(open, 'OUT')}>퇴장 처리</button>
                   ) : (
                     <button type="button" className="btn-secondary"
-                      disabled={busy || open.status === 'REVOKED' || open.status === 'TRANSFER_PENDING'}
+                      disabled={busy || open.status === 'REVOKED'}
                       onClick={() => staffMove(open, 'IN')}>입장 처리</button>
                   ))}
                   {givingBooths.length > 0 && open.status !== 'REVOKED' && (

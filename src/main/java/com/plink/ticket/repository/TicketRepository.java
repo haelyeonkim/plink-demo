@@ -34,7 +34,6 @@ public class TicketRepository {
         t.boundAt = rs.getTimestamp("bound_at");
         t.claimExpiresAt = rs.getTimestamp("claim_expires_at");
         t.createdAt = rs.getTimestamp("created_at");
-        t.transferCount = rs.getInt("transfer_count");
         t.reissueCount = rs.getInt("reissue_count");
         t.phone = rs.getString("phone");
         t.deliveredVia = rs.getString("delivered_via");
@@ -190,7 +189,7 @@ public class TicketRepository {
 
     /**
      * Removes the ticket itself. Everything hanging off it - its passkey, presence,
-     * transfers, grants and ledger rows - is cascaded by the schema, which is why this
+     * grants and ledger rows - is cascaded by the schema, which is why this
      * is the console's "delete" and revoking is what keeps the record.
      */
     public void delete(long id) {
@@ -388,19 +387,7 @@ public class TicketRepository {
     }
 
     /**
-     * Hands the ticket to the recipient: their claim token becomes the ticket's own, so
-     * the sender's URL stops resolving from this moment.
-     */
-    public void completeTransfer(long id, String tokenHmac, String tokenCipher, long holderId,
-            String holderEmail) {
-        jdbc.update("UPDATE ticket SET token_hmac = ?, token_cipher = ?, holder_id = ?, holder_email = ?, "
-            + "issued_to_email = ?, status = 'BOUND', bound_at = CURRENT_TIMESTAMP, "
-            + "claim_expires_at = NULL, transfer_count = transfer_count + 1 WHERE id = ?",
-            tokenHmac, tokenCipher, holderId, holderEmail, holderEmail, id);
-    }
-
-    /**
-     * Transfer and lost-device recovery both rotate the token, which kills the old URL.
+     * Lost-device recovery rotates the token, which kills the old URL.
      * Presence and re-entry counters are deliberately left alone: the holder's movements
      * so far still happened. A revoked ticket stays revoked: a new link is not the
      * organiser switching it back on.

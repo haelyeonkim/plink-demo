@@ -38,9 +38,8 @@ QR은 제한된 시간 동안 제시 권한을 전달하는 수단이다. QR만�
 게이트 처리 시 서버가 티켓 상태와 입·퇴장 정책을 다시 확인한다.
 
 등록 후 본인 확인 결과는 HTTP 세션에 유지한다. 현재는 유효한 확인 세션으로 QR을 열 수 있으며,
-매번 패스키를 다시 요구하지 않는다. 세션의 확인 기록에는 등록 정보를 연결해 양도·재발급으로
-보유자 등록이 바뀌면 이전 확인이 효력을 잃도록 한다. 양도는 별도의 패스키 확인을 요구한다.
-이 구분은 반복 입·퇴장의 편의와 권리 이전의 확인 강도를 함께 고려한다.
+매번 패스키를 다시 요구하지 않는다. 세션의 확인 기록에는 등록 정보를 연결해 재발급으로
+보유자 등록이 바뀌면 이전 확인이 효력을 잃도록 한다.
 세션 만료·서버 재시작에 따른 제약은 [본인 확인 유지 설계](ticket-view-session.md)에 정리한다.
 
 개인 URL 검증에는 토큰의 HMAC을 사용한다. 현재 구현은 재표시·재발송을 위해 토큰 암호화본도
@@ -68,18 +67,16 @@ QR은 제한된 시간 동안 제시 권한을 전달하는 수단이다. QR만�
 관련 코드: [AdmissionService](../src/main/java/com/plink/ticket/service/AdmissionService.java),
 [VenueDay](../src/main/java/com/plink/ticket/service/VenueDay.java).
 
-## 기기 교체와 양도
+## 기기 교체
 
 기기 교체는 기존 티켓에 인증기를 계속 추가하는 대신 토큰을 회전하고 기존 등록을 해제한 뒤
 다시 등록하는 방식이다. 기존 기기의 접근을 끊으면서 티켓 자체와 운영 이력을 유지하려는 목적이다.
 
-양도는 보유자의 신원을 복사하지 않고 권리만 이전한다. 받는 사람은 자신의 이메일을 확인하고
-자신의 패스키를 등록한다. 양도 대기 중에는 별도의 수령 토큰을 사용하고, 완료되면 이전 보유자의
-URL이 무효가 된다. 대기 중 기존 토큰을 유지하는 것은 보내는 사람의 취소를 지원하기 위해서다.
-수락·취소·만료·재발급은 티켓과 양도 행을 같은 순서로 잠가 동시 요청 간 충돌을 제어한다.
+관람객이 직접 입장권을 다른 사람에게 넘기는 양도 기능은 2026-11-19에 없앴다. 받는 사람을
+바꿔야 하면 주최측이 콘솔에서 새로 발급한다. 예전 양도 기록이 남은 `ticket_transfer` 테이블과
+`event_session`의 양도 정책 열은 지우지 않고 두었다.
 
-관련 코드: [TicketService](../src/main/java/com/plink/ticket/service/TicketService.java),
-[TransferService](../src/main/java/com/plink/ticket/service/TransferService.java).
+관련 코드: [TicketService](../src/main/java/com/plink/ticket/service/TicketService.java).
 
 ## 얼굴 정보의 처리 경계
 

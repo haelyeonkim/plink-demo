@@ -23,8 +23,6 @@ export function supportsPasskeys(): boolean {
   return window.isSecureContext && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials;
 }
 
-export interface TransferStarted { status: string; toEmail: string; expiresAt: string }
-
 /**
  * Where the ceremony has got to, for a screen that wants to show it.
  *
@@ -62,12 +60,12 @@ export async function coarsePosition(): Promise<Record<string, string>> {
 /**
  * Runs the ceremony for a ticket. With no passkey yet this registers one and binds the
  * ticket; afterwards it authenticates, and what the server does with that assertion
- * depends on the intent - open a presentation grant, or sign off a transfer.
+ * depends on the intent - open a presentation grant, or only prove the ticket is theirs.
  */
 export async function runCeremony(
   sessionId: string, token: string,
   options_: {
-    direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'TRANSFER' | 'VIEW'; toEmail?: string;
+    direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'VIEW';
     /** The email or phone number the ticket was issued to, typed back to register it. */
     contact?: string;
     /**
@@ -80,10 +78,9 @@ export async function runCeremony(
     geoCheck?: boolean;
   } = {},
 ): Promise<
-  | { mode: 'register'; claimed: true; viaTransfer: boolean }
+  | { mode: 'register'; claimed: true }
   | { mode: 'authenticate'; intent: 'PRESENT'; grant: Grant }
-  | { mode: 'authenticate'; intent: 'TRANSFER'; transfer: TransferStarted }
-  | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true; viaTransfer: boolean }
+  | { mode: 'authenticate'; intent: 'CLAIM'; claimed: true }
   | { mode: 'authenticate'; intent: 'VIEW' }
 > {
   const base = ticketBase(sessionId, token);
@@ -91,22 +88,18 @@ export async function runCeremony(
   await stage('preparing');
   // Only opening a code asks where the phone is, and only for an event that checks it;
   // proving the ticket is yours does not.
-  const position = !options_.geoCheck || options_.intent === 'TRANSFER' || options_.intent === 'VIEW'
+  const position = !options_.geoCheck || options_.intent === 'VIEW'
     ? {} : await coarsePosition();
   const { geoCheck: _asked, ...sent } = options_;
   const { mode, intent, result } = await passkeyCeremony(base, { ...sent, ...position }, stage);
   if (mode === 'register') {
-    return { mode: 'register', claimed: true, viaTransfer: Boolean(result.viaTransfer) };
-  }
-  if (intent === 'TRANSFER') {
-    return { mode: 'authenticate', intent: 'TRANSFER', transfer: result as unknown as TransferStarted };
+    return { mode: 'register', claimed: true };
   }
   if (intent === 'VIEW') return { mode: 'authenticate', intent: 'VIEW' };
   if (intent === 'CLAIM') {
     // A person who already has a passkey attaches a new ticket by proving it, so a
     // claim can finish through an assertion rather than a registration.
-    return { mode: 'authenticate', intent: 'CLAIM', claimed: true,
-             viaTransfer: Boolean(result.viaTransfer) };
+    return { mode: 'authenticate', intent: 'CLAIM', claimed: true };
   }
   return { mode: 'authenticate', intent: 'PRESENT', grant: result as unknown as Grant };
 }

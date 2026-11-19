@@ -213,7 +213,7 @@ public class VenueService {
     /** The holder on a phone that has proved it, as for the rest of the ticket's tabs. */
     private Ticket viewer(TicketService.Resolved resolved, HttpSession session) {
         Ticket ticket = resolved.ticket;
-        if (resolved.viaTransfer() || !ticket.claimed() || ticket.revoked()) {
+        if (!ticket.claimed() || ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "등록을 마친 입장권에서 볼 수 있어요.");
         }
         if (!passkeys.canView(session, ticket)) {

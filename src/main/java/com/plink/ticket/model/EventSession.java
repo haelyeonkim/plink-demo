@@ -7,8 +7,6 @@ public class EventSession {
     public String name, venue, reentryMode, unmatchedExit;
     public Timestamp startsAt, gateOpensAt;
     public int reentryMax, reentryGraceMinutes, reentryCooldownSeconds, autoExitAfterMinutes;
-    public int transferMax, transferClosesMinutesBefore;
-    public boolean transferAfterFirstEntry;
     /** Whether the event admits by face at all; when off, tickets do not mention it. */
     public boolean faceEnabled;
     public boolean faceRequired, reentryRequiresFace;

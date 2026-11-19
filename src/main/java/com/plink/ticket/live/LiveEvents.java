@@ -258,9 +258,8 @@ public class LiveEvents implements org.springframework.beans.factory.DisposableB
     }
 
     /**
-     * Closes every holder channel on this ticket. Called when the ticket changes hands -
-     * recovered onto a new phone, or transferred - so the old phone stops hearing about
-     * the new holder.
+     * Closes every holder channel on this ticket. Called when the ticket is recovered onto
+     * a new phone, so the old phone stops hearing about it.
      */
     public void dropTicket(long ticketId) {
         closeTicket(ticketId);

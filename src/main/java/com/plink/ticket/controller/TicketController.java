@@ -6,7 +6,6 @@ import com.plink.ticket.face.FaceService;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.service.TicketPasskeyService;
 import com.plink.ticket.service.TicketService;
-import com.plink.ticket.service.TransferService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
@@ -22,22 +21,19 @@ import java.util.Map;
  *
  * <p>The token identifies the ticket and, before it is claimed, is a bearer secret.
  * Everything after the claim requires the bound passkey, so the URL alone opens nothing.
- * The same path also serves a transfer recipient, whose claim token resolves to the
- * same ticket but means the opposite thing.
  */
 @RestController
 @RequestMapping("/api/tickets/{sessionId}/{token}")
 public class TicketController {
     private final TicketService tickets;
     private final TicketPasskeyService passkeyService;
-    private final TransferService transfers;
     private final FaceService faces;
     private final com.plink.ticket.repository.AdmissionRepository admissions;
     private final com.plink.ticket.live.LiveSnapshots snapshots;
     private final com.plink.ticket.service.CouponService coupons;
 
     public TicketController(TicketService tickets, TicketPasskeyService passkeyService,
-            TransferService transfers, FaceService faces,
+            FaceService faces,
             com.plink.ticket.repository.AdmissionRepository admissions,
             com.plink.ticket.live.LiveSnapshots snapshots, com.plink.ticket.service.CouponService coupons) {
         this.coupons = coupons;
@@ -45,7 +41,6 @@ public class TicketController {
         this.snapshots = snapshots;
         this.tickets = tickets;
         this.passkeyService = passkeyService;
-        this.transfers = transfers;
         this.faces = faces;
     }
 
@@ -55,10 +50,9 @@ public class TicketController {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         boolean viewer = passkeyService.canView(request.getSession(false), resolved.ticket);
         ActivityLog.emit(Activity.of(Activity.VIEW, "ticket.page").session(sessionId).ticket(resolved.ticket.id)
-            .result(resolved.viaTransfer() ? "transfer_link" : resolved.ticket.claimed() ? (viewer ? "holder" : "locked")
-                : "unclaimed")
+            .result(resolved.ticket.claimed() ? (viewer ? "holder" : "locked") : "unclaimed")
             .summary(resolved.ticket.ticketRef).put("status", resolved.ticket.status)
-            .put("viaTransfer", resolved.viaTransfer()).put("viewer", viewer));
+            .put("viewer", viewer));
         return tickets.view(resolved, viewer);
     }
 
@@ -68,15 +62,14 @@ public class TicketController {
     }
 
     private void requireViewer(TicketService.Resolved resolved, HttpSession session) {
-        if (!resolved.viaTransfer() && resolved.ticket.claimed()
-                && !passkeyService.canView(session, resolved.ticket)) {
+        if (resolved.ticket.claimed() && !passkeyService.canView(session, resolved.ticket)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 본인 확인을 먼저 해 주세요.");
         }
     }
 
     /**
      * Registration options when unclaimed, assertion options once bound. The intent says
-     * what the assertion is for: opening a QR, or signing off a transfer.
+     * what the assertion is for: opening a QR, or only proving the ticket is theirs.
      */
     @PostMapping("/passkey/options")
     public Map<String, Object> options(@PathVariable long sessionId, @PathVariable String token,
@@ -85,11 +78,11 @@ public class TicketController {
         Map<String, String> input = body == null ? Map.of() : body;
         // "contact" is the email or phone typed back to register; "email" is what older pages sent.
         return passkeyService.start(resolved, input.get("intent"), input.get("direction"),
-            input.get("toEmail"), input.get("contact") != null ? input.get("contact") : input.get("email"), session,
+            input.get("contact") != null ? input.get("contact") : input.get("email"), session,
             decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
     }
 
-    /** Binds the passkey, issues a presentation grant, or records the transfer request. */
+    /** Binds the passkey, or issues a presentation grant. */
     @PostMapping("/passkey/finish")
     public Map<String, Object> finish(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody JsonNode credential, HttpSession session, HttpServletRequest request) {
@@ -106,7 +99,7 @@ public class TicketController {
     public Map<String, Object> present(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody(required = false) Map<String, String> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        if (resolved.viaTransfer() || !resolved.ticket.claimed()) {
+        if (!resolved.ticket.claimed()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "입장권 등록을 먼저 완료해 주세요.");
         }
         requireViewer(resolved, session);
@@ -120,27 +113,11 @@ public class TicketController {
     public Map<String, Object> presentCoupon(@PathVariable long sessionId, @PathVariable String token,
             @PathVariable long couponId, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        if (resolved.viaTransfer() || !resolved.ticket.claimed() || resolved.ticket.revoked()) {
+        if (!resolved.ticket.claimed() || resolved.ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "입장권 등록을 먼저 완료해 주세요.");
         }
         requireViewer(resolved, session);
         return coupons.openCode(resolved.ticket, couponId);
-    }
-
-    /** The sender can call off a transfer until the recipient finishes registering. */
-    @PostMapping("/transfer/cancel")
-    public Map<String, Object> cancelTransfer(@PathVariable long sessionId, @PathVariable String token,
-            HttpSession session) {
-        TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        if (resolved.viaTransfer()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "보낸 사람만 취소할 수 있어요.");
-        }
-        // Cancelling gives the ticket back to its sender: only on the phone that holds it,
-        // once its passkey has answered.
-        if (!passkeyService.canView(session, resolved.ticket)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "패스키로 본인 확인을 먼저 해 주세요.");
-        }
-        return transfers.cancel(resolved.ticket);
     }
 
     /**
@@ -152,9 +129,6 @@ public class TicketController {
     public Map<String, Object> recover(@PathVariable long sessionId, @PathVariable String token,
             @RequestBody(required = false) Map<String, String> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
-        if (resolved.viaTransfer()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "양도 링크에서는 재발급할 수 없어요.");
-        }
         // On the registered phone the passkey has answered; on a new one, the email or the
         // phone the ticket went to is typed back. Either way the new link goes only there.
         Ticket ticket = resolved.ticket;

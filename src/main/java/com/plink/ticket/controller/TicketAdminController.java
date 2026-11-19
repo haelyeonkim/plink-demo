@@ -735,7 +735,6 @@ public class TicketAdminController {
         row.put("issuedToEmail", email(ticket.issuedToEmail, plain));
         row.put("holderEmail", email(ticket.holderEmail, plain));
         row.put("reissueCount", ticket.reissueCount);
-        row.put("transferCount", ticket.transferCount);
         row.put("phone", ticket.phone);
         row.put("deliveredVia", ticket.deliveredVia);
         row.put("inside", presence != null && presence.inside());
@@ -1216,9 +1215,6 @@ public class TicketAdminController {
         row.put("exitScanRequired", session.exitScanRequired);
         row.put("unmatchedExit", session.unmatchedExit);
         row.put("autoExitAfterMinutes", session.autoExitAfterMinutes);
-        row.put("transferMax", session.transferMax);
-        row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
-        row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
         row.put("claimSkipCheck", session.claimSkipCheck);
         row.put("faceEnabled", session.faceEnabled);
         // How many faces turning it off would delete, so the console can say so first.
