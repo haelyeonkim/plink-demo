@@ -15,7 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * An event's rules - re-entry, transfer, crowding, the day's turn, location, face and invites -
+ * An event's rules - re-entry, crowding, the day's turn, location, face and invites -
  * as the console saves them.
  *
  * <p>The settings screen sends them in one save, so they are taken in one piece: every
@@ -44,10 +44,9 @@ public class SessionPolicyService {
     /** What a save asked to change, already checked. A null part was not sent. */
     private record Plan(String reentryMode, int reentryMax, int graceMinutes, int cooldownSeconds,
             boolean exitScanRequired, String unmatchedExit,
-            Transfer transfer, Crowd crowd, DayClose dayClose, Boolean claimSkipCheck, Geo geo, Face face,
+            Crowd crowd, DayClose dayClose, Boolean claimSkipCheck, Geo geo, Face face,
             boolean seatsSent, String seats, boolean tiersSent, String tiers,
             String inviteStatus, Map<String, Integer> inviteQuotas) {}
-    private record Transfer(int max, int closesMinutesBefore, boolean afterFirstEntry) {}
     private record Crowd(int busy, int steady) {}
     private record DayClose(boolean exit, int hour) {}
     private record Geo(Double lat, Double lon, int radiusMeters, String mode) {}
@@ -66,10 +65,6 @@ public class SessionPolicyService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
         Plan plan = plan(current, body);
 
-        if (plan.transfer != null) {
-            sessions.updateTransferPolicy(id, plan.transfer.max, plan.transfer.closesMinutesBefore,
-                plan.transfer.afterFirstEntry);
-        }
         if (plan.seatsSent) writeThrough(id, "좌석", "SEAT", plan.seats);
         if (plan.tiersSent) writeThrough(id, "등급", "TIER", plan.tiers);
         if (plan.crowd != null) sessions.updateCrowdLevels(id, plan.crowd.busy, plan.crowd.steady);
@@ -114,16 +109,6 @@ public class SessionPolicyService {
             "재스캔 대기 시간은 0초에서 1시간 사이여야 해요.");
         boolean exitScanRequired = flag(body.get("exitScanRequired"), current.exitScanRequired);
 
-        Transfer transfer = null;
-        if (body.containsKey("transferMax") || body.containsKey("transferClosesMinutesBefore")
-                || body.containsKey("transferAfterFirstEntry")) {
-            transfer = new Transfer(
-                within(number(body.get("transferMax"), current.transferMax), 0, 100,
-                    "양도 가능 횟수는 0에서 100 사이여야 해요."),
-                within(number(body.get("transferClosesMinutesBefore"), current.transferClosesMinutesBefore),
-                    0, 525600, "양도 마감 시간은 0분 이상이어야 해요."),
-                flag(body.get("transferAfterFirstEntry"), current.transferAfterFirstEntry));
-        }
         Crowd crowd = null;
         if (body.containsKey("crowdBusyPercent") || body.containsKey("crowdSteadyPercent")) {
             int busy = number(body.get("crowdBusyPercent"), current.crowdBusyPercent);
@@ -182,7 +167,7 @@ public class SessionPolicyService {
             }
         }
         return new Plan(mode, reentryMax, grace, cooldown, exitScanRequired, unmatched,
-            transfer, crowd, dayClose, claimSkipCheck, geo, face,
+            crowd, dayClose, claimSkipCheck, geo, face,
             body.containsKey("seats"), catalogue(body.get("seats"), null),
             body.containsKey("tiers"), catalogue(body.get("tiers"), null),
             inviteStatus, inviteQuotas(body.get("inviteQuotas")));

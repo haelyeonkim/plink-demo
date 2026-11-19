@@ -325,11 +325,11 @@ public class CouponService {
      */
     @Transactional
     public Map<String, Object> openCode(Ticket holder, long couponId) {
-        // Read again under lock: a ticket on its way to someone else spends nothing on the way.
+        // Read again under lock: a ticket switched off or recovered since spends nothing.
         Ticket ticket = tickets.lockById(holder.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         if (!ticket.bound()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "사용할 수 없는 입장권이에요.");
         }
         Coupon coupon = coupons.findById(couponId).filter(c -> c.ticketId == ticket.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "쿠폰을 찾을 수 없어요."));
@@ -367,7 +367,7 @@ public class CouponService {
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.sessionId != counter.sessionId()) throw deny("다른 이벤트의 쿠폰이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        if (!ticket.bound()) throw deny("양도 중인 입장권의 쿠폰은 쓸 수 없어요.");
+        if (!ticket.bound()) throw deny("등록을 마치지 않은 입장권의 쿠폰은 쓸 수 없어요.");
         Coupon coupon = coupons.findById(verified.grant.couponId).filter(c -> c.ticketId == ticket.id)
             .orElseThrow(() -> deny("쿠폰을 찾을 수 없어요."));
         if (coupon.boothId != booth.id) {
@@ -466,8 +466,7 @@ public class CouponService {
             .orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.sessionId != counter.sessionId()) throw deny("다른 이벤트의 입장권이에요.");
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        // As with spending: a ticket on its way to someone else collects nothing on the way.
-        if (!ticket.bound()) throw deny("양도 중인 입장권에는 쿠폰을 줄 수 없어요.");
+        if (!ticket.bound()) throw deny("등록을 마치지 않은 입장권에는 쿠폰을 줄 수 없어요.");
         presentations.consume(verified.grant, verified.counter);
 
         List<Map<String, Object>> choices = new ArrayList<>();
@@ -514,8 +513,8 @@ public class CouponService {
         checkCounts(wanted.values());
         Ticket ticket = tickets.lockById(pick.ticketId).orElseThrow(() -> deny("입장권을 찾을 수 없어요."));
         if (ticket.revoked()) throw deny("사용할 수 없는 입장권이에요.");
-        // A transfer may have started while the counter was choosing.
-        if (!ticket.bound()) throw deny("양도 중인 입장권에는 쿠폰을 줄 수 없어요.");
+        // The ticket may have been recovered while the counter was choosing.
+        if (!ticket.bound()) throw deny("등록을 마치지 않은 입장권에는 쿠폰을 줄 수 없어요.");
         Map<Long, Integer> chosen = new LinkedHashMap<>();
         wanted.forEach((offerId, count) -> { if (count != null && count > 0) chosen.put(offerId, count); });
         if (chosen.isEmpty()) {

@@ -110,7 +110,7 @@ class CommunityTest {
         assertNotNull(community.chat(in.resolved(), in.session(), 0).get("messages"));
     }
 
-    @Test void oneMessageAMinuteAndOnlyFromInside() {
+    @Test void oneMessageAMinuteAndOpenFromTheFirstEntryOn() {
         long sessionId = newSession();
         Holder in = inside(sessionId, "talk@example.com");
         Map<String, Object> sent = community.post(in.resolved(), in.session(), "안녕하세요", null);
@@ -118,23 +118,22 @@ class CommunityTest {
         assertEquals(true, sent.get("mine"));
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, status(() -> community.post(in.resolved(), in.session(), "또", null)));
 
-        // Out of the room: the chat closes, reading included, while the board stays open.
+        // Out of the room: having come in once, the chat stays open, reading and writing.
         jdbc.update("UPDATE ticket_presence SET state = 'OUTSIDE' WHERE ticket_id = ?", in.ticketId());
         jdbc.update("UPDATE chat_message SET created_at = ? WHERE ticket_id = ?",
             Timestamp.from(Instant.now().minus(2, ChronoUnit.MINUTES)), in.ticketId());
-        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.chat(in.resolved(), in.session(), 0)));
-        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.post(in.resolved(), in.session(), "밖에서", null)));
-        assertNotNull(community.ads(in.resolved(), in.session()));
+        assertNotNull(community.chat(in.resolved(), in.session(), 0));
+        assertEquals(true, community.post(in.resolved(), in.session(), "밖에서", null).get("mine"));
         Map<String, Object> summary = community.summary(in.resolved(), in.session());
         assertEquals(true, summary.get("entered"));
-        assertEquals(false, summary.get("chatOpen"));
-        assertNull(summary.get("lastMessage"), "nothing of the talk reaches someone outside");
-        assertEquals("장외에서는 닫혀 있어요. 다시 입장하면 열려요.", summary.get("chatClosed"));
+        assertEquals(true, summary.get("chatOpen"));
+        assertNull(summary.get("chatClosed"));
+        assertEquals("밖에서", ((Map<String, Object>) summary.get("lastMessage")).get("body"));
 
-        // Back in, it opens again.
-        jdbc.update("UPDATE ticket_presence SET state = 'INSIDE' WHERE ticket_id = ?", in.ticketId());
-        Map<String, Object> me = (Map<String, Object>) community.chat(in.resolved(), in.session(), 0).get("me");
-        assertEquals(true, me.get("canWrite"));
+        // Never come in: still closed.
+        Holder never = holder(sessionId, "never-in@example.com");
+        assertEquals(HttpStatus.FORBIDDEN, status(() -> community.chat(never.resolved(), never.session(), 0)));
+        assertEquals(false, community.summary(never.resolved(), never.session()).get("chatOpen"));
     }
 
     @Test void repliesQuoteAndLikesPinAPopularLineOnce() {

@@ -22,7 +22,6 @@ public class TicketMaintenance {
     private static final Logger log = LoggerFactory.getLogger(TicketMaintenance.class);
     private final NonceRepository nonces;
     private final AdmissionRepository admissions;
-    private final TransferService transfers;
     private final com.plink.ticket.face.FaceService faces;
 
     private final com.plink.ticket.config.TicketProperties properties;
@@ -37,7 +36,7 @@ public class TicketMaintenance {
     private final org.springframework.transaction.support.TransactionTemplate transactions;
 
     public TicketMaintenance(NonceRepository nonces, AdmissionRepository admissions,
-            TransferService transfers, com.plink.ticket.face.FaceService faces,
+            com.plink.ticket.face.FaceService faces,
             com.plink.ticket.config.TicketProperties properties, com.plink.ticket.live.LiveEvents live,
             com.plink.ticket.live.LiveSnapshots snapshots,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
@@ -47,7 +46,6 @@ public class TicketMaintenance {
         this.snapshots = snapshots;
         this.nonces = nonces;
         this.admissions = admissions;
-        this.transfers = transfers;
         this.faces = faces;
     }
 
@@ -60,13 +58,6 @@ public class TicketMaintenance {
     public void purgeExpiredFaceTemplates() {
         int removed = faces.purgeExpired();
         if (removed > 0) log.info("Purged {} face templates past their retention window", removed);
-    }
-
-    /** A transfer nobody claimed returns the ticket to the sender rather than stranding it. */
-    @Scheduled(initialDelay = 60_000, fixedDelay = 300_000)
-    public void expireStaleTransfers() {
-        int closed = transfers.expireStale();
-        if (closed > 0) log.info("Expired {} unclaimed transfers", closed);
     }
 
     @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)

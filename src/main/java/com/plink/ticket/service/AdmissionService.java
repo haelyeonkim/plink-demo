@@ -322,10 +322,8 @@ public class AdmissionService {
         Presence presence = presence(ticket);
         if ("IN".equals(direction)) {
             // Taking someone out is always allowed - revoking does not eject anybody -
-            // but walking a switched-off or mid-transfer ticket in is what those states
-            // exist to stop.
+            // but walking a switched-off ticket in is what that state exists to stop.
             if (ticket.revoked()) throw conflict("비활성화된 입장권은 입장 처리할 수 없어요.");
-            if ("TRANSFER_PENDING".equals(ticket.status)) throw conflict("양도 중인 입장권은 입장 처리할 수 없어요.");
             if (presence.inside()) throw conflict("이미 장내에 있는 입장권이에요.");
             boolean newDay = startsNewDay(session, presence, Instant.now());
             admissions.markInside(ticket.id, presence.entryCount + 1, reentriesAfterEntry(presence, newDay), null);

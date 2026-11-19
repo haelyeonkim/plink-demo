@@ -72,7 +72,7 @@ public class FaceService {
     /**
      * Opened templates per event, so a gate scanning every two seconds does not decrypt
      * the whole event on every frame. Each read checks the database's fingerprint first,
-     * so an enrolment, a withdrawal, a transfer or a purge - on any path, on any
+     * so an enrolment, a withdrawal or a purge - on any path, on any
      * instance - is seen on the very next match rather than when something remembers to
      * invalidate. The vectors were decrypted per read before; this only keeps them for
      * the events actually running, and drops the rest.

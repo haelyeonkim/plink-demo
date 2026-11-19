@@ -31,9 +31,6 @@ public class EventSessionRepository {
         s.exitScanRequired = rs.getBoolean("exit_scan_required");
         s.unmatchedExit = rs.getString("unmatched_exit");
         s.autoExitAfterMinutes = rs.getInt("auto_exit_after_minutes");
-        s.transferMax = rs.getInt("transfer_max");
-        s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
-        s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
         s.claimSkipCheck = rs.getBoolean("claim_skip_check");
         s.faceEnabled = rs.getBoolean("face_enabled");
         s.faceRequired = rs.getBoolean("face_required");
@@ -64,9 +61,9 @@ public class EventSessionRepository {
 
     /**
      * The event row under lock: what keeps "one live ticket per address" true when two
-     * issues, or an issue and an accepted transfer, name the same address at once. A
-     * unique index cannot say it - revoked tickets are exempt, and transfers made before
-     * the rule may already have left an address holding two.
+     * issues name the same address at once. A unique index cannot say it - revoked
+     * tickets are exempt, and transfers made before the rule may already have left an
+     * address holding two.
      */
     public Optional<EventSession> lockById(long id) {
         return jdbc.query("SELECT * FROM event_session WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
@@ -110,11 +107,6 @@ public class EventSessionRepository {
 
     public void updateTestEvent(long id, boolean testEvent) {
         jdbc.update("UPDATE event_session SET test_event = ? WHERE id = ?", testEvent, id);
-    }
-
-    public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
-        jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
-            + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
     }
 
     /** Cascades to tickets, presence and the ledger through the foreign keys. */

@@ -80,7 +80,6 @@ export function eventWhen(startsAt: string, endsAt?: string | null): 'upcoming' 
 /** What the ticket itself is: issued, claimed by a person, or switched off. */
 export function ticketState(row: TicketRow): { label: string; tone: string } {
   if (row.status === 'REVOKED') return { label: '비활성', tone: 'off' };
-  if (row.status === 'TRANSFER_PENDING') return { label: '양도 중', tone: 'warn' };
   if (row.holderEmail) return { label: '등록 완료', tone: 'ok' };
   return { label: '미등록', tone: 'wait' };
 }

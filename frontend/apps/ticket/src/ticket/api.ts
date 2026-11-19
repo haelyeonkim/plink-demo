@@ -1,12 +1,6 @@
 import { mutate } from '@shared/auth';
 import type { Grant } from './codes';
 
-export interface TicketTransfer {
-  status: string;
-  toEmail: string;
-  expiresAt: string;
-}
-
 /** An offer this ticket holds at a booth, and what became of it. */
 export interface TicketCoupon {
   couponId: number;
@@ -27,9 +21,6 @@ export interface TicketView {
    * event is filled in, and the page asks for the passkey before anything else.
    */
   locked?: boolean;
-  /** HOLDER opened their own ticket; RECIPIENT opened a transfer link. */
-  role: 'HOLDER' | 'RECIPIENT';
-  transfer: TicketTransfer | null;
   seat: string | null;
   tier: string | null;
   holderEmailMasked: string | null;
@@ -120,10 +111,6 @@ export async function presentTicket(sessionId: string, token: string, direction:
 /** One coupon's own code, to show at its booth; opened like the entry code, without a fresh passkey. */
 export async function presentCoupon(sessionId: string, token: string, couponId: number): Promise<Grant> {
   return read(await mutate(`${ticketBase(sessionId, token)}/coupons/${couponId}/present`, { method: 'POST' })) as Promise<Grant>;
-}
-
-export async function cancelTransfer(sessionId: string, token: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/transfer/cancel`, { method: 'POST' }));
 }
 
 /** A fresh link to the ticket's own email; from a phone without the passkey, the email or phone is typed back. */
@@ -251,10 +238,8 @@ export async function gateGrantConfirm(gateId: string, gateToken: string, pick: 
 
 export interface CommunitySummary {
   entered: boolean;
-  /** Entered and inside now: the chat is the room's, and closes when they step out. */
+  /** Come in at least once: the chat opens then and stays open after stepping out. */
   chatOpen?: boolean;
-  /** Why the chat is shut to an entered holder: stepped out, or banned. */
-  chatClosed?: string;
   latestChatId?: number;
   inside?: number;
   notice?: string | null;

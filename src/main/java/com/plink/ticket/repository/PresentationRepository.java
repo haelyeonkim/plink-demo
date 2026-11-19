@@ -72,7 +72,7 @@ public class PresentationRepository {
 
     /**
      * Any earlier grant stops working when a new one is issued, or when the ticket is
-     * transferred. Marked revoked rather than consumed: a terminal that read the old code
+     * recovered. Marked revoked rather than consumed: a terminal that read the old code
      * while offline still saw a real movement.
      */
     public void revokeOpenGrants(long ticketId) {

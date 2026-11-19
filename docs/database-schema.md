@@ -31,9 +31,9 @@
 | 작품 | `artwork` | 원본 콘텐츠별 검색 가능한 작품 정보 |
 | 작품 연결 | `content_artwork` | 콘텐츠 위치와 작품 ID 연결, 전달본 간 최신 작품 정보·판매 상태 공유 |
 | 이미지 | `content_image`, `content_image_ref` | 저장소 파일 메타데이터 및 콘텐츠와의 연결 |
-| 행사 | `event_session` | 행사 정보, 재입장·양도·인증·위치·혼잡 정책 |
+| 행사 | `event_session` | 행사 정보, 재입장·인증·위치·혼잡 정책 (양도 정책 열은 기능 삭제 후 쓰지 않음) |
 | 입장권 | `ticket`, `ticket_field` | 수신자·좌석·상태·전달 정보와 행사별 사용자 정의 필드 |
-| 양도 | `ticket_transfer` | 양도 대상, 토큰, 상태, 정책 스냅샷 |
+| 양도 | `ticket_transfer` | 예전 양도 기록. 관람객 양도 기능은 2026-11-19에 없앴고 새 행은 생기지 않음 |
 | QR | `presentation_session`, `qr_nonce` | 단기 QR 제시 세션 및 재사용 방지 |
 | 단말 | `gate` | 행사별 입출구/부스 단말, 등록 및 토큰 정보 |
 | 입퇴장 | `ticket_presence`, `admission_event` | 현재 재실 상태와 입퇴장 이벤트 원장 |

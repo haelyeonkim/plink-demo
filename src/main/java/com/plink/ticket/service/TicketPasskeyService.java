@@ -5,7 +5,6 @@ import com.plink.activity.ActivityLog;
 import com.plink.ticket.config.TicketProperties;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.EventSession;
-import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketRepository;
@@ -44,7 +43,6 @@ public class TicketPasskeyService {
     private final HolderRepository holders;
     private final AdmissionRepository admissions;
     private final PresentationService presentations;
-    private final TransferService transfers;
     private final TicketService ticketService;
     private final TicketProperties properties;
     private final RelyingParty rp;
@@ -52,14 +50,13 @@ public class TicketPasskeyService {
     private final SecureRandom random = new SecureRandom();
 
     public TicketPasskeyService(TicketRepository tickets, HolderRepository holders,
-            AdmissionRepository admissions, PresentationService presentations, TransferService transfers,
+            AdmissionRepository admissions, PresentationService presentations,
             TicketService ticketService, TicketProperties properties,
             @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper) {
         this.tickets = tickets;
         this.holders = holders;
         this.admissions = admissions;
         this.presentations = presentations;
-        this.transfers = transfers;
         this.ticketService = ticketService;
         this.properties = properties;
         this.rp = rp;
@@ -67,24 +64,21 @@ public class TicketPasskeyService {
     }
 
     static class Pending {
-        final String ticketRef, direction, email, intent, toEmail;
+        final String ticketRef, direction, email, intent;
         GeoCheck.Result geo = new GeoCheck.Result(null, null, null);
         final long ticketId;
-        final Long transferId;
         Long holderId;
         final long expires = System.currentTimeMillis() + TIMEOUT_MS;
         final PublicKeyCredentialCreationOptions registration;
         final AssertionRequest assertion;
 
-        Pending(Ticket ticket, String intent, String direction, String email, String toEmail, Long transferId,
+        Pending(Ticket ticket, String intent, String direction, String email,
                 PublicKeyCredentialCreationOptions registration, AssertionRequest assertion) {
             this.ticketId = ticket.id;
             this.ticketRef = ticket.ticketRef;
             this.intent = intent;
             this.direction = direction;
             this.email = email;
-            this.toEmail = toEmail;
-            this.transferId = transferId;
             this.registration = registration;
             this.assertion = assertion;
         }
@@ -105,9 +99,9 @@ public class TicketPasskeyService {
     }
 
     /**
-     * Who the ticket was bound to when the mark was made. Recovery and transfer both
-     * rebind it, so a phone that proved the old binding - a lost one, or the sender's -
-     * stops seeing the ticket the moment it changes hands, not twelve hours later.
+     * Who the ticket was bound to when the mark was made. Recovery rebinds it, so a phone
+     * that proved the old binding - a lost one - stops seeing the ticket the moment it is
+     * recovered, not twelve hours later.
      */
     static String binding(Ticket ticket) {
         return ticket.holderId + "@" + (ticket.boundAt == null ? 0 : ticket.boundAt.getTime());
@@ -132,42 +126,40 @@ public class TicketPasskeyService {
 
 
     /**
-     * Chooses the ceremony. A recipient opening a transfer link always registers, whatever
-     * binding the sender still holds; the existing holder authenticates, either to open a
-     * presentation grant or to sign off a transfer.
+     * Chooses the ceremony: an unregistered ticket registers, and its holder authenticates,
+     * either to open a presentation grant or only to prove the ticket is theirs.
      */
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
-            String rawToEmail, HttpSession session) {
-        return start(resolved, intent, rawDirection, rawToEmail, null, session, null, null, null);
+            HttpSession session) {
+        return start(resolved, intent, rawDirection, null, session, null, null, null);
     }
 
     public Map<String, Object> start(TicketService.Resolved resolved, String intent, String rawDirection,
-            String rawToEmail, String rawContact, HttpSession session,
+            String rawContact, HttpSession session,
             Double lat, Double lon, Double accuracy) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Ticket ticket = resolved.ticket;
-        boolean claimed = !resolved.viaTransfer() && ticket.claimed();
+        boolean claimed = ticket.claimed();
         Pending pending;
         String options;
 
         try {
         if (!claimed) {
-            String expected = resolved.viaTransfer() ? resolved.claim.toEmail : ticket.issuedToEmail;
+            String expected = ticket.issuedToEmail;
             EventSession claimSession = ticketService.requireSession(ticket.sessionId);
             // The email or the phone the ticket went to, typed back. It does not stop
             // someone determined; it stops a link forwarded by mistake being claimed by
             // whoever opened it. An organiser who hands links over in person may switch
             // it off, and then holding the link is the whole claim.
             if (!claimSession.claimSkipCheck) {
-                String mismatch = TicketService.contactMismatch(rawContact, expected,
-                    resolved.viaTransfer() ? null : ticket.phone);
+                String mismatch = TicketService.contactMismatch(rawContact, expected, ticket.phone);
                 if (mismatch != null) {
                     throw new ResponseStatusException(rawContact == null || rawContact.isBlank()
                         ? HttpStatus.BAD_REQUEST : HttpStatus.FORBIDDEN, mismatch);
                 }
             }
             String email = expected;
-            if (!resolved.viaTransfer() && ticket.claimExpiresAt != null
+            if (ticket.claimExpiresAt != null
                     && ticket.claimExpiresAt.toInstant().isBefore(java.time.Instant.now())) {
                 throw new ResponseStatusException(HttpStatus.GONE,
                     "등록 기한이 지났어요. 새 링크를 요청해 주세요.");
@@ -182,8 +174,7 @@ public class TicketPasskeyService {
                     .username(email)
                     .userVerification(UserVerificationRequirement.REQUIRED)
                     .timeout(TIMEOUT_MS).build());
-                pending = new Pending(ticket, "CLAIM", null, email, null,
-                    resolved.viaTransfer() ? resolved.claim.id : null, null, request);
+                pending = new Pending(ticket, "CLAIM", null, email, null, request);
                 pending.holderId = holder.id;
                 options = request.toCredentialsGetJson();
             } else {
@@ -206,21 +197,15 @@ public class TicketPasskeyService {
                             .id(HolderRepository.decode(created.userHandle)).build())
                         .authenticatorSelection(selection.build())
                         .timeout(TIMEOUT_MS).build());
-                pending = new Pending(ticket, "CLAIM", null, email, null,
-                    resolved.viaTransfer() ? resolved.claim.id : null, request, null);
+                pending = new Pending(ticket, "CLAIM", null, email, request, null);
                 pending.holderId = holderId;
                 options = request.toCredentialsCreateJson();
             }
         } else {
             String direction = null;
-            String toEmail = null;
             String resolvedIntent = intent == null ? "PRESENT" : intent.trim().toUpperCase(Locale.ROOT);
             if ("VIEW".equals(resolvedIntent)) {
                 // Only proving it is theirs: nothing is opened, so where they are is not asked.
-            } else if ("TRANSFER".equals(resolvedIntent)) {
-                // The assertion is what authorises this specific handover; the recipient
-                // address is held server-side with the challenge, not taken on trust later.
-                toEmail = EmailOtpService.normalize(rawToEmail);
             } else {
                 resolvedIntent = "PRESENT";
                 direction = PresentationService.direction(rawDirection);
@@ -230,7 +215,7 @@ public class TicketPasskeyService {
                     new ResponseStatusException(HttpStatus.CONFLICT, "등록 정보를 찾을 수 없어요.")).email)
                 .userVerification(UserVerificationRequirement.REQUIRED)
                 .timeout(TIMEOUT_MS).build());
-            pending = new Pending(ticket, resolvedIntent, direction, null, toEmail, null, null, request);
+            pending = new Pending(ticket, resolvedIntent, direction, null, null, request);
             pending.holderId = ticket.holderId;
             if ("PRESENT".equals(resolvedIntent)) {
                 // Checked before the biometric prompt so a holder who is nowhere near the
@@ -272,7 +257,7 @@ public class TicketPasskeyService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         if (!current.bound()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+                "사용할 수 없는 입장권이에요.");
         }
         EventSession eventSession = ticketService.requireSession(current.sessionId);
         GeoCheck.Result geo = GeoCheck.evaluate(eventSession, lat, lon, accuracy);
@@ -307,20 +292,18 @@ public class TicketPasskeyService {
         try {
             result = pending.registration != null
                 ? register(locked, pending, resolved, credential)
-                : authenticate(locked, pending, resolved, credential, ip, userAgent);
+                : authenticate(locked, pending, resolved, credential);
         } catch (ResponseStatusException refused) {
             ActivityLog.emit(Activity.of(Activity.TICKET, "passkey." + ceremony)
                 .failed(String.valueOf(refused.getStatusCode().value())).session(ticket.sessionId)
-                .ticket(ticket.id).summary(refused.getReason()).put("email", pending.email)
-                .put("viaTransfer", resolved.viaTransfer()).always());
+                .ticket(ticket.id).summary(refused.getReason()).put("email", pending.email).always());
             throw refused;
         }
         ActivityLog.emit(Activity.of(Activity.TICKET, "passkey." + ceremony).session(ticket.sessionId)
-            .ticket(ticket.id).summary(pending.email).put("email", pending.email)
-            .put("viaTransfer", resolved.viaTransfer()).put("direction", pending.direction)
+            .ticket(ticket.id).summary(pending.email).put("email", pending.email).put("direction", pending.direction)
             .put("claimed", result.get("claimed")));
         // Whatever the ceremony was for, it proved this browser holds the ticket - as it is
-        // bound now, which a claim or an accepted transfer has just changed.
+        // bound now, which a claim has just changed.
         tickets.findById(ticket.id).filter(Ticket::claimed).ifPresent(bound -> markViewer(session, bound));
         return result;
     }
@@ -353,7 +336,7 @@ public class TicketPasskeyService {
     private Map<String, Object> attach(Ticket ticket, Pending pending, TicketService.Resolved resolved) {
         // Re-read under the row lock: someone may have claimed the link between the
         // challenge and the response, and whoever got there first keeps the ticket.
-        if (ticket.claimed() && !resolved.viaTransfer()) {
+        if (ticket.claimed()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록이 끝난 입장권이에요.");
         }
         // Switched off between opening the page and finishing: binding would switch it
@@ -364,24 +347,19 @@ public class TicketPasskeyService {
         if (!admissions.find(ticket.id).isPresent()) {
             admissions.create(ticket.id, ticket.sessionId);
         }
-        if (resolved.viaTransfer()) {
-            transfers.accept(resolved.claim, ticket, pending.holderId);
-        } else {
-            tickets.bind(ticket.id, pending.holderId, pending.email);
-        }
-        ActivityLog.emit(Activity.of(Activity.TICKET, resolved.viaTransfer() ? "transfer.accepted" : "ticket.bound")
+        tickets.bind(ticket.id, pending.holderId, pending.email);
+        ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.bound")
             .session(ticket.sessionId).ticket(ticket.id).summary(pending.email)
             .put("email", pending.email).put("ticketRef", ticket.ticketRef).put("issuedTo", ticket.issuedToEmail));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("claimed", true);
-        response.put("viaTransfer", resolved.viaTransfer());
         response.put("holderEmailMasked", TicketService.mask(pending.email));
         return response;
     }
 
     private Map<String, Object> authenticate(Ticket ticket, Pending pending,
-            TicketService.Resolved resolved, JsonNode credential, String ip, String userAgent) {
+            TicketService.Resolved resolved, JsonNode credential) {
         AssertionResult result;
         try {
             result = rp.finishAssertion(FinishAssertionOptions.builder()
@@ -405,15 +383,12 @@ public class TicketPasskeyService {
         if ("CLAIM".equals(pending.intent)) {
             return attach(ticket, pending, resolved);
         }
-        if ("TRANSFER".equals(pending.intent)) {
-            return transfers.initiate(ticket, pending.toEmail, ip, userAgent);
-        }
         if ("VIEW".equals(pending.intent)) {
             return Map.of("viewer", true);
         }
         if (!ticket.bound()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "양도가 진행 중이거나 사용할 수 없는 입장권이에요.");
+                "사용할 수 없는 입장권이에요.");
         }
         return presentations.issue(ticket, pending.direction, true, pending.geo);
     }
