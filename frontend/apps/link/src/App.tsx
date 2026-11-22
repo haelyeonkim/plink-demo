@@ -1,7 +1,7 @@
 import AdminArtworkRequests from './components/ArtworkRequests';
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
-import { AppScope } from '@shared/scope';
+import { AppScope, SITE_HOME } from '@shared/scope';
 import Login from '@shared/components/Login';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Header from '@shared/components/Header';
@@ -43,15 +43,6 @@ function Moved({ to }: { to: (params: Record<string, string | undefined>) => str
   return <Navigate to={to(params) + search} replace />;
 }
 
-/**
- * The site root opens the ticket tool's front door for now. The server answers / with a
- * redirect; this covers a visit that reaches the app anyway, such as a client-side navigation.
- */
-function ToTicketMain() {
-  const { search } = useLocation();
-  return <Navigate to={`/ticketmain${search}`} replace />;
-}
-
 export default function App() {
   return (
     <AppScope value="link">
@@ -61,9 +52,9 @@ export default function App() {
       <Header />
       <main>
         <Routes>
-          {/* The root opens the ticket tool's front door; each tool has its own front door (temporary
-              addresses until each moves to a domain of its own). */}
-          <Route path="/" element={<ToTicketMain />} />
+          {/* Each tool has its own front door, at temporary addresses until each has a domain.
+              The server already redirects /; this covers a navigation inside the app. */}
+          <Route path="/" element={<Moved to={() => SITE_HOME} />} />
           <Route path="/linkmain" element={<ToolMain tool="link" />} />
           <Route path="/ticketmain" element={<ToolMain tool="ticket" />} />
           {/* What belongs to the site rather than to either tool. */}

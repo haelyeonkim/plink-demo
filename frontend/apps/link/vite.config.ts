@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
 
@@ -60,7 +60,7 @@ function ticketApp(): Plugin {
  * The query string travels along; nothing else is redirected.
  */
 function rootToTicketMain(): Plugin {
-  const redirect = (req: { url?: string; method?: string }, res: import('node:http').ServerResponse, next: () => void) => {
+  const redirect: Connect.NextHandleFunction = (req, res, next) => {
     const url = req.url || '/';
     if ((req.method !== 'GET' && req.method !== 'HEAD') || !/^\/(?:\?|$)/.test(url)) return next();
     res.statusCode = 302;

@@ -41,6 +41,9 @@ const BRANDS: Record<BrandName, Brand> = {
   ticket: { key: 'ticket', name: '패스링크 티켓', logo: '/logo-ticket.svg', home: '/tickets', login: '/tickets/login', console: '/tickets' },
 };
 
+/** Where the site root and "패스링크 홈" lead: the ticket tool's front door, until each tool has a domain. */
+export const SITE_HOME = '/ticketmain';
+
 export function brandOf(path: string): BrandName {
   if (appOf(path) === 'ticket') return 'ticket';
   // Each tool's front door is served by the link app but wears that tool's brand.

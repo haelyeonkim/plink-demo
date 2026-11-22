@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AppLink as Link } from '@shared/scope';
+import { AppLink as Link, useBrand } from '@shared/scope';
 
 type Tool = 'link' | 'ticket';
 
@@ -52,17 +52,17 @@ const WALK: Record<Tool, {
   },
 };
 
-/** Each tool's front door: what it promises, where its console is, and what to know. */
+/** Each tool's front door: what it promises, the way in, and what to know. */
 const MAIN: Record<Tool, {
   title: [string, string];
   lead: string;
-  console: [string, string];
+  start: string;
   facts: Array<[string, string]>;
 }> = {
   link: {
     title: ['보낸 링크는', '받은 사람만 열 수 있어요.'],
     lead: '받는 사람마다 링크를 하나씩 보내요. 주소를 넘겨받은 사람은 열 수 없고, 누가 언제 열었는지 바로 보여요.',
-    console: ['/links', '링크 관리 시작하기'],
+    start: '링크 관리 시작하기',
     facts: [
       ['앱 설치 없이', '받는 사람은 휴대폰 브라우저에서 바로 열어요.'],
       ['비밀번호 없이', '평소 쓰는 지문·얼굴 잠금이 열쇠가 돼요.'],
@@ -72,7 +72,7 @@ const MAIN: Record<Tool, {
   ticket: {
     title: ['입장권은', '받은 사람만 열 수 있어요.'],
     lead: '명단을 올리면 한 사람씩 입장권이 나가요. 넘겨받은 사람은 열 수 없어서 대신 들어갈 수 없어요.',
-    console: ['/tickets', '입장권 관리 시작하기'],
+    start: '입장권 관리 시작하기',
     facts: [
       ['앱 설치 없이', '관람객은 휴대폰 브라우저에서 입장권을 열어요.'],
       ['비밀번호 없이', '평소 쓰는 지문·얼굴 잠금이 열쇠가 돼요.'],
@@ -93,6 +93,8 @@ const LOCK = (
  */
 export default function ToolMain({ tool }: { tool: Tool }) {
   const main = MAIN[tool];
+  // The front door wears its tool's brand, so the brand knows where the console is.
+  const brand = useBrand();
   return (
     <div className={`front front-${tool}`}>
       <section className="front-hero">
@@ -100,7 +102,7 @@ export default function ToolMain({ tool }: { tool: Tool }) {
           <h1>{main.title[0]}<br />{main.title[1]}</h1>
           <p>{main.lead}</p>
           <div className="front-actions">
-            <Link className={`front-start tool-${tool}`} to={main.console[0]}>{main.console[1]} <span aria-hidden="true">→</span></Link>
+            <Link className="front-start" to={brand.console}>{main.start} <span aria-hidden="true">→</span></Link>
             <a className="front-how" href="#walk-title">어떻게 지켜지는지 보기</a>
           </div>
         </div>
@@ -125,7 +127,7 @@ function Walkthrough({ tool }: { tool: Tool }) {
   const go = (next: number) => setStep(Math.min(3, Math.max(0, next)));
 
   return (
-    <section className={`front-walk walk-${tool}`} aria-labelledby="walk-title">
+    <section className="front-walk" aria-labelledby="walk-title">
       <div className="walk-head">
         <h2 id="walk-title">어떻게 지켜지는지 따라가 보기</h2>
       </div>

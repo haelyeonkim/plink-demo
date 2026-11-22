@@ -600,16 +600,15 @@ select.artwork-status {
 .artwork-source-field { grid-column: 1 / -1; }
 
 /* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then four steps that show it at work ---- */
-.front { --link: #315cf4; --ticket: #6a4cf0; background: #f4f1ea; padding-bottom: 56px; }
+.front { --accent: #315cf4; --soft: #eff3ff; background: #f4f1ea; padding-bottom: 56px; }
+.front-ticket { --accent: #6a4cf0; --soft: #f1edff; }
 .front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 .front-start, .front-how {
   min-height: 52px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px;
   border-radius: 14px; padding: 14px 22px; font-size: 16px; font-weight: 800;
 }
-.front-start { color: white; transition: transform .15s ease, box-shadow .15s ease; }
+.front-start { color: white; background: var(--accent); transition: transform .15s ease, box-shadow .15s ease; }
 .front-start:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
-.front-start.tool-link { background: var(--link); }
-.front-start.tool-ticket { background: var(--ticket); }
 .front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; }
 .front-how:hover { color: var(--ink); border-color: var(--ink); }
 .front-hero {
@@ -621,11 +620,9 @@ select.artwork-status {
 .front-copy p { font-size: 17px; line-height: 1.65; color: #4a5268; max-width: 520px; margin: 0; }
 
 .front-walk {
-  --accent: var(--link); --soft: #eff3ff;
   max-width: 1192px; margin: 0 auto; box-sizing: border-box; background: white; border-radius: 26px; padding: 28px;
   display: flex; flex-direction: column; gap: 24px; box-shadow: 0 20px 50px rgba(18, 33, 69, .08);
 }
-.front-walk.walk-ticket { --accent: var(--ticket); --soft: #f1edff; }
 .walk-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
 .walk-head h2 { font-size: 22px; letter-spacing: -.6px; margin: 0; }
 .walk-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
