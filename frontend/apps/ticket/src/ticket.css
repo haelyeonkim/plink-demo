@@ -2431,3 +2431,11 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 .schedule-fold { align-self: flex-start; }
 .pass-long { font-size: 12.5px; align-self: center; }
 .ticket-days-span { align-self: center; font-size: 12px; color: var(--muted); }
+
+/* The overview's latest movements: on a phone the gate and the note move under the ticket. */
+.recent-table .recent-under, .recent-table .recent-narrow { display: none; }
+@media (max-width: 620px) {
+  .recent-table .recent-wide { display: none; }
+  .recent-table .recent-narrow { display: inline; }
+  .recent-table .recent-under:not(:empty) { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+}

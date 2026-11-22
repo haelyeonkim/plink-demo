@@ -1124,10 +1124,11 @@ export default function TicketAdmin() {
     return new Set(summary?.attributes?.[field.label] ?? []);
   }
 
-  // Places come from the gates. A capacity left over from a gate that has since been
-  // renamed still shows, so the operator can see it and clear it.
+  // Places come from the gates; a booth's terminal hands out coupons and counts no one in,
+  // so its booth is not a place to set a capacity for. A capacity left over from a gate
+  // that has since been renamed still shows, so the operator can see it and clear it.
   const zoneNames = [...new Set([
-    ...gates.map(gate => gate.zone).filter((zone): zone is string => !!zone),
+    ...gates.filter(gate => gate.role !== 'BOOTH').map(gate => gate.zone).filter((zone): zone is string => !!zone),
     ...Object.keys(session?.zoneCapacity ?? {}),
   ])].sort((a, b) => a.localeCompare(b, 'ko'));
   return (
@@ -1219,7 +1220,11 @@ export default function TicketAdmin() {
         const anyOn = picked.some(row => row.status !== 'REVOKED');
         const hasPasses = (schedule?.passes.length ?? 0) > 0;
         const openDays = (schedule?.days ?? []).filter(day => !day.closed);
-        const columns = 7 + fieldList.length + (hasPasses ? 1 : 0);
+        // A spreadsheet can give tickets a seat or a tier without the event listing that
+        // field; what the tickets carry is still shown, in a column of its own.
+        const looseSeat = takenSeats.size > 0 && !fieldList.some(field => field.kind === 'SEAT');
+        const looseTier = usedTiers.size > 0 && !fieldList.some(field => field.kind === 'TIER');
+        const columns = 7 + fieldList.length + (hasPasses ? 1 : 0) + (looseSeat ? 1 : 0) + (looseTier ? 1 : 0);
         const open = openTicket;
         return (
         <div className="console-stack">
@@ -1280,6 +1285,8 @@ export default function TicketAdmin() {
                     </th>
                     <th>입장권</th>
                     {hasPasses && <th>입장권 종류</th>}
+                    {looseSeat && <th>좌석</th>}
+                    {looseTier && <th>등급</th>}
                     {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
                     <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th className="link-col" aria-label="링크" />
                   </tr>
@@ -1300,6 +1307,8 @@ export default function TicketAdmin() {
                             onClick={() => setOpenTicket(isOpen ? null : row)}>{row.ticketRef}</button>
                         </td>
                         {hasPasses && <td className="field-col">{row.pass ?? '전 일정'}</td>}
+                        {looseSeat && <td className="field-col">{row.seat ?? '–'}</td>}
+                        {looseTier && <td className="field-col">{row.tier ?? '–'}</td>}
                         {fieldList.map(field => <td key={field.id} className="field-col">{valueOf(row, field) ?? '–'}</td>)}
                         <td className="state-col"><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
                         {/* One line: where the holder is and since when, so a row stays one row high. */}
@@ -2628,18 +2637,21 @@ export default function TicketAdmin() {
                 <p className="console-none">기록이 없어요.</p>
               ) : (
                 <div className="console-table-box flat">
-                  <table className="console-table">
-                    <thead><tr><th>시각</th><th>구분</th><th>입장권</th><th>게이트</th><th>비고</th></tr></thead>
+                  <table className="console-table recent-table">
+                    <thead><tr><th>시각</th><th>구분</th><th>입장권</th><th className="recent-wide">게이트</th><th className="recent-wide">비고</th></tr></thead>
                     <tbody>
                       {occupancy?.recent.map((row, index) => (
                         <tr key={index}>
-                          <td className="muted">{shortTime(text(row.occurred_at) || null)}</td>
+                          <td className="muted"><span className="recent-wide">{shortTime(text(row.occurred_at) || null)}</span>
+                            <span className="recent-narrow">{clock(text(row.occurred_at) || null)}</span></td>
                           <td><span className={`pill pill-${outcomeTone(text(row.result))}`}>
                             {OUTCOMES[text(row.result)] ?? text(row.result)}</span>
-                            {text(row.direction) !== '' && <small className="cell-note">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
-                          <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}</td>
-                          <td>{text(row.gate_label) || text(row.gate_id) || '–'}</td>
-                          <td className="muted">{text(row.reason)}</td>
+                            {text(row.direction) !== '' && <small className="cell-note recent-wide">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
+                          <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}
+                            <small className="recent-under">
+                              {[text(row.gate_label) || text(row.gate_id), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
+                          <td className="recent-wide">{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                          <td className="muted recent-wide">{text(row.reason)}</td>
                         </tr>
                       ))}
                     </tbody>
