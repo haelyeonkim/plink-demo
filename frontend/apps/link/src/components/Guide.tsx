@@ -1,10 +1,9 @@
 import { AppLink as Link } from '@shared/scope';
-
-type Tool = 'link' | 'ticket';
+import Walkthrough, { type Tool } from './Walkthrough';
 
 /**
- * One tool's guide, in the order somebody meets it (/linkguide, /ticketguide until each tool
- * has a domain). Written against how Passlink works now: a link holds a document and issues
+ * One tool's guide: the four steps on screen first, then each step in words, in the order
+ * somebody meets it (/linkguide, /ticketguide until each tool has a domain). Written against how Passlink works now: a link holds a document and issues
  * one address per person, an event holds tickets, and a passkey belongs to the person.
  */
 export default function Guide({ tool }: { tool: Tool }) {
@@ -24,6 +23,8 @@ export default function Guide({ tool }: { tool: Tool }) {
           </>
         )}
       </div>
+
+      <Walkthrough tool={tool} />
 
       {tool === 'link' ? <LinkGuide /> : <TicketGuide />}
     </section>

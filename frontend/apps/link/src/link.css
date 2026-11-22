@@ -599,10 +599,33 @@ select.artwork-status {
 
 .artwork-source-field { grid-column: 1 / -1; }
 
-/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then four steps that show it at work.
-   As wide as every other page, so its first column lines up with the logo. ---- */
-.front { --accent: #315cf4; --soft: #eff3ff; background: #f4f1ea; padding-bottom: 56px; }
-.front-ticket { --accent: #6a4cf0; --soft: #f1edff; }
+/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then its four steps at a glance.
+   As wide as every other page, so its first column lines up with the logo. The walkthrough
+   (the steps on screen) opens each tool's guide. ---- */
+.front, .front-walk { --accent: #315cf4; --soft: #eff3ff; }
+.front-ticket, .walk-ticket { --accent: #6a4cf0; --soft: #f1edff; }
+.front { background: #f4f1ea; padding-bottom: 56px; }
+.front-steps { max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; }
+.front-steps-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-bottom: 16px; }
+.front-steps-head h2 { font-size: 22px; letter-spacing: -.6px; margin: 0; }
+.front-steps-more { display: inline-flex; align-items: center; gap: 6px; font-size: 14.5px; font-weight: 700; color: var(--accent); }
+.front-steps-more:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.front-steps ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.front-steps li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 18px; align-items: start;
+  background: white; border-radius: 22px; padding: 26px; box-shadow: 0 12px 34px rgba(18, 33, 69, .06);
+}
+.front-step-icon {
+  grid-row: span 2; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--soft); color: var(--accent); font-size: 24px;
+}
+.front-steps b { display: flex; align-items: baseline; gap: 8px; font-size: 18px; letter-spacing: -.4px; padding-top: 3px; }
+.front-step-num { font-size: 13px; font-weight: 800; color: var(--accent); }
+.front-steps p { margin: 0; font-size: 15px; line-height: 1.65; color: #4a5268; }
+.front-steps li.locked { background: #fdf0ee; }
+.front-steps li.locked .front-step-icon { background: #b3362b; color: white; }
+.front-steps li.locked .front-step-num { color: #b3362b; }
+.guide-page .front-walk { max-width: none; margin: 8px 0 12px; }
 .front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 .front-start {
   min-height: 52px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px;
@@ -712,7 +735,14 @@ select.artwork-status {
 /* A phone: one column, the screen without its phone, the steps as a progress bar, the console folded. */
 @media (max-width: 720px) {
   .front { padding-bottom: 32px; }
-  .front-hero, .front-walk, .front-facts { max-width: none; }
+  .front-hero, .front-walk, .front-facts, .front-steps { max-width: none; }
+  .front-steps { padding: 0 16px; }
+  .front-steps-head h2 { font-size: 19px; }
+  .front-steps ol { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .front-steps li { padding: 18px; gap: 4px 14px; border-radius: 18px; }
+  .front-step-icon { width: 44px; height: 44px; border-radius: 14px; font-size: 20px; }
+  .front-steps b { font-size: 16px; }
+  .front-steps p { font-size: 14px; }
   .front-hero { padding: 20px 16px 24px; gap: 18px; }
   .front-copy h1 { font-size: 30px; letter-spacing: -1.2px; line-height: 1.25; margin-bottom: 10px; }
   .front-copy p { font-size: 15px; }
