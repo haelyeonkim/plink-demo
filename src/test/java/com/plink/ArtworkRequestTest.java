@@ -244,8 +244,8 @@ class ArtworkRequestTest {
         Reader first = ownedReader("local:998"), second = reader("local:998", first.artwork());
         var one = act(first, "INTEREST", 0); one = act(first, "REQUEST_HOLD", one.version()); one = act(first, "PURCHASE", one.version());
         var two = act(second, "PURCHASE", 0);
-        jdbc.update("UPDATE artwork_request SET purchase_at=TIMESTAMP '2026-01-01 10:00:00' WHERE id=?", one.id());
-        jdbc.update("UPDATE artwork_request SET purchase_at=TIMESTAMP '2026-01-02 10:00:00' WHERE id=?", two.id());
+        jdbc.update("UPDATE artwork_request SET purchase_at=? WHERE id=?", java.sql.Timestamp.from(Instant.parse("2026-01-01T10:00:00+09:00")), one.id());
+        jdbc.update("UPDATE artwork_request SET purchase_at=? WHERE id=?", java.sql.Timestamp.from(Instant.parse("2026-01-02T10:00:00+09:00")), two.id());
         var duplicate = act(first, "PURCHASE", one.version());
         assertThat(duplicate.version()).isEqualTo(one.version()); assertThat(requests.history(one.id())).hasSize(3);
         String base = "/api/links/artwork-requests";
@@ -256,6 +256,12 @@ class ArtworkRequestTest {
             .andExpect(jsonPath("$.total").value(0)).andExpect(jsonPath("$.counts.purchase").value(2));
         mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("from", "2026-01-02").param("to", "2026-01-02"))
             .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value(two.id()));
+        // Dates are Korean days whatever zone the server runs in: 23:00 UTC on the 2nd is 08:00 KST on the 3rd.
+        jdbc.update("UPDATE artwork_request SET purchase_at=? WHERE id=?", java.sql.Timestamp.from(Instant.parse("2026-01-02T23:00:00Z")), two.id());
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("from", "2026-01-03").param("to", "2026-01-03"))
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].id").value(two.id()));
+        mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())).param("from", "2026-01-02").param("to", "2026-01-02"))
+            .andExpect(jsonPath("$.total").value(0));
         one = act(first, "WITHDRAW", one.version()); one = act(first, "PURCHASE", one.version());
         mvc.perform(get(base).with(AdminArtworkTest.admin(false)).param("artworkId", Long.toString(first.artwork())))
             .andExpect(jsonPath("$.items[0].id").value(two.id()));

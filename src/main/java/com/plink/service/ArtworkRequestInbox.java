@@ -1,6 +1,7 @@
 package com.plink.service;
 
 import com.plink.account.AdminPrincipal;
+import com.plink.activity.DataQueryService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -60,8 +61,9 @@ public class ArtworkRequestInbox {
         if (f.artworkId() != null) { where += " AND r.artwork_id=?"; args.add(f.artworkId()); }
         if (!f.processing().isEmpty()) { where += " AND r.processing_state=?"; args.add(f.processing()); }
         if (!f.owner().isEmpty()) { where += " AND r.owner_sub=?"; args.add(f.owner()); }
-        if (f.from() != null) { where += " AND " + TIME + ">=?"; args.add(Timestamp.valueOf(f.from().atStartOfDay())); }
-        if (f.to() != null) { where += " AND " + TIME + "<?"; args.add(Timestamp.valueOf(f.to().plusDays(1).atStartOfDay())); }
+        // Days are Korean days, as everywhere else in the service, whatever zone the server runs in.
+        if (f.from() != null) { where += " AND " + TIME + ">=?"; args.add(Timestamp.from(f.from().atStartOfDay(DataQueryService.ZONE).toInstant())); }
+        if (f.to() != null) { where += " AND " + TIME + "<?"; args.add(Timestamp.from(f.to().plusDays(1).atStartOfDay(DataQueryService.ZONE).toInstant())); }
         // Identity is the passkey holder, never a display name or unverified mailbox.
         List<Object> countArgs = new ArrayList<>();
         String countScope = scope(auth, "q", countArgs);

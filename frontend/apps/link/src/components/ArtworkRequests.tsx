@@ -291,8 +291,8 @@ export default function AdminArtworkRequests() {
           <option value="">전체</option>{params.get(key) && !options[group].some(item => item.value === params.get(key)) && <option value={params.get(key)!}>선택한 항목</option>}
           {options[group].map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>;
       })}
-      <label>접수 시작일 (UTC) <input type="date" value={params.get('from') || ''} onChange={event => changeFilter('from', event.target.value)} /></label>
-      <label>접수 종료일 (UTC) <input type="date" value={params.get('to') || ''} onChange={event => changeFilter('to', event.target.value)} /></label>
+      <label>접수 시작일 (한국 시간) <input type="date" value={params.get('from') || ''} onChange={event => changeFilter('from', event.target.value)} /></label>
+      <label>접수 종료일 (한국 시간) <input type="date" value={params.get('to') || ''} onChange={event => changeFilter('to', event.target.value)} /></label>
       <label>정렬 <select value={params.get('sort') || 'oldest'} onChange={event => changeFilter('sort', event.target.value)}>
         <option value="oldest">접수 빠른 순</option><option value="withdrawals">구매의사 철회 많은 순</option></select></label>
       <label><input type="checkbox" checked={params.get('withdrawals') === 'true'} onChange={event => changeFilter('withdrawals', event.target.checked ? 'true' : '')} /> 구매의사 철회 이력 있음</label>
