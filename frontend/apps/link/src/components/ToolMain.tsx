@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { AppLink as Link, useBrand } from '@shared/scope';
-import { scrollToElement } from '@shared/scrollTo';
+import Icon from '@shared/components/Icon';
 
 type Tool = 'link' | 'ticket';
 
@@ -103,8 +103,7 @@ export default function ToolMain({ tool }: { tool: Tool }) {
           <h1>{main.title[0]}<br />{main.title[1]}</h1>
           <p>{main.lead}</p>
           <div className="front-actions">
-            <Link className="front-start" to={brand.console}>{main.start} <span aria-hidden="true">→</span></Link>
-            <button type="button" className="front-how" onClick={showWalkthrough}>어떻게 지켜지는지 보기</button>
+            <Link className="front-start" to={brand.console}>{main.start}<Icon name="arrow-right" /></Link>
           </div>
         </div>
       </section>
@@ -116,13 +115,6 @@ export default function ToolMain({ tool }: { tool: Tool }) {
       </section>
     </div>
   );
-}
-
-/** Scrolls to the walkthrough and puts the reader there. */
-function showWalkthrough() {
-  const heading = document.getElementById('walk-title');
-  scrollToElement(heading?.closest('section'));
-  heading?.focus({ preventScroll: true });
 }
 
 function Walkthrough({ tool }: { tool: Tool }) {
@@ -137,7 +129,7 @@ function Walkthrough({ tool }: { tool: Tool }) {
   return (
     <section className="front-walk" aria-labelledby="walk-title">
       <div className="walk-head">
-        <h2 id="walk-title" tabIndex={-1}>어떻게 지켜지는지 따라가 보기</h2>
+        <h2 id="walk-title">어떻게 지켜지는지 따라가 보기</h2>
       </div>
 
       <ol className="walk-steps">
@@ -158,9 +150,9 @@ function Walkthrough({ tool }: { tool: Tool }) {
           <h3>{walk.captions[step][0]}</h3>
           <p>{walk.captions[step][1]}</p>
           <div className="walk-nav">
-            <button type="button" className="walk-prev" disabled={step === 0} onClick={() => go(step - 1)}>← 이전</button>
+            <button type="button" className="walk-prev" disabled={step === 0} onClick={() => go(step - 1)}><Icon name="arrow-left" />이전</button>
             <button type="button" className="walk-next" onClick={() => setStep(friend ? 0 : step + 1)}>
-              {friend ? '처음부터 다시' : '다음 →'}
+              {friend ? '처음부터 다시' : <>다음<Icon name="arrow-right" /></>}
             </button>
           </div>
         </div>

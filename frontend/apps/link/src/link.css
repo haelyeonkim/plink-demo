@@ -604,16 +604,12 @@ select.artwork-status {
 .front { --accent: #315cf4; --soft: #eff3ff; background: #f4f1ea; padding-bottom: 56px; }
 .front-ticket { --accent: #6a4cf0; --soft: #f1edff; }
 .front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
-.front-start, .front-how {
+.front-start {
   min-height: 52px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px;
   border-radius: 14px; padding: 14px 22px; font-size: 16px; font-weight: 800;
+  color: white; background: var(--accent); transition: transform .15s ease, box-shadow .15s ease;
 }
-.front-start { color: white; background: var(--accent); transition: transform .15s ease, box-shadow .15s ease; }
 .front-start:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
-.front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; font-family: inherit; cursor: pointer; }
-.front-walk { scroll-margin-top: 24px; }
-.front-walk h2:focus { outline: none; }
-.front-how:hover { color: var(--ink); border-color: var(--ink); }
 .front-hero {
   max-width: var(--page-width); margin: 0 auto; padding: 48px 24px 44px;
   display: flex; flex-wrap: wrap; gap: 32px; align-items: center; justify-content: space-between;
@@ -647,7 +643,10 @@ select.artwork-status {
 .walk-caption h3 { font-size: 28px; line-height: 1.3; letter-spacing: -1px; margin: 12px 0; }
 .walk-caption p { font-size: 16px; line-height: 1.7; color: #4a5268; margin: 0; }
 .walk-nav { display: flex; gap: 8px; margin-top: 22px; }
-.walk-nav button { min-height: 48px; border-radius: 12px; padding: 12px 20px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.walk-nav button {
+  min-height: 48px; border-radius: 12px; padding: 12px 20px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
 .walk-prev { background: white; color: var(--ink); border: 1px solid #d6dae6; }
 .walk-prev:disabled { opacity: .4; cursor: default; }
 .walk-next { background: var(--accent); color: white; border: 0; }
