@@ -8,14 +8,17 @@ import { useMenuFocus } from '../menuFocus';
 const ADMIN = '관리자';
 
 /**
- * Each tool's header is its own and names its own screens; the front page names the two
- * tools the way its cards do. The other tool is reached from the account menu.
+ * Each tool's header is its own and names its own screens by what is done there. The other
+ * tool is reached from the account menu.
  */
 const MENUS: Record<BrandName, Array<[string, string]>> = {
-  site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/guide', '가이드']],
-  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/guide', '가이드']],
-  ticket: [['/tickets', '이벤트'], ['/guide', '가이드']],
+  site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/ticketguide', '가이드']],
+  link: [['/links', '링크 관리'], ['/links/contents', '콘텐츠 관리'], ['/linkguide', '가이드']],
+  ticket: [['/tickets', '이벤트 관리'], ['/ticketguide', '가이드']],
 };
+
+/** What a visitor who is not signed in can open; every other entry would only ask them to sign in. */
+const PUBLIC_ENTRIES = new Set(['/linkguide', '/ticketguide']);
 
 /** The menu entry the page belongs to: the longest one its path starts with. */
 function currentEntry(menu: Array<[string, string]>, pathname: string): string | undefined {
@@ -43,9 +46,9 @@ export function isStandalone(pathname: string): boolean {
 }
 
 export default function Header() {
-  const { session, loading, logout } = useAuth();
   const brand = useBrand();
-  const menu = MENUS[brand.key];
+  const { session, loading, logout } = useAuth();
+  const menu = MENUS[brand.key].filter(([to]) => session?.user || PUBLIC_ENTRIES.has(to));
   const { pathname } = useLocation();
   const standalone = isStandalone(pathname);
   const [busy, setBusy] = useState(false);
@@ -96,7 +99,6 @@ export default function Header() {
   const elsewhere: Array<[string, string]> = user ? [
     ...(brand.key === 'ticket' && user.canLinks ? [['/links', '보호 링크로 이동'] as [string, string]] : []),
     ...(brand.key === 'link' && user.canTickets ? [['/tickets', '입장권으로 이동'] as [string, string]] : []),
-    ...(brand.key !== 'site' ? [['/', '패스링크 홈'] as [string, string]] : []),
     ...(user.canAccounts ? [['/admin', '계정 관리'] as [string, string]] : []),
   ] : [];
   const nav = menu.map(([to, label]) => (

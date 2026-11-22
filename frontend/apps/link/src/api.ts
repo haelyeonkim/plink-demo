@@ -74,13 +74,13 @@ export async function accessLink(shortCode: string, slug?: string): Promise<Acce
 /** Documents written here, which a protected link can point at. */
 export async function fetchContents(): Promise<ContentSummary[]> {
   const res = await fetch('/api/contents');
-  if (!res.ok) throw new Error('컨텐츠를 불러오지 못했어요.');
+  if (!res.ok) throw new Error('콘텐츠를 불러오지 못했어요.');
   return res.json();
 }
 
 export async function fetchContent(id: number): Promise<ContentDocument> {
   const res = await fetch(`/api/contents/${id}`);
-  if (!res.ok) throw new Error('컨텐츠를 불러오지 못했어요.');
+  if (!res.ok) throw new Error('콘텐츠를 불러오지 못했어요.');
   return res.json();
 }
 
@@ -94,7 +94,7 @@ export async function saveContent(
     body: JSON.stringify({ title, body, sourceType, sourceRef }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '컨텐츠를 저장하지 못했어요.');
+  if (!res.ok) throw new Error(data.error || '콘텐츠를 저장하지 못했어요.');
   return data;
 }
 
@@ -102,7 +102,7 @@ export async function deleteContent(id: number): Promise<void> {
   const res = await mutate(`/api/contents/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || '컨텐츠를 삭제하지 못했어요.');
+    throw new Error(data.error || '콘텐츠를 삭제하지 못했어요.');
   }
 }
 

@@ -1168,9 +1168,9 @@ select, .field select, select.artwork-status {
 /* Settings: one page, a card per section, its title on top and the settings under it. */
 .settings-page { display: flex; flex-direction: column; gap: 16px; }
 .settings-quick { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0; background: var(--bg); }
-.settings-quick a { font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #dfe3ee; color: #3d4663; background: white; }
-.settings-quick a:hover { border-color: var(--blue); color: var(--blue); }
-.settings-quick a.danger { color: #b3362b; border-color: #f0cdc9; }
+.settings-quick button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid #dfe3ee; color: #3d4663; background: white; cursor: pointer; }
+.settings-quick button:hover { border-color: var(--blue); color: var(--blue); }
+.settings-quick button.danger { color: #b3362b; border-color: #f0cdc9; }
 .settings-section {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
   background: white; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; scroll-margin-top: 56px;

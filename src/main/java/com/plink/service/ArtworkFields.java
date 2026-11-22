@@ -13,7 +13,7 @@ public final class ArtworkFields {
             return List.of();
         }
         if (values.size() > 200) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "작품은 컨텐츠당 200개까지 저장할 수 있어요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "작품은 콘텐츠당 200개까지 저장할 수 있어요.");
         }
         List<Map<String, String>> result = new ArrayList<>();
         for (Object value : values) {

@@ -41,7 +41,7 @@ export default function SessionCreate() {
   return (
     <section className="page-section">
       <h2>
-        <Link className="crumb-link" to="/tickets">입장권 관리</Link>
+        <Link className="crumb-link" to="/tickets">이벤트 관리</Link>
         <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
         <span className="crumb" aria-current="page">이벤트 추가</span>
       </h2>

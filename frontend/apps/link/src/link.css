@@ -599,44 +599,51 @@ select.artwork-status {
 
 .artwork-source-field { grid-column: 1 / -1; }
 
-/* ---- Passlink front door (/): the two tools first, then four steps that show the passkey at work ---- */
-.front { --link: #315cf4; --ticket: #6a4cf0; background: #f4f1ea; padding-bottom: 56px; }
+/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then its four steps at a glance.
+   As wide as every other page, so its first column lines up with the logo. The walkthrough
+   (the steps on screen) opens each tool's guide. ---- */
+.front, .front-walk { --accent: #315cf4; --soft: #eff3ff; }
+.front-ticket, .walk-ticket { --accent: #6a4cf0; --soft: #f1edff; }
+.front { background: #f4f1ea; padding-bottom: 56px; }
+.front-steps { max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; }
+.front-steps-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-bottom: 16px; }
+.front-steps-head h2 { font-size: 22px; letter-spacing: -.6px; margin: 0; }
+.front-steps-more { display: inline-flex; align-items: center; gap: 6px; font-size: 14.5px; font-weight: 700; color: var(--accent); }
+.front-steps-more:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.front-steps ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.front-steps li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 18px; align-items: start;
+  background: white; border-radius: 22px; padding: 26px; box-shadow: 0 12px 34px rgba(18, 33, 69, .06);
+}
+.front-step-icon {
+  grid-row: span 2; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--soft); color: var(--accent); font-size: 24px;
+}
+.front-steps b { display: flex; align-items: baseline; gap: 8px; font-size: 18px; letter-spacing: -.4px; padding-top: 3px; }
+.front-step-num { font-size: 13px; font-weight: 800; color: var(--accent); }
+.front-steps p { margin: 0; font-size: 15px; line-height: 1.65; color: #4a5268; }
+.guide-page .front-walk { max-width: none; margin: 8px 0 12px; }
+.front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.front-start {
+  min-height: 52px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px;
+  border-radius: 14px; padding: 14px 22px; font-size: 16px; font-weight: 800;
+  color: white; background: var(--accent); transition: transform .15s ease, box-shadow .15s ease;
+}
+.front-start:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
 .front-hero {
-  max-width: 1240px; margin: 0 auto; padding: 48px 24px 44px;
+  max-width: var(--page-width); margin: 0 auto; padding: 48px 24px 44px;
   display: flex; flex-wrap: wrap; gap: 32px; align-items: center; justify-content: space-between;
 }
 .front-copy { flex: 1 1 480px; min-width: 0; }
 .front-copy h1 { font-size: 48px; line-height: 1.2; letter-spacing: -2px; margin: 0 0 14px; }
 .front-copy p { font-size: 17px; line-height: 1.65; color: #4a5268; max-width: 520px; margin: 0; }
-.front-tools { flex: 1 1 460px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.front-tool {
-  display: flex; flex-direction: column; gap: 18px; min-height: 150px; box-sizing: border-box;
-  border-radius: 20px; padding: 22px; color: white; transition: transform .15s ease, box-shadow .15s ease;
-}
-.front-tool:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
-.front-tool.tool-link { background: var(--link); }
-.front-tool.tool-ticket { background: var(--ticket); }
-.front-tool-top { display: flex; justify-content: space-between; align-items: center; font-size: 22px; }
-.front-tool-icon { width: 40px; height: 40px; border-radius: 12px; background: rgba(255, 255, 255, .18); display: grid; place-items: center; }
-.front-tool-icon svg { width: 20px; height: 20px; }
-.front-tool-name { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
-.front-tool-name b { font-size: 20px; letter-spacing: -.4px; }
-.front-tool-name small { font-size: 13.5px; color: rgba(255, 255, 255, .86); }
 
 .front-walk {
-  --accent: var(--link); --soft: #eff3ff;
-  max-width: 1192px; margin: 0 auto; box-sizing: border-box; background: white; border-radius: 26px; padding: 28px;
+  max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; background: white; border-radius: 26px; padding: 28px;
   display: flex; flex-direction: column; gap: 24px; box-shadow: 0 20px 50px rgba(18, 33, 69, .08);
 }
-.front-walk.walk-ticket { --accent: var(--ticket); --soft: #f1edff; }
 .walk-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
 .walk-head h2 { font-size: 22px; letter-spacing: -.6px; margin: 0; }
-.walk-tabs { display: flex; gap: 4px; background: #f4f5f9; border-radius: 12px; padding: 4px; }
-.walk-tabs button {
-  border: 0; border-radius: 9px; padding: 10px 18px; min-height: 44px; font: inherit; font-size: 14.5px; font-weight: 700;
-  background: transparent; color: #4a5268; cursor: pointer;
-}
-.walk-tabs button[aria-pressed="true"] { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(18, 33, 69, .12); }
 .walk-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .walk-steps button {
   width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; min-height: 52px;
@@ -656,7 +663,10 @@ select.artwork-status {
 .walk-caption h3 { font-size: 28px; line-height: 1.3; letter-spacing: -1px; margin: 12px 0; }
 .walk-caption p { font-size: 16px; line-height: 1.7; color: #4a5268; margin: 0; }
 .walk-nav { display: flex; gap: 8px; margin-top: 22px; }
-.walk-nav button { min-height: 48px; border-radius: 12px; padding: 12px 20px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.walk-nav button {
+  min-height: 48px; border-radius: 12px; padding: 12px 20px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
 .walk-prev { background: white; color: var(--ink); border: 1px solid #d6dae6; }
 .walk-prev:disabled { opacity: .4; cursor: default; }
 .walk-next { background: var(--accent); color: white; border: 0; }
@@ -710,15 +720,11 @@ select.artwork-status {
 .walk-log li.latest { color: var(--ink); font-weight: 700; }
 .walk-owner { margin: 0; font-size: 13.5px; font-weight: 700; line-height: 1.5; color: #1c6b50; background: #e3f6ee; border-radius: 10px; padding: 10px 12px; }
 
-.front-facts { max-width: 1192px; margin: 0 auto; box-sizing: border-box; padding: 36px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.front-facts { max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; padding: 36px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .front-facts div { display: flex; flex-direction: column; gap: 4px; }
 .front-facts b { font-size: 16px; }
 .front-facts span { font-size: 14.5px; line-height: 1.6; color: #4a5268; }
 
-@media (max-width: 1240px) {
-  .front-walk { margin: 0 24px; }
-  .front-facts { padding: 36px 24px 0; }
-}
 @media (max-width: 980px) {
   .walk-body { grid-template-columns: minmax(0, 1fr) 300px; }
   .walk-console { grid-column: 1 / -1; }
@@ -726,18 +732,19 @@ select.artwork-status {
 /* A phone: one column, the screen without its phone, the steps as a progress bar, the console folded. */
 @media (max-width: 720px) {
   .front { padding-bottom: 32px; }
+  .front-hero, .front-walk, .front-facts, .front-steps { max-width: none; }
+  .front-steps { padding: 0 16px; }
+  .front-steps-head h2 { font-size: 19px; }
+  .front-steps ol { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .front-steps li { padding: 18px; gap: 4px 14px; border-radius: 18px; }
+  .front-step-icon { width: 44px; height: 44px; border-radius: 14px; font-size: 20px; }
+  .front-steps b { font-size: 16px; }
+  .front-steps p { font-size: 14px; }
   .front-hero { padding: 20px 16px 24px; gap: 18px; }
   .front-copy h1 { font-size: 30px; letter-spacing: -1.2px; line-height: 1.25; margin-bottom: 10px; }
   .front-copy p { font-size: 15px; }
-  .front-tools { flex-basis: 100%; gap: 10px; }
-  .front-tool { min-height: 120px; padding: 16px; gap: 14px; border-radius: 18px; }
-  .front-tool-icon { width: 34px; height: 34px; border-radius: 10px; }
-  .front-tool-name b { font-size: 17px; }
-  .front-tool-name small { font-size: 12.5px; }
   .front-walk { margin: 0; background: none; box-shadow: none; border-radius: 0; padding: 8px 16px 0; gap: 14px; }
   .walk-head h2 { font-size: 19px; }
-  .walk-tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; background: white; }
-  .walk-tabs button[aria-pressed="true"] { background: var(--ink); color: white; }
   .walk-steps { gap: 4px; }
   .walk-steps button { min-height: 26px; padding: 10px 0; border: 0; background: none; }
   .walk-steps button[aria-current="step"] { background: none; }

@@ -69,7 +69,7 @@ public class AdminArtworkEditService {
         if (position >= 0) {
             if (!(body.get("artworks") instanceof List<?> rows) || position >= rows.size()
                     || !(rows.get((int) position) instanceof Map<?, ?>))
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "원본 컨텐츠를 확인해 주세요.");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "원본 콘텐츠를 확인해 주세요.");
             ((Map<String, Object>) ((List<?>) body.get("artworks")).get((int) position)).putAll(changes);
         }
         Map<String, Object> stored = new LinkedHashMap<>(changes);

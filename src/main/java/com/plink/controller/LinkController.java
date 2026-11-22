@@ -146,7 +146,7 @@ public class LinkController {
         String originalUrl = contentId != null ? null : destination(req.get("originalUrl"));
         if (contentId == null && originalUrl == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
+                "링크가 열 대상을 정해 주세요. 주소를 입력하거나 콘텐츠를 선택하세요.");
         }
         String title = title(req.get("title"));
         String password = text(req.get("password"));
@@ -217,7 +217,7 @@ public class LinkController {
             String url = contentId != null ? null : destination(req.get("originalUrl"));
             if (contentId == null && url == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "링크가 열 대상을 정해 주세요. 주소를 입력하거나 컨텐츠를 선택하세요.");
+                    "링크가 열 대상을 정해 주세요. 주소를 입력하거나 콘텐츠를 선택하세요.");
             }
             updated = linkService.updateDestination(id, url, contentId);
         }
@@ -376,12 +376,12 @@ public class LinkController {
         long id;
         try { id = Long.parseLong(raw.toString()); }
         catch (NumberFormatException bad) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 확인해 주세요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠를 확인해 주세요.");
         }
         com.plink.model.LinkContent content = contents.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 찾을 수 없어요."));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠를 찾을 수 없어요."));
         if (!owner(user).equals(content.ownerSub)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠를 찾을 수 없어요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠를 찾을 수 없어요.");
         }
         return content.id;
     }

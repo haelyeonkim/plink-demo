@@ -53,7 +53,7 @@ export default function LinkCreate() {
     setError('');
     const data = new FormData(event.currentTarget);
     try {
-      if (target === 'content' && !contentId) throw new Error('연결할 컨텐츠를 선택해 주세요.');
+      if (target === 'content' && !contentId) throw new Error('연결할 콘텐츠를 선택해 주세요.');
       const options = {
         title: String(data.get('title') || '') || undefined,
         expiresAt: deadlineInstant(expiresAt) ?? undefined,
@@ -113,7 +113,7 @@ export default function LinkCreate() {
           <select id="link-target" value={target}
             onChange={event => setTarget(event.target.value as 'url' | 'content' | 'artworks')}>
             <option value="url">외부 주소 (이미 올려 둔 문서나 페이지)</option>
-            <option value="content">여기서 만든 컨텐츠</option>
+            <option value="content">여기서 만든 콘텐츠</option>
             <option value="artworks">작품 선택 (수신자별 맞춤 작품 목록)</option>
           </select>
         </div>
@@ -128,18 +128,18 @@ export default function LinkCreate() {
           </div>
         ) : target === 'content' ? (
           <div className="field">
-            <label htmlFor="link-content">컨텐츠
-              <InfoTip label="컨텐츠">여기서 만든 컨텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다.</InfoTip></label>
+            <label htmlFor="link-content">콘텐츠
+              <InfoTip label="콘텐츠">여기서 만든 콘텐츠는 주소가 따로 없고, 수신자의 패스키로만 열립니다.</InfoTip></label>
             <select id="link-content" value={contentId} required
               onChange={event => setContentId(event.target.value)}>
-              <option value="">컨텐츠를 선택하세요</option>
+              <option value="">콘텐츠를 선택하세요</option>
               {contents.map(content => (
                 <option key={content.id} value={content.id}>{content.title}</option>
               ))}
             </select>
             <p className="hint-text">
-              {contents.length === 0 ? '아직 만든 컨텐츠가 없어요. ' : ''}
-              <Link to="/links/contents/new">컨텐츠 만들기</Link>
+              {contents.length === 0 ? '아직 만든 콘텐츠가 없어요. ' : ''}
+              <Link to="/links/contents/new">콘텐츠 만들기</Link>
             </p>
           </div>
         ) : <div className="field">
