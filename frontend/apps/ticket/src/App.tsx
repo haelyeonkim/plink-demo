@@ -4,6 +4,7 @@ import { AppScope } from '@shared/scope';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Header from '@shared/components/Header';
 import { Tracker } from '@shared/track';
+import { DocumentTitle } from '@shared/title';
 import Footer from '@shared/components/Footer';
 import TicketPage from './components/TicketPage';
 import GateScanner from './components/GateScanner';
@@ -26,6 +27,7 @@ export default function App() {
     <AuthProvider>
     <BrowserRouter>
       <Tracker app="ticket" />
+      <DocumentTitle />
       <Header />
       <main>
         <Routes>

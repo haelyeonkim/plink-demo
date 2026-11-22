@@ -16,6 +16,7 @@ import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
 import Footer from '@shared/components/Footer';
 import { Tracker } from '@shared/track';
+import { DocumentTitle } from '@shared/title';
 import DataLayout from './components/data/DataLayout';
 import DataOverview from './components/data/DataOverview';
 import DataExplore from './components/data/DataExplore';
@@ -49,6 +50,7 @@ export default function App() {
     <AuthProvider>
     <BrowserRouter>
       <Tracker app="link" />
+      <DocumentTitle />
       <Header />
       <main>
         <Routes>

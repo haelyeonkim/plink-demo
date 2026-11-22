@@ -1,8 +1,9 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
+import { frontDoorOf, withFrontDoorHead } from '../../shared/src/frontDoor.ts';
 
 const ticketDev = `http://localhost:${process.env.TICKET_DEV_PORT || 3010}`;
 const TICKETS = /^\/tickets(?:[/?#]|$)/;
@@ -75,9 +76,34 @@ function rootToTicketMain(): Plugin {
   };
 }
 
+/**
+ * Each front door's title, description and Open Graph card, written into the page by the
+ * server: a messenger drawing a shared address reads the HTML and never runs the app.
+ */
+function frontDoorHead(): Plugin {
+  return {
+    name: 'plink-front-door-head',
+    // Development: the dev server's index.html, for the address that asked for it.
+    transformIndexHtml(html, ctx) {
+      return ctx.originalUrl ? withFrontDoorHead(html, ctx.originalUrl) : html;
+    },
+    // A preview (stage, production) serves the built page as is, so write it in here.
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url || '/';
+        const page = join(dist, 'index.html');
+        if ((req.method !== 'GET' && req.method !== 'HEAD') || !frontDoorOf(url) || !existsSync(page)) return next();
+        res.setHeader('Content-Type', TYPES['.html']);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.end(withFrontDoorHead(readFileSync(page, 'utf8'), url));
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: import.meta.dirname,
-  plugins: [react(), rootToTicketMain(), ticketApp()],
+  plugins: [react(), rootToTicketMain(), frontDoorHead(), ticketApp()],
   resolve: { alias: { '@shared': shared } },
   publicDir: '../../public',
   // This empties dist/, ticket app included: npm run build builds this app first.
