@@ -368,7 +368,7 @@ public class ContentImportService {
         body.put("columns", "2");
         body.put("artworks", works);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("title", title == null || title.isBlank() ? "가져온 컨텐츠" : clean(title));
+        result.put("title", title == null || title.isBlank() ? "가져온 콘텐츠" : clean(title));
         result.put("body", body);
         result.put("artworkCount", works.size());
         result.put("warnings", warnings);

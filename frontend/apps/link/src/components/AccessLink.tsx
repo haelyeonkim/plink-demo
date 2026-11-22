@@ -102,7 +102,7 @@ export default function AccessLink() {
   if (opened?.content) return (
     <section className="page-section">
       {statusNotice && <p className="hint-text" role="status">{statusNotice}</p>}
-      <ArtworkRequestsProvider key={shortCode} code={shortCode}><ContentView title={opened.contentTitle ?? info.title ?? '공유된 컨텐츠'} body={opened.content} recipientCode={shortCode} /></ArtworkRequestsProvider>
+      <ArtworkRequestsProvider key={shortCode} code={shortCode}><ContentView title={opened.contentTitle ?? info.title ?? '공유된 콘텐츠'} body={opened.content} recipientCode={shortCode} /></ArtworkRequestsProvider>
     </section>
   );
   if (opened) return (

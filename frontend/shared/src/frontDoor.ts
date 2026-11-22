@@ -22,9 +22,21 @@ const FRONT_DOORS: Record<string, FrontDoor> = {
   },
 };
 
+const pathOf = (url: string) => url.split(/[?#]/)[0].replace(/\/+$/, '');
+
 /** The front door at this address, if it is one; a query string or trailing slash is ignored. */
 export function frontDoorOf(url: string): FrontDoor | undefined {
-  return FRONT_DOORS[url.split(/[?#]/)[0].replace(/\/+$/, '')];
+  return FRONT_DOORS[pathOf(url)];
+}
+
+/**
+ * The pages a search engine may list: each tool's front door and guide. Everything else is
+ * a sign-in page, an operator's console, or a holder's or recipient's own address.
+ */
+const SEARCHABLE = new Set([...Object.keys(FRONT_DOORS), '/linkguide', '/ticketguide']);
+
+export function isSearchable(url: string): boolean {
+  return SEARCHABLE.has(pathOf(url));
 }
 
 const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');

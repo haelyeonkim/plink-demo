@@ -89,7 +89,7 @@ export default function ContentCreate() {
       setSourceRef(document.sourceRef);
       const rows = (document.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork));
       setArtworks(rows.length > 0 ? rows : [empty()]);
-    }).catch(() => { if (live) setError('컨텐츠를 불러오지 못했어요.'); });
+    }).catch(() => { if (live) setError('콘텐츠를 불러오지 못했어요.'); });
     return () => { live = false; };
   }, [editing]);
 
@@ -97,10 +97,10 @@ export default function ContentCreate() {
     if (busy || uploading !== null) return;
     setError(''); setNotice(''); setBusy(true);
     try {
-      const document = await saveContent(editing, exhibition.trim() || '제목 없는 컨텐츠',
+      const document = await saveContent(editing, exhibition.trim() || '제목 없는 콘텐츠',
         { intro, columns, artworks: artworks.map(artwork => ({ ...artwork })) }, sourceType, sourceRef);
       setArtworks((document.body.artworks ?? []).map(row => ({ ...empty(), ...row, ...priceDraft(row) } as Artwork)));
-      setNotice('저장했어요. 링크를 만들 때 이 컨텐츠를 고를 수 있습니다.');
+      setNotice('저장했어요. 링크를 만들 때 이 콘텐츠를 고를 수 있습니다.');
       if (!editing) navigate(`/links/contents/${document.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장하지 못했어요.');
@@ -123,7 +123,7 @@ export default function ContentCreate() {
       setSourceType(result.sourceType);
       setSourceRef(result.sourceRef);
       setImported(true);
-      setNotice(`${result.artworkCount}개 작품을 내 컨텐츠에 저장했어요. 내용을 확인하고 수정할 수 있습니다.`);
+      setNotice(`${result.artworkCount}개 작품을 내 콘텐츠에 저장했어요. 내용을 확인하고 수정할 수 있습니다.`);
       navigate(`/links/contents/${result.id}/edit`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '작품을 가져오지 못했어요.');
@@ -144,7 +144,7 @@ export default function ContentCreate() {
     try {
       const result = await uploadContentImage(image);
       update(index, 'image', result.url);
-      setNotice('이미지를 업로드했어요. 컨텐츠를 저장하면 작품에 반영됩니다.');
+      setNotice('이미지를 업로드했어요. 콘텐츠를 저장하면 작품에 반영됩니다.');
     } catch (err) {
       setError(err instanceof Error ? err.message : '이미지를 업로드하지 못했어요.');
     } finally { setUploading(null); }
@@ -154,9 +154,8 @@ export default function ContentCreate() {
     return (
       <section className="page-section page-wide">
         <h2>
-          <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <span className="crumb" aria-current="page">새 컨텐츠 만들기</span>
+          <Link className="crumb-link" to="/links/contents">콘텐츠 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <span className="crumb" aria-current="page">새 콘텐츠 만들기</span>
         </h2>
         <div className="picked-bar">
           <span className="picked-meta">시작할 방법을 선택하세요. 가져온 내용은 내 계정에 자동 저장되며, 나중에 다시 열어 수정할 수 있습니다.</span>
@@ -182,13 +181,12 @@ export default function ContentCreate() {
   if (!editing && source !== 'manual' && !imported) {
     return (
       <section className="page-section page-wide">
-        <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
-          <Link className="crumb crumb-link" to="/links/contents/new">새 컨텐츠 만들기</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+        <h2><Link className="crumb-link" to="/links/contents">콘텐츠 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+          <Link className="crumb crumb-link" to="/links/contents/new">새 콘텐츠 만들기</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
           <span className="crumb" aria-current="page">{source === 'url' ? '웹페이지에서 가져오기' : 'PDF에서 가져오기'}</span>
         </h2>
         <div className="picked-bar">
-          <span className="picked-meta">가져온 작품은 내 컨텐츠에 자동 저장되며, 이후 수정할 수 있습니다.</span>
+          <span className="picked-meta">가져온 작품은 내 콘텐츠에 자동 저장되며, 이후 수정할 수 있습니다.</span>
         </div>
         {error && <p className="error-text" role="alert">{error}</p>}
         <div className="tab-panel import-panel">
@@ -219,10 +217,9 @@ export default function ContentCreate() {
   return (
     <section className="page-section page-wide">
       <h2>
-        <Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><Link className="crumb crumb-link" to="/links/contents">컨텐츠</Link>
-        <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
+        <Link className="crumb-link" to="/links/contents">콘텐츠 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
         {editing ? <span className="crumb" aria-current="page">{exhibition || '제목 없음'}</span> : <>
-          <Link className="crumb crumb-link" to="/links/contents/new">새 컨텐츠 만들기</Link>
+          <Link className="crumb crumb-link" to="/links/contents/new">새 콘텐츠 만들기</Link>
           <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
           <span className="crumb" aria-current="page">직접 작성</span>
         </>}
@@ -230,11 +227,11 @@ export default function ContentCreate() {
 
       <div className="picked-bar">
         <span className="picked-meta">
-          {editing ? '저장된 컨텐츠를 편집하고 있어요.' : '새 컨텐츠를 작성하고 있어요.'}
+          {editing ? '저장된 콘텐츠를 편집하고 있어요.' : '새 콘텐츠를 작성하고 있어요.'}
         </span>
         <span className="picked-actions">
           <button className="btn-secondary" onClick={save} disabled={busy || uploading !== null}>
-            {busy ? '저장 중…' : editing ? '저장' : '컨텐츠 저장'}
+            {busy ? '저장 중…' : editing ? '저장' : '콘텐츠 저장'}
           </button>
         </span>
       </div>
@@ -311,7 +308,7 @@ export default function ContentCreate() {
                   placeholder="https://…/artwork.jpg"
                   onChange={event => update(index, 'image', event.target.value)} />
                 <label htmlFor={`art-upload-${index}`}>또는 이미지 파일 업로드
-                  <InfoTip label="이미지 파일 업로드">JPEG·PNG, 최대 10MB. 업로드 후 컨텐츠를 저장해 주세요.</InfoTip></label>
+                  <InfoTip label="이미지 파일 업로드">JPEG·PNG, 최대 10MB. 업로드 후 콘텐츠를 저장해 주세요.</InfoTip></label>
                 <input id={`art-upload-${index}`} type="file" accept="image/jpeg,image/png"
                   disabled={busy || uploading !== null}
                   onChange={event => {

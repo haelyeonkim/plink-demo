@@ -86,7 +86,7 @@ export default function AdminArtworkList() {
     <form className="admin-artwork-filters" onSubmit={event => { event.preventDefault(); change(draft.trim(), status); }}>
       <div className="field"><label htmlFor="artwork-search">작품 검색</label>
         <input id="artwork-search" type="search" maxLength={200} value={draft}
-          placeholder="작품명, 작가, 컨텐츠, 등록 계정" onChange={event => setDraft(event.target.value)} /></div>
+          placeholder="작품명, 작가, 콘텐츠, 등록 계정" onChange={event => setDraft(event.target.value)} /></div>
       <div className="field"><label htmlFor="artwork-status">판매 상태</label>
         <select id="artwork-status" value={status} onChange={event => change(draft.trim(), event.target.value)}>
           <option value="all">전체</option>
@@ -103,7 +103,7 @@ export default function AdminArtworkList() {
         <div className="admin-artwork-table-wrap" tabIndex={0} role="region" aria-label="전체 작품 목록">
           <table className="admin-artwork-table">
             <thead><tr><th scope="col">작품</th><th scope="col">작가 / 제작연도</th><th scope="col">가격</th>
-              <th scope="col">판매 상태</th><th scope="col">등록 계정</th><th scope="col">컨텐츠 / 출처</th><th scope="col">수정일</th></tr></thead>
+              <th scope="col">판매 상태</th><th scope="col">등록 계정</th><th scope="col">콘텐츠 / 출처</th><th scope="col">수정일</th></tr></thead>
             <tbody>{result.items.map(row => <tr key={row.id}>
               <td><button type="button" className="admin-artwork-work admin-artwork-edit-button"
                 aria-label={`${row.title || '제목 없음'} 수정`} onClick={() => setEditing(row)}><Thumbnail key={row.image} src={row.image} />

@@ -1136,7 +1136,7 @@ export default function TicketAdmin() {
     <section className="page-section page-wide console">
       {!session && (<>
         <div className="page-head">
-          <h2><span aria-current="page">이벤트</span><span className="count">{sessions.length}</span>
+          <h2><span aria-current="page">이벤트 관리</span><span className="count">{sessions.length}</span>
             <InfoTip label="이벤트 목록">이벤트 이름을 누르면 들어갑니다. 오늘·예정 이벤트가 위에, 종료된 이벤트는 아래에 놓입니다.</InfoTip></h2>
           <span className="page-actions">
             <Link className="btn-primary" to="/tickets/sessions/new">이벤트 추가</Link>

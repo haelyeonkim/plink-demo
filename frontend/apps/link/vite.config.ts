@@ -3,7 +3,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
-import { frontDoorOf, withFrontDoorHead } from '../../shared/src/frontDoor.ts';
+import { frontDoorOf, isSearchable, withFrontDoorHead } from '../../shared/src/frontDoor.ts';
 
 const ticketDev = `http://localhost:${process.env.TICKET_DEV_PORT || 3010}`;
 const TICKETS = /^\/tickets(?:[/?#]|$)/;
@@ -77,6 +77,22 @@ function rootToTicketMain(): Plugin {
 }
 
 /**
+ * Keeps every page but the front doors and guides out of search results, said in a header
+ * so it holds before any script runs. The ticket app's pages pass through here too.
+ */
+function searchIndexing(): Plugin {
+  const mark: Connect.NextHandleFunction = (req, res, next) => {
+    if (!isSearchable(req.url || '/')) res.setHeader('X-Robots-Tag', 'noindex');
+    next();
+  };
+  return {
+    name: 'plink-search-indexing',
+    configureServer(server) { server.middlewares.use(mark); },
+    configurePreviewServer(server) { server.middlewares.use(mark); },
+  };
+}
+
+/**
  * Each front door's title, description and Open Graph card, written into the page by the
  * server: a messenger drawing a shared address reads the HTML and never runs the app.
  */
@@ -103,7 +119,7 @@ function frontDoorHead(): Plugin {
 
 export default defineConfig({
   root: import.meta.dirname,
-  plugins: [react(), rootToTicketMain(), frontDoorHead(), ticketApp()],
+  plugins: [react(), searchIndexing(), rootToTicketMain(), frontDoorHead(), ticketApp()],
   resolve: { alias: { '@shared': shared } },
   publicDir: '../../public',
   // This empties dist/, ticket app included: npm run build builds this app first.

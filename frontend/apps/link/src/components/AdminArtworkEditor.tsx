@@ -40,7 +40,7 @@ export default function AdminArtworkEditor({ artwork, onClose, onSaved }: {
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <form onSubmit={event => void save(event)}>
       <h3 id="artwork-edit-title">작품 수정
-        <InfoTip label="작품 수정">원본 컨텐츠와 작품 목록에 반영됩니다. 이미 발송한 수신자별 작품 내용은 유지됩니다.</InfoTip></h3>
+        <InfoTip label="작품 수정">원본 콘텐츠와 작품 목록에 반영됩니다. 이미 발송한 수신자별 작품 내용은 유지됩니다.</InfoTip></h3>
       {artwork.image && <img className="admin-artwork-edit-preview" src={artwork.image} alt={artwork.title} referrerPolicy="no-referrer" />}
       <fieldset disabled={busy} className="admin-artwork-edit-fields">
         {fields.map(([key, label, maxLength]) => <div className="field" key={key}>
@@ -52,7 +52,7 @@ export default function AdminArtworkEditor({ artwork, onClose, onSaved }: {
         </div>)}
         {artwork.sourceType === 'URL' && <div className="field artwork-source-field">
           <label htmlFor="edit-artwork-source">원본 웹페이지 주소
-            <InfoTip label="원본 웹페이지 주소">같은 컨텐츠에 속한 작품의 출처에 함께 반영됩니다.</InfoTip></label>
+            <InfoTip label="원본 웹페이지 주소">같은 콘텐츠에 속한 작품의 출처에 함께 반영됩니다.</InfoTip></label>
           <input id="edit-artwork-source" type="url" maxLength={500}
             value={/^[0-9a-f]{64}$/.test(sourceRef) ? '' : sourceRef} placeholder="https://"
             onChange={event => setSourceRef(event.target.value)} />

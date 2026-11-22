@@ -42,7 +42,7 @@ export default function LinkTable({ links, loading }: { links: ProtectedLink[]; 
       <div className="console-empty">
         <h3>첫 링크를 만들어 보세요</h3>
         <ol>
-          <li><b>열 대상 정하기</b> 외부 주소나 여기서 만든 컨텐츠를 고르세요.</li>
+          <li><b>열 대상 정하기</b> 외부 주소나 여기서 만든 콘텐츠를 고르세요.</li>
           <li><b>수신자에게 발급</b> 한 사람에 하나씩 링크가 나가요.</li>
           <li><b>열람 확인</b> 누가 언제 열었는지 확인해요.</li>
         </ol>
@@ -66,7 +66,7 @@ export default function LinkTable({ links, loading }: { links: ProtectedLink[]; 
         </fieldset>
         <label className="console-search">
           <span className="visually-hidden">링크 검색</span>
-          <input type="search" placeholder="제목·주소·컨텐츠·수신자 검색" value={query}
+          <input type="search" placeholder="제목·주소·콘텐츠·수신자 검색" value={query}
             onChange={event => setQuery(event.target.value)} />
         </label>
       </div>
@@ -91,7 +91,7 @@ export default function LinkTable({ links, loading }: { links: ProtectedLink[]; 
                     {row.hasPassword && <span className="pill pill-wait">비밀번호</span>}
                   </td>
                   <td className="muted link-target">
-                    {row.contentId ? <>컨텐츠 · {row.contentTitle}</> : <code title={row.originalUrl ?? ''}>{row.originalUrl}</code>}
+                    {row.contentId ? <>콘텐츠 · {row.contentTitle}</> : <code title={row.originalUrl ?? ''}>{row.originalUrl}</code>}
                   </td>
                   <td className="muted">{shortDate(row.createdAt)}</td>
                   <td className="muted">{row.expiresAt ? shortDate(row.expiresAt) : '없음'}</td>

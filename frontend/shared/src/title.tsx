@@ -25,6 +25,7 @@ export function titleOf(path: string): string {
   if (/^\/tickets(?:\/|$)/.test(path)) return `이벤트 관리 | ${TICKET}`;
   if (/^\/links\/login\/?$/.test(path)) return `로그인 | ${LINK}`;
   if (/^\/s\//.test(path)) return `받은 링크 | ${LINK}`;
+  if (/^\/links\/contents(?:\/|$)/.test(path)) return `콘텐츠 관리 | ${LINK}`;
   if (/^\/links(?:\/|$)/.test(path)) return `링크 관리 | ${LINK}`;
   return '패스링크';
 }

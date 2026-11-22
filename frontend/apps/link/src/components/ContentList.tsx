@@ -12,14 +12,14 @@ export default function ContentList() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try { setContents(await fetchContents()); }
-    catch { setError('컨텐츠를 불러오지 못했어요.'); }
+    catch { setError('콘텐츠를 불러오지 못했어요.'); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
   async function remove(event: React.MouseEvent, row: ContentSummary) {
     event.stopPropagation();
-    if (!window.confirm(`“${row.title}” 컨텐츠를 삭제할까요?`)) return;
+    if (!window.confirm(`“${row.title}” 콘텐츠를 삭제할까요?`)) return;
     setError('');
     try { await deleteContent(row.id); await load(); }
     catch (err) { setError(err instanceof Error ? err.message : '삭제하지 못했어요.'); }
@@ -28,22 +28,22 @@ export default function ContentList() {
   return (
     <section className="page-section page-wide">
       <div className="page-head">
-        <h2><Link className="crumb-link" to="/links">링크 관리</Link><img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" /><span className="crumb" aria-current="page">컨텐츠</span>
+        <h2><span aria-current="page">콘텐츠 관리</span>
           <span className="count">{contents.length}</span>
         </h2>
         <span className="page-actions">
-          <Link className="btn-primary" to="/links/contents/new">새 컨텐츠 만들기</Link>
+          <Link className="btn-primary" to="/links/contents/new">새 콘텐츠 만들기</Link>
         </span>
       </div>
       <div className="picked-bar">
-        <span className="picked-meta">내 계정에 저장한 컨텐츠입니다. 이전에 가져온 자료를 선택해 다시 열고 수정할 수 있습니다.</span>
+        <span className="picked-meta">내 계정에 저장한 콘텐츠입니다. 이전에 가져온 자료를 선택해 다시 열고 수정할 수 있습니다.</span>
       </div>
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="tab-panel">
-        {loading ? <p role="status">컨텐츠를 불러오고 있어요.</p> : contents.length === 0 ? (
+        {loading ? <p role="status">콘텐츠를 불러오고 있어요.</p> : contents.length === 0 ? (
           <div className="empty-state">
-            <p>아직 저장한 컨텐츠가 없어요.</p>
-            <Link className="btn-secondary" to="/links/contents/new">첫 컨텐츠 만들기</Link>
+            <p>아직 저장한 콘텐츠가 없어요.</p>
+            <Link className="btn-secondary" to="/links/contents/new">첫 콘텐츠 만들기</Link>
           </div>
         ) : (
           <ul className="entity-list">

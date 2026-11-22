@@ -41,7 +41,7 @@ export default function ContentView({ title, body, recipientCode }: { title: str
         ))}
       </div>
       {artworks.length === 0 && !body.intro && (
-        <p className="hint-text">아직 내용이 없는 컨텐츠예요.</p>
+        <p className="hint-text">아직 내용이 없는 콘텐츠예요.</p>
       )}
     </article>
   );
