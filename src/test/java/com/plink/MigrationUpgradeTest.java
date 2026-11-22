@@ -45,7 +45,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO event_session(id,name,starts_at,test_event) VALUES (1,'Rehearsal',CURRENT_TIMESTAMP,TRUE)");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(28);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(30);
         current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT a.title,a.sale_status,a.archived,ca.artwork_id FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -85,7 +85,7 @@ class MigrationUpgradeTest {
         }
         var reconcile = Flyway.configure().dataSource(dataSource(url))
                 .locations("classpath:db/migration").outOfOrder(true).load();
-        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(27);
+        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(29);
         flyway(url, "classpath:db/migration").validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT a.sale_status FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -96,7 +96,7 @@ class MigrationUpgradeTest {
 
     @Test void inboxBackfillsExistingHistoryAndRetainsDeletedInvitationRecords() throws Exception {
         String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
-        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("58").load().migrate();
+        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("60").load().migrate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             s.execute("INSERT INTO link_content(id,owner_sub,title,body) VALUES (1,'local:1','Catalog','{}')");
             s.execute("INSERT INTO artwork(id,owner_sub,source_content_id,position,title) VALUES (1,'local:1',1,0,'Work')");
@@ -126,7 +126,7 @@ class MigrationUpgradeTest {
 
     @Test void retryBackfillKeepsOnlyTheLatestCancellationRefusal() throws Exception {
         String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
-        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("59").load().migrate();
+        Flyway.configure().dataSource(dataSource(url)).locations("classpath:db/migration").target("61").load().migrate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             s.execute("INSERT INTO link_content(id,owner_sub,title,body) VALUES (1,'local:1','Catalog','{}')");
             s.execute("INSERT INTO artwork(id,owner_sub,source_content_id,position,title) VALUES (1,'local:1',1,0,'Work')");

@@ -69,7 +69,7 @@
 
 ## 6. DB 변경과 배포 영향
 
-`V59__artwork_request_inbox.sql`에서 다음을 추가한다.
+`V61__artwork_request_inbox.sql`에서 다음을 추가한다.
 
 - 요청 스냅샷: `owner_sub`, `holder_id`, `link_title`.
 - 접수 시각: `first_requested_at`, `requested_at`, `interest_at`, `hold_requested_at`, `purchase_at`.
@@ -96,7 +96,7 @@ Draft 검토 시 확인할 사항:
 
 관련 문서: [수신자 액션 설계](recipient-artwork-actions-design.md), [수신자 액션 구현](recipient-artwork-actions.md).
 
-## 8. 거절 후 재요청과 사유 공개 (V60)
+## 8. 거절 후 재요청과 사유 공개 (V62)
 
 - 홀딩 요청이 거절(`REJECTED`)되었거나 판매 취소 요청이 거절(`cancel_rejected`)된 수신자는 같은 버튼으로 바로 다시 요청할 수 없다. 버튼을 누르면 팝업이 현재 상태·사유·처리 시각을 보여주고, 문의 내용을 적어 담당자에게 보낼 수 있다(`INQUIRE`, 한 번에 하나).
 - 문의는 요청함의 `재요청 문의` 상태로 모이고 처리 상태가 미확인으로 바뀐다. 관리자는 `재요청 허용`(`ALLOW_RETRY`: 홀딩은 `NONE`으로, 판매 취소는 다시 요청 가능으로) 또는 `문의 거절`(`DECLINE_RETRY`, 사유 필수)로 답한다.
