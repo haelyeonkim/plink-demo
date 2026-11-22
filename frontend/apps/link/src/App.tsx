@@ -70,7 +70,10 @@ export default function App() {
           <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
           <Route path="/admin/artworks/requests" element={<RequireAdmin scope="canAccounts"><AdminArtworkRequests /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
-          <Route path="/guide" element={<Guide />} />
+          <Route path="/linkguide" element={<Guide tool="link" />} />
+          <Route path="/ticketguide" element={<Guide tool="ticket" />} />
+          {/* The one guide both tools used to share. */}
+          <Route path="/guide" element={<Moved to={() => '/ticketguide'} />} />
           <Route path="/login" element={<Login />} />
           {/* The link tool opens on its console, like the ticket tool under /tickets. */}
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />

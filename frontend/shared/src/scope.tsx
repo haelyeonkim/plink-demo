@@ -47,9 +47,9 @@ const BRANDS: Record<BrandName, Brand> = {
 
 export function brandOf(path: string): BrandName {
   if (appOf(path) === 'ticket') return 'ticket';
-  // Each tool's front door is served by the link app but wears that tool's brand.
-  if (/^\/ticketmain(?:[/?#]|$)/.test(path)) return 'ticket';
-  return /^\/(?:links|linkmain|s)(?:[/?#]|$)/.test(path) ? 'link' : 'site';
+  // Each tool's front door and guide are served by the link app but wear that tool's brand.
+  if (/^\/ticket(?:main|guide)(?:[/?#]|$)/.test(path)) return 'ticket';
+  return /^\/(?:links|linkmain|linkguide|s)(?:[/?#]|$)/.test(path) ? 'link' : 'site';
 }
 
 export function useBrand(): Brand {

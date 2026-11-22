@@ -12,9 +12,9 @@ const ADMIN = '관리자';
  * tools the way its cards do. The other tool is reached from the account menu.
  */
 const MENUS: Record<BrandName, Array<[string, string]>> = {
-  site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/guide', '가이드']],
-  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/guide', '가이드']],
-  ticket: [['/tickets', '이벤트'], ['/guide', '가이드']],
+  site: [['/links', '보호 링크'], ['/tickets', '입장권'], ['/ticketguide', '가이드']],
+  link: [['/links', '링크'], ['/links/contents', '컨텐츠'], ['/linkguide', '가이드']],
+  ticket: [['/tickets', '이벤트'], ['/ticketguide', '가이드']],
 };
 
 /** The menu entry the page belongs to: the longest one its path starts with. */

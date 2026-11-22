@@ -15,6 +15,8 @@ const LINK = '패스링크 프라이빗';
 export function titleOf(path: string): string {
   const door = frontDoorOf(path);
   if (door) return door.title;
+  if (/^\/ticketguide\/?$/.test(path)) return `가이드 | ${TICKET}`;
+  if (/^\/linkguide\/?$/.test(path)) return `가이드 | ${LINK}`;
   if (/^\/tickets\/login\/?$/.test(path)) return `로그인 | ${TICKET}`;
   if (/^\/tickets\/gate(?:\/|$)/.test(path)) return `게이트 | ${TICKET}`;
   if (/^\/tickets\/booth\//.test(path)) return `부스 관리 | ${TICKET}`;

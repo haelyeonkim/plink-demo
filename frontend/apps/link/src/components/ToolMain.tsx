@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AppLink as Link, useBrand } from '@shared/scope';
+import { scrollToElement } from '@shared/scrollTo';
 
 type Tool = 'link' | 'ticket';
 
@@ -117,13 +118,10 @@ export default function ToolMain({ tool }: { tool: Tool }) {
   );
 }
 
-/**
- * Scrolls to the walkthrough and puts the reader there. A button rather than a #fragment
- * link: addresses on this site carry no fragments.
- */
+/** Scrolls to the walkthrough and puts the reader there. */
 function showWalkthrough() {
   const heading = document.getElementById('walk-title');
-  heading?.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scrollToElement(heading?.closest('section'));
   heading?.focus({ preventScroll: true });
 }
 

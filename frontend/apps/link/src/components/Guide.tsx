@@ -1,23 +1,39 @@
 import { AppLink as Link } from '@shared/scope';
 
+type Tool = 'link' | 'ticket';
+
 /**
- * What the two products do, in the order somebody meets them. Written against how
- * Passlink works now: a link holds a document and issues one address per person, an
- * event holds tickets, and a passkey belongs to the person rather than to either.
+ * One tool's guide, in the order somebody meets it (/linkguide, /ticketguide until each tool
+ * has a domain). Written against how Passlink works now: a link holds a document and issues
+ * one address per person, an event holds tickets, and a passkey belongs to the person.
  */
-export default function Guide() {
+export default function Guide({ tool }: { tool: Tool }) {
   return (
     <section className="page-section guide-page">
       <div className="section-header">
         <p className="eyebrow"><span></span> GUIDE</p>
-        <h2>사용자 가이드</h2>
-        <p className="section-desc">
-          보호 링크와 입장권은 같은 원리로 움직입니다 - 받는 사람마다 주소를 하나씩 발급하고,
-          그 사람의 패스키에만 열립니다.
-        </p>
+        {tool === 'link' ? (
+          <>
+            <h2>보호 링크 가이드</h2>
+            <p className="section-desc">받는 사람마다 주소를 하나씩 발급하고, 그 사람의 패스키에만 열립니다.</p>
+          </>
+        ) : (
+          <>
+            <h2>입장권 가이드</h2>
+            <p className="section-desc">관람객마다 입장권을 하나씩 발급하고, 등록한 사람의 패스키로만 열립니다.</p>
+          </>
+        )}
       </div>
 
-      <h3 className="guide-role-title">보호 링크 · 관리자</h3>
+      {tool === 'link' ? <LinkGuide /> : <TicketGuide />}
+    </section>
+  );
+}
+
+function LinkGuide() {
+  return (
+    <>
+      <h3 className="guide-role-title">관리자</h3>
       <div className="guide-grid">
         <article className="guide-card">
           <b>01 · 링크 만들기</b>
@@ -47,7 +63,7 @@ export default function Guide() {
         </article>
       </div>
 
-      <h3 className="guide-role-title">보호 링크 · 받는 사람</h3>
+      <h3 className="guide-role-title">받는 사람</h3>
       <div className="guide-grid">
         <article className="guide-card">
           <b>01 · 본인 확인</b>
@@ -67,7 +83,20 @@ export default function Guide() {
         </article>
       </div>
 
-      <h3 className="guide-role-title">입장권</h3>
+      <div className="guide-note">
+        <strong>보안 안내</strong>
+        <p>
+          패스키의 개인키와 생체정보는 기기를 떠나지 않습니다. 서버가 보관하는 것은 공개키뿐입니다.
+        </p>
+      </div>
+    </>
+  );
+}
+
+function TicketGuide() {
+  return (
+    <>
+      <h3 className="guide-role-title">이벤트 운영</h3>
       <div className="guide-grid">
         <article className="guide-card">
           <b>01 · 이벤트와 발급</b>
@@ -108,6 +137,6 @@ export default function Guide() {
           얼굴 특징값(암호화)뿐이고, 얼굴 사진 원본은 저장하지 않습니다.
         </p>
       </div>
-    </section>
+    </>
   );
 }

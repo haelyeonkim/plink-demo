@@ -1,4 +1,5 @@
 import Icon from '@shared/components/Icon';
+import { scrollToElement } from '@shared/scrollTo';
 import InfoTip from '@shared/components/InfoTip';
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -1707,9 +1708,10 @@ export default function TicketAdmin() {
           <div className="settings-page">
             <nav className="settings-quick" aria-label="설정 항목">
               {SETTINGS_TABS.map(([key, label]) => (
-                <a key={key} href={`#settings-${key}`}>{label}</a>
+                <button key={key} type="button" onClick={() => scrollToElement(document.getElementById(`settings-${key}`))}>{label}</button>
               ))}
-              <a className="danger" href="#settings-delete">이벤트 삭제</a>
+              <button type="button" className="danger"
+                onClick={() => scrollToElement(document.getElementById('settings-delete'))}>이벤트 삭제</button>
             </nav>
             <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
               <div className="settings-side">
