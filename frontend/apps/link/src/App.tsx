@@ -1,11 +1,12 @@
 import AdminArtworkRequests from './components/ArtworkRequests';
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
-import { AppScope } from '@shared/scope';
+import { AppScope, useGo } from '@shared/scope';
+import { useEffect } from 'react';
 import Login from '@shared/components/Login';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Header from '@shared/components/Header';
-import Home from './components/Home';
+import ToolMain from './components/ToolMain';
 import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
 import ContentCreate from './components/ContentCreate';
@@ -43,6 +44,16 @@ function Moved({ to }: { to: (params: Record<string, string | undefined>) => str
   return <Navigate to={to(params) + search} replace />;
 }
 
+/**
+ * The site root belongs to the ticket tool for now. The server answers / with a redirect;
+ * this covers a visit that reaches the app anyway, such as a client-side navigation.
+ */
+function ToTickets() {
+  const go = useGo();
+  useEffect(() => { go('/tickets', { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 export default function App() {
   return (
     <AppScope value="link">
@@ -52,8 +63,12 @@ export default function App() {
       <Header />
       <main>
         <Routes>
-          {/* Passlink: what it is, and what belongs to the site rather than to either tool. */}
-          <Route path="/" element={<Home />} />
+          {/* The root opens the ticket tool; each tool has its own front door (temporary
+              addresses until each moves to a domain of its own). */}
+          <Route path="/" element={<ToTickets />} />
+          <Route path="/linkmain" element={<ToolMain tool="link" />} />
+          <Route path="/ticketmain" element={<ToolMain tool="ticket" />} />
+          {/* What belongs to the site rather than to either tool. */}
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           {/* Service logs, statistics and the files sent to organisers. */}
           <Route path="/admin/data" element={<RequireAdmin scope="canAccounts"><DataLayout /></RequireAdmin>}>

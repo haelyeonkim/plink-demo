@@ -52,72 +52,82 @@ const WALK: Record<Tool, {
   },
 };
 
+/** Each tool's front door: what it promises, where its console is, and what to know. */
+const MAIN: Record<Tool, {
+  title: [string, string];
+  lead: string;
+  console: [string, string];
+  facts: Array<[string, string]>;
+}> = {
+  link: {
+    title: ['보낸 자료는', '받은 사람만 열 수 있어요.'],
+    lead: '받는 사람마다 링크를 하나씩 보내요. 주소를 넘겨받은 사람은 열 수 없고, 누가 언제 열었는지 바로 보여요.',
+    console: ['/links', '링크 관리 시작하기'],
+    facts: [
+      ['앱 설치 없이', '받는 사람은 휴대폰 브라우저에서 바로 열어요.'],
+      ['비밀번호 없이', '평소 쓰는 지문·얼굴 잠금이 열쇠가 돼요.'],
+      ['누가 열었는지 보여요', '수신 확정과 열람 시각이 관리 화면에 바로 남아요.'],
+    ],
+  },
+  ticket: {
+    title: ['입장권은', '받은 사람만 열 수 있어요.'],
+    lead: '명단을 올리면 한 사람씩 입장권이 나가요. 넘겨받은 사람은 열 수 없어서 대신 들어갈 수 없어요.',
+    console: ['/tickets', '입장권 관리 시작하기'],
+    facts: [
+      ['앱 설치 없이', '관람객은 휴대폰 브라우저에서 입장권을 열어요.'],
+      ['비밀번호 없이', '평소 쓰는 지문·얼굴 잠금이 열쇠가 돼요.'],
+      ['누가 들어왔는지 보여요', '등록과 게이트 입장이 관리 화면에 바로 남아요.'],
+    ],
+  },
+};
+
 const LOCK = (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
   </svg>
 );
-const TICKET = (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 0 0-4V4H3z" />
-  </svg>
-);
-
 /**
- * Passlink's front door. The two tools come first, for the people who came to use one;
- * below them, four steps that show what the passkey does - a link that reaches the wrong
- * person stays shut - for the people who came to find out.
+ * One tool's front door, for the people who came to find out about it: what it promises,
+ * the way into its console, and four steps that show a link reaching the wrong person
+ * staying shut. Each tool has its own, so each can later move to a domain of its own.
  */
-export default function Home() {
+export default function ToolMain({ tool }: { tool: Tool }) {
+  const main = MAIN[tool];
   return (
-    <div className="front">
+    <div className={`front front-${tool}`}>
       <section className="front-hero">
         <div className="front-copy">
-          <h1>받은 사람만<br />열 수 있어요.</h1>
-          <p>자료도, 입장권도. 쓰려는 도구로 바로 들어가거나, 아래에서 어떻게 지켜지는지 따라가 보세요.</p>
+          <h1>{main.title[0]}<br />{main.title[1]}</h1>
+          <p>{main.lead}</p>
+          <div className="front-actions">
+            <Link className={`front-start tool-${tool}`} to={main.console[0]}>{main.console[1]} <span aria-hidden="true">→</span></Link>
+            <a className="front-how" href="#walk-title">어떻게 지켜지는지 보기</a>
+          </div>
         </div>
-        <nav className="front-tools" aria-label="도구 바로가기">
-          <Link className="front-tool tool-link" to="/links">
-            <span className="front-tool-top"><span className="front-tool-icon">{LOCK}</span><span aria-hidden="true">→</span></span>
-            <span className="front-tool-name"><b>보호 링크</b><small>문서·작품을 받는 사람에게만</small></span>
-          </Link>
-          <Link className="front-tool tool-ticket" to="/tickets">
-            <span className="front-tool-top"><span className="front-tool-icon">{TICKET}</span><span aria-hidden="true">→</span></span>
-            <span className="front-tool-name"><b>입장권</b><small>이벤트 입장과 현장 운영까지</small></span>
-          </Link>
-        </nav>
       </section>
 
-      <Walkthrough />
+      <Walkthrough tool={tool} />
 
       <section className="front-facts" aria-label="알아 둘 것">
-        <div><b>앱 설치 없이</b><span>휴대폰 브라우저에서 바로 열려요.</span></div>
-        <div><b>비밀번호 없이</b><span>평소 쓰는 지문·얼굴 잠금이 열쇠가 돼요.</span></div>
-        <div><b>누가 열었는지 보여요</b><span>수신 확정, 열람, 입장이 관리자 화면에 바로 남아요.</span></div>
+        {main.facts.map(([title, text]) => <div key={title}><b>{title}</b><span>{text}</span></div>)}
       </section>
     </div>
   );
 }
 
-function Walkthrough() {
-  const [tool, setTool] = useState<Tool>('link');
+function Walkthrough({ tool }: { tool: Tool }) {
   const [step, setStep] = useState(0);
   const [logOpen, setLogOpen] = useState(false);
   const touchX = useRef<number | null>(null);
   const walk = WALK[tool];
   const friend = step === 3;
 
-  const pick = (next: Tool) => { setTool(next); setStep(0); };
   const go = (next: number) => setStep(Math.min(3, Math.max(0, next)));
 
   return (
     <section className={`front-walk walk-${tool}`} aria-labelledby="walk-title">
       <div className="walk-head">
         <h2 id="walk-title">어떻게 지켜지는지 따라가 보기</h2>
-        <div className="walk-tabs" role="group" aria-label="따라가 볼 도구">
-          <button type="button" aria-pressed={tool === 'link'} onClick={() => pick('link')}>보호 링크</button>
-          <button type="button" aria-pressed={tool === 'ticket'} onClick={() => pick('ticket')}>입장권</button>
-        </div>
       </div>
 
       <ol className="walk-steps">

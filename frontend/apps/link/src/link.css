@@ -599,8 +599,19 @@ select.artwork-status {
 
 .artwork-source-field { grid-column: 1 / -1; }
 
-/* ---- Passlink front door (/): the two tools first, then four steps that show the passkey at work ---- */
+/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then four steps that show it at work ---- */
 .front { --link: #315cf4; --ticket: #6a4cf0; background: #f4f1ea; padding-bottom: 56px; }
+.front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.front-start, .front-how {
+  min-height: 52px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px;
+  border-radius: 14px; padding: 14px 22px; font-size: 16px; font-weight: 800;
+}
+.front-start { color: white; transition: transform .15s ease, box-shadow .15s ease; }
+.front-start:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
+.front-start.tool-link { background: var(--link); }
+.front-start.tool-ticket { background: var(--ticket); }
+.front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; }
+.front-how:hover { color: var(--ink); border-color: var(--ink); }
 .front-hero {
   max-width: 1240px; margin: 0 auto; padding: 48px 24px 44px;
   display: flex; flex-wrap: wrap; gap: 32px; align-items: center; justify-content: space-between;
@@ -608,20 +619,6 @@ select.artwork-status {
 .front-copy { flex: 1 1 480px; min-width: 0; }
 .front-copy h1 { font-size: 48px; line-height: 1.2; letter-spacing: -2px; margin: 0 0 14px; }
 .front-copy p { font-size: 17px; line-height: 1.65; color: #4a5268; max-width: 520px; margin: 0; }
-.front-tools { flex: 1 1 460px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.front-tool {
-  display: flex; flex-direction: column; gap: 18px; min-height: 150px; box-sizing: border-box;
-  border-radius: 20px; padding: 22px; color: white; transition: transform .15s ease, box-shadow .15s ease;
-}
-.front-tool:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
-.front-tool.tool-link { background: var(--link); }
-.front-tool.tool-ticket { background: var(--ticket); }
-.front-tool-top { display: flex; justify-content: space-between; align-items: center; font-size: 22px; }
-.front-tool-icon { width: 40px; height: 40px; border-radius: 12px; background: rgba(255, 255, 255, .18); display: grid; place-items: center; }
-.front-tool-icon svg { width: 20px; height: 20px; }
-.front-tool-name { margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
-.front-tool-name b { font-size: 20px; letter-spacing: -.4px; }
-.front-tool-name small { font-size: 13.5px; color: rgba(255, 255, 255, .86); }
 
 .front-walk {
   --accent: var(--link); --soft: #eff3ff;
@@ -631,12 +628,6 @@ select.artwork-status {
 .front-walk.walk-ticket { --accent: var(--ticket); --soft: #f1edff; }
 .walk-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
 .walk-head h2 { font-size: 22px; letter-spacing: -.6px; margin: 0; }
-.walk-tabs { display: flex; gap: 4px; background: #f4f5f9; border-radius: 12px; padding: 4px; }
-.walk-tabs button {
-  border: 0; border-radius: 9px; padding: 10px 18px; min-height: 44px; font: inherit; font-size: 14.5px; font-weight: 700;
-  background: transparent; color: #4a5268; cursor: pointer;
-}
-.walk-tabs button[aria-pressed="true"] { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(18, 33, 69, .12); }
 .walk-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .walk-steps button {
   width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; min-height: 52px;
@@ -729,15 +720,8 @@ select.artwork-status {
   .front-hero { padding: 20px 16px 24px; gap: 18px; }
   .front-copy h1 { font-size: 30px; letter-spacing: -1.2px; line-height: 1.25; margin-bottom: 10px; }
   .front-copy p { font-size: 15px; }
-  .front-tools { flex-basis: 100%; gap: 10px; }
-  .front-tool { min-height: 120px; padding: 16px; gap: 14px; border-radius: 18px; }
-  .front-tool-icon { width: 34px; height: 34px; border-radius: 10px; }
-  .front-tool-name b { font-size: 17px; }
-  .front-tool-name small { font-size: 12.5px; }
   .front-walk { margin: 0; background: none; box-shadow: none; border-radius: 0; padding: 8px 16px 0; gap: 14px; }
   .walk-head h2 { font-size: 19px; }
-  .walk-tabs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; background: white; }
-  .walk-tabs button[aria-pressed="true"] { background: var(--ink); color: white; }
   .walk-steps { gap: 4px; }
   .walk-steps button { min-height: 26px; padding: 10px 0; border: 0; background: none; }
   .walk-steps button[aria-current="step"] { background: none; }
