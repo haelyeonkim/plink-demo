@@ -1,8 +1,7 @@
 import AdminArtworkRequests from './components/ArtworkRequests';
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
-import { AppScope, useGo } from '@shared/scope';
-import { useEffect } from 'react';
+import { AppScope } from '@shared/scope';
 import Login from '@shared/components/Login';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Header from '@shared/components/Header';
@@ -45,13 +44,12 @@ function Moved({ to }: { to: (params: Record<string, string | undefined>) => str
 }
 
 /**
- * The site root belongs to the ticket tool for now. The server answers / with a redirect;
- * this covers a visit that reaches the app anyway, such as a client-side navigation.
+ * The site root opens the ticket tool's front door for now. The server answers / with a
+ * redirect; this covers a visit that reaches the app anyway, such as a client-side navigation.
  */
-function ToTickets() {
-  const go = useGo();
-  useEffect(() => { go('/tickets', { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return null;
+function ToTicketMain() {
+  const { search } = useLocation();
+  return <Navigate to={`/ticketmain${search}`} replace />;
 }
 
 export default function App() {
@@ -63,9 +61,9 @@ export default function App() {
       <Header />
       <main>
         <Routes>
-          {/* The root opens the ticket tool; each tool has its own front door (temporary
+          {/* The root opens the ticket tool's front door; each tool has its own front door (temporary
               addresses until each moves to a domain of its own). */}
-          <Route path="/" element={<ToTickets />} />
+          <Route path="/" element={<ToTicketMain />} />
           <Route path="/linkmain" element={<ToolMain tool="link" />} />
           <Route path="/ticketmain" element={<ToolMain tool="ticket" />} />
           {/* What belongs to the site rather than to either tool. */}

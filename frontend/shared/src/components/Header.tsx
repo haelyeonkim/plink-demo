@@ -96,7 +96,7 @@ export default function Header() {
   const elsewhere: Array<[string, string]> = user ? [
     ...(brand.key === 'ticket' && user.canLinks ? [['/links', '보호 링크로 이동'] as [string, string]] : []),
     ...(brand.key === 'link' && user.canTickets ? [['/tickets', '입장권으로 이동'] as [string, string]] : []),
-    ...(brand.key !== 'site' ? [['/', '패스링크 홈'] as [string, string]] : []),
+    ...(brand.key !== 'site' ? [['/ticketmain', '패스링크 홈'] as [string, string]] : []),
     ...(user.canAccounts ? [['/admin', '계정 관리'] as [string, string]] : []),
   ] : [];
   const nav = menu.map(([to, label]) => (

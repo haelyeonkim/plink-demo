@@ -55,21 +55,21 @@ function ticketApp(): Plugin {
 }
 
 /**
- * The site root opens the ticket tool for now. Answered by the server, in development and
- * in a preview alike, so the browser goes straight there without loading the link app.
+ * The site root opens the ticket tool's front door for now. Answered by the server, in
+ * development and in a preview alike, so the browser goes straight there.
  * The query string travels along; nothing else is redirected.
  */
-function rootToTickets(): Plugin {
+function rootToTicketMain(): Plugin {
   const redirect = (req: { url?: string; method?: string }, res: import('node:http').ServerResponse, next: () => void) => {
     const url = req.url || '/';
     if ((req.method !== 'GET' && req.method !== 'HEAD') || !/^\/(?:\?|$)/.test(url)) return next();
     res.statusCode = 302;
-    res.setHeader('Location', '/tickets' + url.slice(1));
+    res.setHeader('Location', '/ticketmain' + url.slice(1));
     res.setHeader('Cache-Control', 'no-cache');
     res.end();
   };
   return {
-    name: 'plink-root-to-tickets',
+    name: 'plink-root-to-ticket-main',
     configureServer(server) { server.middlewares.use(redirect); },
     configurePreviewServer(server) { server.middlewares.use(redirect); },
   };
@@ -77,7 +77,7 @@ function rootToTickets(): Plugin {
 
 export default defineConfig({
   root: import.meta.dirname,
-  plugins: [react(), rootToTickets(), ticketApp()],
+  plugins: [react(), rootToTicketMain(), ticketApp()],
   resolve: { alias: { '@shared': shared } },
   publicDir: '../../public',
   // This empties dist/, ticket app included: npm run build builds this app first.
