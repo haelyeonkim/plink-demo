@@ -99,7 +99,9 @@ try {
   await page.locator('.request-status').filter({ hasText: '홀딩 승인 대기' }).waitFor();
   await operator.getByRole('button', { name: '새로고침', exact: true }).click();
   await operator.getByRole('button', { name: '승인', exact: true }).click();
-  const deadline = new Date(Date.now() + 3600000).toISOString().slice(0, 16);
+  // The field reads the device's own zone, so give it local wall-clock time, not UTC.
+  const later = new Date(Date.now() + 3600000);
+  const deadline = new Date(later.getTime() - later.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   await operator.getByLabel('홀딩 종료 시각 (현재 기기 시간대)').fill(deadline);
   await operator.getByRole('button', { name: '처리 확인', exact: true }).click();
   await operator.getByRole('button', { name: '홀딩 해제', exact: true }).waitFor();
@@ -123,6 +125,8 @@ try {
   await page.getByRole('button', { name: '구매 의사 전달', exact: true }).waitFor();
   assert.ok((await page.locator('.request-status').innerText()).includes('홀딩 확정'));
   await page.getByRole('button', { name: '구매 의사 전달', exact: true }).click();
+  // Refresh only once the recipient's request has landed, or the operator may load the old state.
+  await page.getByRole('button', { name: '구매 의사 철회', exact: true }).waitFor();
   await operator.getByRole('button', { name: '새로고침', exact: true }).click();
   await operator.getByRole('button', { name: '판매 확정', exact: true }).click();
   await operator.getByRole('button', { name: '처리 확인', exact: true }).click();
