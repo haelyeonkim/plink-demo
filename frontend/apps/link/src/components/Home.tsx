@@ -73,8 +73,8 @@ export default function Home() {
     <div className="front">
       <section className="front-hero">
         <div className="front-copy">
-          <h1>링크를 넘겨도,<br />열리는 건 한 사람.</h1>
-          <p>처음 등록한 패스키로 주인이 정해져요. 쓰려는 도구로 바로 들어가거나, 아래에서 어떻게 지켜지는지 따라가 보세요.</p>
+          <h1>받은 사람만<br />열 수 있어요.</h1>
+          <p>자료도, 입장권도. 쓰려는 도구로 바로 들어가거나, 아래에서 어떻게 지켜지는지 따라가 보세요.</p>
         </div>
         <nav className="front-tools" aria-label="도구 바로가기">
           <Link className="front-tool tool-link" to="/links">
