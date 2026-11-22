@@ -599,7 +599,8 @@ select.artwork-status {
 
 .artwork-source-field { grid-column: 1 / -1; }
 
-/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then four steps that show it at work ---- */
+/* ---- Each tool's front door (/linkmain, /ticketmain): its promise, then four steps that show it at work.
+   As wide as every other page, so its first column lines up with the logo. ---- */
 .front { --accent: #315cf4; --soft: #eff3ff; background: #f4f1ea; padding-bottom: 56px; }
 .front-ticket { --accent: #6a4cf0; --soft: #f1edff; }
 .front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
@@ -612,7 +613,7 @@ select.artwork-status {
 .front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; }
 .front-how:hover { color: var(--ink); border-color: var(--ink); }
 .front-hero {
-  max-width: 1240px; margin: 0 auto; padding: 48px 24px 44px;
+  max-width: var(--page-width); margin: 0 auto; padding: 48px 24px 44px;
   display: flex; flex-wrap: wrap; gap: 32px; align-items: center; justify-content: space-between;
 }
 .front-copy { flex: 1 1 480px; min-width: 0; }
@@ -620,7 +621,7 @@ select.artwork-status {
 .front-copy p { font-size: 17px; line-height: 1.65; color: #4a5268; max-width: 520px; margin: 0; }
 
 .front-walk {
-  max-width: 1192px; margin: 0 auto; box-sizing: border-box; background: white; border-radius: 26px; padding: 28px;
+  max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; background: white; border-radius: 26px; padding: 28px;
   display: flex; flex-direction: column; gap: 24px; box-shadow: 0 20px 50px rgba(18, 33, 69, .08);
 }
 .walk-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
@@ -698,15 +699,11 @@ select.artwork-status {
 .walk-log li.latest { color: var(--ink); font-weight: 700; }
 .walk-owner { margin: 0; font-size: 13.5px; font-weight: 700; line-height: 1.5; color: #1c6b50; background: #e3f6ee; border-radius: 10px; padding: 10px 12px; }
 
-.front-facts { max-width: 1192px; margin: 0 auto; box-sizing: border-box; padding: 36px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.front-facts { max-width: calc(var(--page-width) - 48px); margin: 0 auto; box-sizing: border-box; padding: 36px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .front-facts div { display: flex; flex-direction: column; gap: 4px; }
 .front-facts b { font-size: 16px; }
 .front-facts span { font-size: 14.5px; line-height: 1.6; color: #4a5268; }
 
-@media (max-width: 1240px) {
-  .front-walk { margin: 0 24px; }
-  .front-facts { padding: 36px 24px 0; }
-}
 @media (max-width: 980px) {
   .walk-body { grid-template-columns: minmax(0, 1fr) 300px; }
   .walk-console { grid-column: 1 / -1; }
@@ -714,6 +711,7 @@ select.artwork-status {
 /* A phone: one column, the screen without its phone, the steps as a progress bar, the console folded. */
 @media (max-width: 720px) {
   .front { padding-bottom: 32px; }
+  .front-hero, .front-walk, .front-facts { max-width: none; }
   .front-hero { padding: 20px 16px 24px; gap: 18px; }
   .front-copy h1 { font-size: 30px; letter-spacing: -1.2px; line-height: 1.25; margin-bottom: 10px; }
   .front-copy p { font-size: 15px; }

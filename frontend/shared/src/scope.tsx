@@ -35,14 +35,15 @@ export interface Brand {
   console: string;
 }
 
-const BRANDS: Record<BrandName, Brand> = {
-  site: { key: 'site', name: '패스링크', logo: '/logo.svg', home: '/', login: '/login', console: '/' },
-  link: { key: 'link', name: '패스링크 프라이빗', logo: '/logo-private.svg', home: '/links', login: '/links/login', console: '/links' },
-  ticket: { key: 'ticket', name: '패스링크 티켓', logo: '/logo-ticket.svg', home: '/tickets', login: '/tickets/login', console: '/tickets' },
-};
-
 /** Where the site root and "패스링크 홈" lead: the ticket tool's front door, until each tool has a domain. */
 export const SITE_HOME = '/ticketmain';
+
+/** A tool's home is its front door; its console is where a sign-in lands. */
+const BRANDS: Record<BrandName, Brand> = {
+  site: { key: 'site', name: '패스링크', logo: '/logo.svg', home: SITE_HOME, login: '/login', console: '/' },
+  link: { key: 'link', name: '패스링크 프라이빗', logo: '/logo-private.svg', home: '/linkmain', login: '/links/login', console: '/links' },
+  ticket: { key: 'ticket', name: '패스링크 티켓', logo: '/logo-ticket.svg', home: '/ticketmain', login: '/tickets/login', console: '/tickets' },
+};
 
 export function brandOf(path: string): BrandName {
   if (appOf(path) === 'ticket') return 'ticket';
