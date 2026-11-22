@@ -622,9 +622,6 @@ select.artwork-status {
 .front-steps b { display: flex; align-items: baseline; gap: 8px; font-size: 18px; letter-spacing: -.4px; padding-top: 3px; }
 .front-step-num { font-size: 13px; font-weight: 800; color: var(--accent); }
 .front-steps p { margin: 0; font-size: 15px; line-height: 1.65; color: #4a5268; }
-.front-steps li.locked { background: #fdf0ee; }
-.front-steps li.locked .front-step-icon { background: #b3362b; color: white; }
-.front-steps li.locked .front-step-num { color: #b3362b; }
 .guide-page .front-walk { max-width: none; margin: 8px 0 12px; }
 .front-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
 .front-start {

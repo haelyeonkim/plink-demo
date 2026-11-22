@@ -64,7 +64,7 @@ export default function ToolMain({ tool }: { tool: Tool }) {
         </div>
         <ol>
           {walk.steps.map((label, i) => (
-            <li key={label} className={i === 3 ? 'locked' : undefined}>
+            <li key={label}>
               <span className="front-step-icon"><Icon name={walk.icons[i]} /></span>
               <b><span className="front-step-num">{i + 1}</span>{label}</b>
               <p>{walk.captions[i][1]}</p>
