@@ -610,7 +610,9 @@ select.artwork-status {
 }
 .front-start { color: white; background: var(--accent); transition: transform .15s ease, box-shadow .15s ease; }
 .front-start:hover { color: white; transform: translateY(-2px); box-shadow: 0 14px 30px rgba(18, 33, 69, .18); }
-.front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; }
+.front-how { color: var(--ink); background: white; border: 1px solid #d6dae6; font-family: inherit; cursor: pointer; }
+.front-walk { scroll-margin-top: 24px; }
+.front-walk h2:focus { outline: none; }
 .front-how:hover { color: var(--ink); border-color: var(--ink); }
 .front-hero {
   max-width: var(--page-width); margin: 0 auto; padding: 48px 24px 44px;

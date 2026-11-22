@@ -103,7 +103,7 @@ export default function ToolMain({ tool }: { tool: Tool }) {
           <p>{main.lead}</p>
           <div className="front-actions">
             <Link className="front-start" to={brand.console}>{main.start} <span aria-hidden="true">→</span></Link>
-            <a className="front-how" href="#walk-title">어떻게 지켜지는지 보기</a>
+            <button type="button" className="front-how" onClick={showWalkthrough}>어떻게 지켜지는지 보기</button>
           </div>
         </div>
       </section>
@@ -115,6 +115,16 @@ export default function ToolMain({ tool }: { tool: Tool }) {
       </section>
     </div>
   );
+}
+
+/**
+ * Scrolls to the walkthrough and puts the reader there. A button rather than a #fragment
+ * link: addresses on this site carry no fragments.
+ */
+function showWalkthrough() {
+  const heading = document.getElementById('walk-title');
+  heading?.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  heading?.focus({ preventScroll: true });
 }
 
 function Walkthrough({ tool }: { tool: Tool }) {
@@ -129,7 +139,7 @@ function Walkthrough({ tool }: { tool: Tool }) {
   return (
     <section className="front-walk" aria-labelledby="walk-title">
       <div className="walk-head">
-        <h2 id="walk-title">어떻게 지켜지는지 따라가 보기</h2>
+        <h2 id="walk-title" tabIndex={-1}>어떻게 지켜지는지 따라가 보기</h2>
       </div>
 
       <ol className="walk-steps">
