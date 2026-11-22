@@ -41,20 +41,16 @@ public class TicketSocketHandler extends TextWebSocketHandler {
         if (parts.length < 5) { socket.close(CloseStatus.BAD_DATA); return; }
         long sessionId;
         Ticket ticket;
-        boolean viaTransfer;
         try {
             sessionId = Long.parseLong(parts[3]);
             TicketService.Resolved resolved = tickets.resolve(sessionId, parts[4]);
             ticket = resolved.ticket;
-            viaTransfer = resolved.viaTransfer();
         } catch (RuntimeException refused) {
             socket.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
         // A registered ticket's movements and coupons go only to the browser that answered
-        // its passkey; the handshake copied that browser's session attributes here. A
-        // transfer link has proved nothing yet, so it gets no channel at all.
-        if (viaTransfer) { socket.close(CloseStatus.POLICY_VIOLATION); return; }
+        // its passkey; the handshake copied that browser's session attributes here.
         if (ticket.claimed()) {
             Long until = com.plink.ticket.service.TicketPasskeyService.viewerUntil(
                 socket.getAttributes().get(com.plink.ticket.service.TicketPasskeyService.VIEW_PREFIX + ticket.id),

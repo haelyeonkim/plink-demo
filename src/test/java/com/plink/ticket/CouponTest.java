@@ -454,15 +454,15 @@ class CouponTest {
     }
 
     /** More than one waiting: the counter picks kinds and counts, and only that is spent. */
-    /** A ticket on its way to someone else spends none of its coupons on the way. */
-    @Test void aTicketBeingTransferredOpensAndSpendsNoCoupon() {
+    /** A ticket recovered and not registered again spends none of its coupons. */
+    @Test void anUnregisteredTicketOpensAndSpendsNoCoupon() {
         newSession();
         Ticket ticket = boundTicket("leaving@example.com", null);
         long booth = booths.insert(sessionId, "커피 스탠드", null);
         give(booth, "웰컴 커피", null, List.of(ticket.id));
         Coupon coffee = waiting(ticket, "웰컴 커피");
         String shown = couponCode(ticket, coffee);
-        ticketRepository.updateStatus(ticket.id, "TRANSFER_PENDING");
+        ticketRepository.updateStatus(ticket.id, "ISSUED");
         assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
             () -> coupons.openCode(ticket, coffee.id)).getStatusCode());
         assertThrows(ResponseStatusException.class, () -> coupons.redeemByCode(boothGate(booth), shown));
@@ -470,7 +470,7 @@ class CouponTest {
     }
 
     /** Nor does it collect anything new at a giving terminal. */
-    @Test void aTicketBeingTransferredIsGivenNothing() {
+    @Test void anUnregisteredTicketIsGivenNothing() {
         newSession();
         Ticket ticket = boundTicket("leaving-grant@example.com", null);
         long booth = booths.insert(sessionId, "커피 스탠드", null);
@@ -478,14 +478,14 @@ class CouponTest {
         Gate stand = boothGate(booth);
         coupons.setGateGrants(stand, Map.of(refill, false));
         String shown = code(ticket);
-        ticketRepository.updateStatus(ticket.id, "TRANSFER_PENDING");
+        ticketRepository.updateStatus(ticket.id, "ISSUED");
         assertEquals(HttpStatus.FORBIDDEN, assertThrows(ResponseStatusException.class,
             () -> coupons.grantByCode(stand, shown)).getStatusCode());
 
-        // A transfer started while the counter was choosing stops the hand-over too.
+        // A recovery while the counter was choosing stops the hand-over too.
         ticketRepository.updateStatus(ticket.id, "BOUND");
         String pick = String.valueOf(coupons.grantByCode(stand, code(ticket)).get("pick"));
-        ticketRepository.updateStatus(ticket.id, "TRANSFER_PENDING");
+        ticketRepository.updateStatus(ticket.id, "ISSUED");
         assertThrows(ResponseStatusException.class, () -> coupons.grantPicked(stand, pick, Map.of(refill, 1)));
         assertTrue(couponRepository.findByTicket(ticket.id).isEmpty());
     }

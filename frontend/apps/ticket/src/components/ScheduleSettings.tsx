@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { mutate } from '@shared/auth';
 import InfoTip from '@shared/components/InfoTip';
 import { dayShort, hourLabel, read, type PassRow, type ScheduleDay, type ScheduleView } from '../console/model';
 import { passDays } from './IssuePanel';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+/** As the server allows: about two years. */
+const MAX_DAYS = 800;
+/** A long schedule shows this many days until it is opened in full. */
+const FOLDED = 14;
+/** Passes choose days one by one only for a schedule this short; past that, every day. */
+const PICKABLE = 31;
 
 function iso(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -15,7 +21,7 @@ function between(start: string, end: string, kept: ScheduleDay[]): ScheduleDay[]
   const out: ScheduleDay[] = [];
   const from = new Date(`${start}T00:00:00`);
   const to = new Date(`${end}T00:00:00`);
-  for (const d = new Date(from); d <= to && out.length < 31; d.setDate(d.getDate() + 1)) {
+  for (const d = new Date(from); d <= to && out.length < MAX_DAYS; d.setDate(d.getDate() + 1)) {
     const date = iso(d);
     out.push(kept.find(k => k.date === date)
       ?? { date, label: `DAY ${out.length + 1}`, weekday: WEEK[d.getDay()], opensAt: null, closesAt: null, closed: false });
@@ -24,18 +30,22 @@ function between(start: string, end: string, kept: ScheduleDay[]): ScheduleDay[]
 }
 
 /**
- * An event over several days: its days, with hours and rest days, and the kinds of
- * ticket by the days they admit. Saved on its own, not by the settings bar: a pass
- * names days, so the days have to exist first.
+ * When the event runs. One day is its start and door time, which {@code children} holds
+ * and the event's details save. Over several days it is the days, with hours and rest
+ * days, and the kinds of ticket by the days they admit; the first day's opening becomes
+ * the event's start. Days save on their own, not by the settings bar: a pass names days,
+ * so the days have to exist first.
  */
-export default function ScheduleSettings({ sessionId, startsAt, schedule, onChanged, onNotice, onError }: {
-  sessionId: number; startsAt: string; schedule: ScheduleView | null;
+export default function ScheduleSettings({ sessionId, startsAt, gateOpensAt, schedule, onChanged, onNotice, onError, children }: {
+  sessionId: number; startsAt: string; gateOpensAt: string; schedule: ScheduleView | null;
   onChanged: () => Promise<void> | void; onNotice: (text: string) => void; onError: (text: string) => void;
+  children: ReactNode;
 }) {
   const base = `/api/admin/sessions/${sessionId}/schedule`;
   const saved = schedule?.days ?? [];
   const [days, setDays] = useState<ScheduleDay[]>(saved);
   const [busy, setBusy] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
   useEffect(() => { setDays(schedule?.days ?? []); }, [schedule]);
   const dirty = JSON.stringify(days) !== JSON.stringify(saved);
   const first = days[0]?.date ?? startsAt.slice(0, 10);
@@ -58,12 +68,18 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
 
   return (
     <div className="schedule-settings">
-      {days.length === 0 ? (
+      {days.length === 0 ? (<>
+        {children}
         <div className="schedule-empty">
-          <p>하루짜리 이벤트예요. 여러 날 진행하면 일정을 만들어 날짜별 입장 시간과 입장권 종류를 정할 수 있어요.</p>
-          <button className="btn-secondary" type="button" onClick={() => setDays(between(first, first, []))}>일정 만들기</button>
+          <p>여러 날 진행하면 날짜별 입장 시간과 휴관일, 입장권 종류를 정할 수 있어요.</p>
+          <button className="btn-secondary" type="button" onClick={() => {
+            // The day already set carries over: its date, and its door time as the first day's opening.
+            const [day] = between(first, first, []);
+            const opens = (gateOpensAt || startsAt).slice(11, 16);
+            setDays([{ ...day, opensAt: opens || null }]);
+          }}>여러 날 진행하기</button>
         </div>
-      ) : (<>
+      </>) : (<>
         <div className="schedule-range">
           <label>시작일<input type="date" value={first} max={last}
             onChange={e => { if (e.target.value) setDays(between(e.target.value, last < e.target.value ? e.target.value : last, days)); }} /></label>
@@ -79,7 +95,7 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
           <table className="console-table schedule-table">
             <thead><tr><th>날짜</th><th>이름</th><th>입장 시작</th><th>입장 마감</th><th>운영</th></tr></thead>
             <tbody>
-              {days.map(day => (
+              {(unfolded || days.length <= FOLDED ? days : days.slice(0, FOLDED)).map(day => (
                 <tr key={day.date} className={day.closed ? 'is-off' : ''}>
                   <td><b>{dayShort(day)}</b></td>
                   <td><input aria-label={`${dayShort(day)} 이름`} maxLength={20} value={day.label}
@@ -96,18 +112,23 @@ export default function ScheduleSettings({ sessionId, startsAt, schedule, onChan
             </tbody>
           </table>
         </div>
-        <p className="muted settings-note">시간을 비워 두면 그날 하루 종일 입장할 수 있어요. 마지막 운영일의 입장 마감이 지나면 이벤트가 끝나고,
-          입장권은 '종료됨'이 돼요.</p>
+        {days.length > FOLDED && (
+          <button className="btn-tiny schedule-fold" type="button" onClick={() => setUnfolded(value => !value)}>
+            {unfolded ? '앞의 14일만 보기' : `나머지 ${(days.length - FOLDED).toLocaleString()}일도 보기`}</button>
+        )}
+        <p className="muted settings-note">시간을 비워 두면 그날 하루 종일 입장할 수 있어요. 첫 운영일의 입장 시작이 이벤트 시작이 되고,
+          마지막 운영일의 입장 마감이 지나면 이벤트가 끝나 입장권은 '종료됨'이 돼요.</p>
         <div className="button-row">
           <button className="btn-primary" type="button" disabled={busy || !dirty}
             onClick={() => void send(`${base}/days`, 'PUT', { days }, '일정을 저장했어요. 입장권과 게이트에 바로 반영돼요.')}>일정 저장</button>
-          {dirty && <button className="btn-secondary" type="button" onClick={() => setDays(saved)}>되돌리기</button>}
+          {dirty && <button className="btn-secondary" type="button" onClick={() => setDays(saved)}>
+            {saved.length === 0 ? '취소' : '되돌리기'}</button>}
           {saved.length > 0 && (
             <button className="btn-tiny btn-tiny-danger" type="button" disabled={busy} onClick={() => {
-              if (window.confirm('일정을 없애면 하루짜리 이벤트처럼 모든 입장권이 날짜와 상관없이 입장해요. 없앨까요?')) {
-                void send(`${base}/days`, 'PUT', { days: [] }, '일정을 없앴어요.');
+              if (window.confirm('하루짜리 이벤트로 바꾸면 모든 입장권이 날짜와 상관없이 입장해요. 시작 시각은 첫 운영일로 남아요. 바꿀까요?')) {
+                void send(`${base}/days`, 'PUT', { days: [] }, '하루짜리 이벤트로 바꿨어요.');
               }
-            }}>일정 없애기</button>
+            }}>하루짜리로 바꾸기</button>
           )}
         </div>
       </>)}
@@ -149,7 +170,8 @@ function PassEditor({ pass, days, busy, onSave, onDelete }: {
       <div className="chip-row" role="group" aria-label={`${pass.name} 입장 가능한 날`}>
         <button type="button" className={chosen === null ? 'on' : ''} aria-pressed={chosen === null}
           onClick={() => setChosen(chosen === null ? [] : null)}>전 일정</button>
-        {days.map(day => (
+        {days.length > PICKABLE && <span className="muted pass-long">일정이 {PICKABLE}일보다 길면 날짜별로 고를 수 없고 전 일정만 돼요.</span>}
+        {days.length <= PICKABLE && days.map(day => (
           <button key={day.date} type="button" disabled={day.closed}
             className={chosen !== null && chosen.includes(day.date) ? 'on' : ''}
             aria-pressed={chosen !== null && chosen.includes(day.date)} onClick={() => toggle(day.date)}>

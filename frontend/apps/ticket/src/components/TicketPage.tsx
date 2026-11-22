@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
-  ApiError, cancelTransfer, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket, requestOtp, verifyOtp,
+  ApiError, fetchCommunity, fetchInvites, presentCoupon, fetchFaceStatus, fetchTicket, fetchVenue, presentTicket, reissueTicket,
   type CommunitySummary, type InviteView, type TicketCoupon, type TicketSchedule, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
@@ -52,8 +52,10 @@ function inAppBrowser(): boolean {
   return IN_APP.some(pattern => pattern.test(navigator.userAgent));
 }
 
-function ticketRequiresNoOtp(ticket: TicketView | null): boolean {
-  return ticket != null && ticket.event.claimRequiresOtp === false;
+/** What the registration form asks to be typed: the email, or the email or phone. */
+function contactLabel(ticket: TicketView, welcoming: boolean): string {
+  if (welcoming) return ticket.event.claimByPhone ? '초대받은 이메일 또는 휴대폰 번호' : '초대받은 이메일';
+  return ticket.event.claimByPhone ? '입장권을 받은 이메일 또는 휴대폰 번호' : '입장권을 받은 이메일';
 }
 
 /**
@@ -95,6 +97,22 @@ function dayTimeText(value: string): string {
     + d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 }
 
+/**
+ * When the event is: its start for one day, or its first and last open days for an event
+ * over days, whose hours the list of days says.
+ */
+function whenText(event: { startsAt: string; schedule?: TicketSchedule | null }, one: (value: string) => string): string {
+  const open = (event.schedule?.days ?? []).filter(day => !day.closed);
+  if (open.length < 2) return one(event.startsAt);
+  const say = (day: { date: string; weekday: string }, year: boolean) => {
+    const [y, m, d] = day.date.split('-').map(Number);
+    return `${year ? `${y}. ` : ''}${m}. ${d}. (${day.weekday})`;
+  };
+  const first = open[0], last = open[open.length - 1];
+  const years = first.date.slice(0, 4) !== last.date.slice(0, 4);
+  return `${say(first, years)} – ${say(last, years)}`;
+}
+
 export default function TicketPage() {
   const { sessionId = '', token = '' } = useParams<{ sessionId: string; token: string }>();
   const [ticket, setTicket] = useState<TicketView | null>(null);
@@ -102,13 +120,10 @@ export default function TicketPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  // The email or phone number the ticket went to, typed back to register or recover it.
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [stage, setStage] = useState<'email' | 'code' | 'passkey'>('email');
   const [grant, setGrant] = useState<Grant | null>(null);
   const [faceEnrolled, setFaceEnrolled] = useState(false);
-  const [transferTo, setTransferTo] = useState('');
-  const [showTransfer, setShowTransfer] = useState(false);
   // Everything that is not "get me through the door" folds away, so the ticket itself
   // fits the screen a person is holding in a queue.
   const [manage, setManage] = useState(false);
@@ -211,8 +226,8 @@ export default function TicketPage() {
   // The gate pushes its verdict down this channel, so the phone learns the moment it is
   // scanned rather than on the next poll. The polling below stays as the fallback for a
   // network that will not carry a socket.
-  // Opened only for a registered ticket this phone has proved: a locked ticket's channel,
-  // or a transfer link's, would be refused anyway.
+  // Opened only for a registered ticket this phone has proved: a locked ticket's channel
+  // would be refused anyway.
   const showing = ticket !== null && !ticket.locked && ticket.claimed;
   useEffect(() => {
     if (!showing) return;
@@ -392,26 +407,10 @@ export default function TicketPage() {
     } finally { setBusy(false); }
   }
 
-  const sendCode = () => guard(async () => {
-    await requestOtp(sessionId, token, email);
-    setStage('code');
-    setNotice('인증번호를 보냈어요. 메일함을 확인해 주세요.');
-  });
-
-  const checkCode = () => guard(async () => {
-    await verifyOtp(sessionId, token, email, code);
-    setStage('passkey');
-    setNotice('이메일 확인이 끝났어요. 이제 이 기기를 입장권에 등록해 주세요.');
-  });
-
   const claim = () => guard(async () => {
-    const result = await sealed('claim', onStage =>
-      runCeremony(sessionId, token, { email: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
-    const viaTransfer = result.mode === 'register' ? result.viaTransfer
-      : 'viaTransfer' in result && Boolean((result as { viaTransfer?: boolean }).viaTransfer);
-    setNotice(viaTransfer
-      ? '양도받은 입장권을 이 기기에 등록했어요. 보낸 사람의 링크는 이제 사용할 수 없어요.'
-      : '입장권을 등록했어요.');
+    await sealed('claim', onStage =>
+      runCeremony(sessionId, token, { contact: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
+    setNotice('입장권을 등록했어요.');
     await reload();
   });
 
@@ -457,22 +456,6 @@ export default function TicketPage() {
     setGrant(opened);
   });
 
-  const startTransfer = () => guard(async () => {
-    const result = await runCeremony(sessionId, token, { intent: 'TRANSFER', toEmail: transferTo });
-    if (result.mode === 'authenticate' && result.intent === 'TRANSFER') {
-      setNotice(`${result.transfer.toEmail} 님에게 양도 링크를 보냈어요. 상대가 등록을 마치기 전까지 취소할 수 있어요.`);
-      setShowTransfer(false);
-      setTransferTo('');
-      await reload();
-    }
-  });
-
-  const stopTransfer = () => guard(async () => {
-    await cancelTransfer(sessionId, token);
-    setNotice('양도를 취소했어요.');
-    await reload();
-  });
-
   /** Proves this phone holds the ticket, which is what opens the rest of the page. */
   const unlock = () => guard(async () => {
     await sealed('unlock', onStage => runCeremony(sessionId, token, { intent: 'VIEW', onStage }));
@@ -489,18 +472,11 @@ export default function TicketPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket?.locked]);
 
-  // The holder on a new phone has no passkey here: the mailbox proves it is theirs, and
-  // a fresh link goes to it.
+  // The holder on a new phone has no passkey here: the email or phone the ticket went to
+  // is typed back, and a fresh link goes to that email - never to whoever typed it.
   const [recovering, setRecovering] = useState(false);
-  const sendRecoveryCode = () => guard(async () => {
-    await requestOtp(sessionId, token, email);
-    setStage('code');
-    // The server answers alike for any address, so the page cannot say more than this.
-    setNotice('입장권을 받은 주소가 맞다면 인증번호가 메일로 갔어요. 메일함을 확인해 주세요.');
-  });
-  const recoverByEmail = () => guard(async () => {
-    await verifyOtp(sessionId, token, email, code);
-    const result = await reissueTicket(sessionId, token);
+  const recoverByContact = () => guard(async () => {
+    const result = await reissueTicket(sessionId, token, email.trim());
     recoveredRef.current = true;
     setRecovering(false);
     setRecoveredTo(String(result.sentTo));
@@ -549,7 +525,7 @@ export default function TicketPage() {
           <p className="eyebrow center"><span></span> {ticket.event.name}</p>
           <h2>본인 확인이 필요해요</h2>
           <dl className="ticket-meta">
-            <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
+            <dt>일시</dt><dd>{whenText(ticket.event, timeText)}</dd>
             {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           </dl>
           <p className="hint-text">
@@ -570,35 +546,24 @@ export default function TicketPage() {
           {/* Not on the registered phone: the only way forward is a new link to the
               mailbox, which retires this one. */}
           <button className="manage-toggle" aria-expanded={recovering}
-            onClick={() => { setRecovering(value => !value); setStage('email'); setError(''); }}>
+            onClick={() => { setRecovering(value => !value); setError(''); }}>
             휴대폰을 바꿨거나 패스키가 없어요
             <span className="entity-chevron" aria-hidden="true">{recovering ? '▴' : '▾'}</span>
           </button>
           {recovering && (
             <div className="manage-panel">
               <p className="hint-text">
-                입장권을 받은 이메일로 인증하면 새 링크를 보내 드려요. 새 링크로 이 휴대폰에 다시
-                등록하면 이전 기기와 지금 링크는 사용할 수 없게 됩니다.
+                입장권을 받은 이메일이나 휴대폰 번호를 입력하면, 그 입장권의 이메일로 새 링크를 보내 드려요.
+                새 링크로 이 휴대폰에 다시 등록하면 이전 기기와 지금 링크는 사용할 수 없게 됩니다.
               </p>
-              {stage !== 'code' ? (
-                <form onSubmit={e => { e.preventDefault(); sendRecoveryCode(); }}>
-                  <div className="field">
-                    <label htmlFor="recover-email">입장권을 받은 이메일</label>
-                    <input id="recover-email" type="email" autoComplete="email" required
-                      value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-                  </div>
-                  <button className="btn-secondary" type="submit" disabled={busy}>인증번호 받기</button>
-                </form>
-              ) : (
-                <form onSubmit={e => { e.preventDefault(); recoverByEmail(); }}>
-                  <div className="field">
-                    <label htmlFor="recover-code">인증번호 6자리</label>
-                    <input id="recover-code" inputMode="numeric" maxLength={6} required
-                      value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} />
-                  </div>
-                  <button className="btn-secondary" type="submit" disabled={busy}>확인하고 새 링크 받기</button>
-                </form>
-              )}
+              <form onSubmit={e => { e.preventDefault(); recoverByContact(); }}>
+                <div className="field">
+                  <label htmlFor="recover-contact">입장권을 받은 이메일 또는 휴대폰 번호</label>
+                  <input id="recover-contact" autoComplete="email" required value={email}
+                    onChange={e => setEmail(e.target.value)} placeholder="you@example.com 또는 01012345678" />
+                </div>
+                <button className="btn-secondary" type="submit" disabled={busy || !email.trim()}>새 링크 받기</button>
+              </form>
             </div>
           )}
         </div>
@@ -617,7 +582,8 @@ export default function TicketPage() {
     );
   }
 
-  const skipOtp = ticketRequiresNoOtp(ticket);
+  // An organiser who hands links over in person may let the link stand alone.
+  const skipCheck = ticket.event.claimSkipCheck === true;
 
 
   // An event over several days: which of them this ticket admits, and whether it is over.
@@ -685,7 +651,7 @@ export default function TicketPage() {
           )}
           {view === 'chat' && (chatOpen
             ? <TicketChat sessionId={sessionId} token={token} tick={chatTick} counts={counts} onSeen={markChat} />
-            : <p className="console-none">{entered ? community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.' : '입장한 뒤에 볼 수 있어요.'}</p>)}
+            : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
           {view === 'ads' && (entered
             ? <TicketAds sessionId={sessionId} token={token} tick={adsTick} seenId={seen.ads} onSeen={markAds} />
             : <p className="console-none">입장한 뒤에 볼 수 있어요.</p>)}
@@ -710,7 +676,7 @@ export default function TicketPage() {
       onOpen={() => openGroup(false)} onInvite={() => openGroup(true)} />
   ) : null;
   // An invitee's link, before they register: the page opens on who asked them along.
-  const invitation = ticket.role === 'HOLDER' ? ticket.invitation ?? null : null;
+  const invitation = ticket.invitation ?? null;
   const welcoming = invitation !== null && !ticket.claimed && !ticket.claimExpired;
 
   return (
@@ -730,7 +696,7 @@ export default function TicketPage() {
             <p><b>{invitation.by}</b> 님이 초대했어요</p>
             <h2>{ticket.event.name}에<br />함께 가요</h2>
             <dl className="invite-hero-facts">
-              <dt>일시</dt><dd>{dayTimeText(ticket.event.startsAt)}</dd>
+              <dt>일시</dt><dd>{whenText(ticket.event, dayTimeText)}</dd>
               {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
               <dt>일행</dt><dd>{invitation.groupSize}명이 함께해요</dd>
             </dl>
@@ -753,7 +719,7 @@ export default function TicketPage() {
         </>)}
 
         {!welcoming && <dl className="ticket-meta">
-          <dt>일시</dt><dd>{timeText(ticket.event.startsAt)}</dd>
+          <dt>일시</dt><dd>{whenText(ticket.event, timeText)}</dd>
           {ticket.event.venue && <><dt>장소</dt><dd>{ticket.event.venue}</dd></>}
           {ticket.tier && <><dt>등급</dt><dd>{ticket.tier}</dd></>}
           <dt>등록 이메일</dt><dd>{ticket.holderEmailMasked}</dd>
@@ -775,15 +741,6 @@ export default function TicketPage() {
         )}
         {notice && <p className="notice-text" role="status">{notice}</p>}
         {error && <p className="error-text" role="alert">{error}</p>}
-
-        {ticket.transfer && (
-          <div className="warn-text" role="status">
-            <b>양도 진행 중</b> - {ticket.transfer.toEmail} 님이 등록을 마치면 이 링크는 사용할 수 없게 됩니다.
-            {ticket.role === 'HOLDER' && (
-              <button className="btn-tiny" onClick={stopTransfer} disabled={busy}>양도 취소</button>
-            )}
-          </div>
-        )}
 
         {ticket.claimed ? (
           <>
@@ -812,21 +769,14 @@ export default function TicketPage() {
             <section className="room-tiles" aria-labelledby="room-title">
               <h3 id="room-title">장내 소식</h3>
               {entered ? (<>
-                {chatOpen ? (
-                  <button type="button" className="room-tile" onClick={() => go('chat')}>
-                    <b>장내 채팅{newChat && <em>새</em>}</b>
-                    {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
-                    <small>{community?.lastMessage
-                      ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
-                      : '아직 메시지가 없어요'}</small>
-                  </button>
-                ) : (
-                  /* Stepped out: the room's talk stays in the room until they come back. */
-                  <div className="room-tile is-closed" aria-disabled="true">
-                    <b>장내 채팅</b>
-                    <small>{community?.chatClosed ?? '장외에서는 닫혀 있어요. 다시 입장하면 열려요.'}</small>
-                  </div>
-                )}
+                {/* Open from the first entry on, stepped out or not. */}
+                <button type="button" className="room-tile" onClick={() => go('chat')}>
+                  <b>장내 채팅{newChat && <em>새</em>}</b>
+                  {community?.notice && <span className="room-notice"><strong>공지</strong> {community.notice}</span>}
+                  <small>{community?.lastMessage
+                    ? <><strong>{community.lastMessage.author}</strong> {community.lastMessage.body}</>
+                    : '아직 메시지가 없어요'}</small>
+                </button>
                 <button type="button" className="room-tile" onClick={() => go('ads')}>
                   <b>알림판{newAds && <em>새</em>}</b>
                   <small>{community?.topAd
@@ -849,23 +799,8 @@ export default function TicketPage() {
             {manage && (
               <div className="manage-panel">
                 <div className="button-row">
-                  {!ticket.transfer && !ticket.presence.inside && (
-                    <button className="btn-secondary" onClick={() => setShowTransfer(value => !value)} disabled={busy}>
-                      {showTransfer ? '양도 취소' : '양도하기'}
-                    </button>
-                  )}
                   <button className="btn-secondary" onClick={reissue} disabled={busy}>기기를 바꿨어요</button>
                 </div>
-                {showTransfer && !ticket.transfer && !ticket.presence.inside && (
-                  <form onSubmit={e => { e.preventDefault(); startTransfer(); }}>
-                    <div className="field">
-                      <label htmlFor="transfer-to">받는 사람 이메일</label>
-                      <input id="transfer-to" type="email" required value={transferTo}
-                        onChange={e => setTransferTo(e.target.value)} placeholder="friend@example.com" />
-                    </div>
-                    <button className="btn-primary" type="submit" disabled={busy}>지문 인증하고 양도하기</button>
-                  </form>
-                )}
                 {ticket.event.faceEnabled && (
                   <FaceEnrolment sessionId={sessionId} token={token}
                     inside={ticket.presence.inside} onChange={() => reload()} />
@@ -878,61 +813,33 @@ export default function TicketPage() {
           <p className="error-text" role="alert">등록 기한이 지났어요. 주최 측에 새 링크를 요청해 주세요.</p>
         ) : (
           <>
-            {!welcoming && <h3>{ticket.role === 'RECIPIENT' ? '양도받은 입장권 등록' : '입장권 등록'}</h3>}
+            {!welcoming && <h3>입장권 등록</h3>}
             <p className="hint-text">
-              {welcoming
-                ? skipOtp ? '초대받은 이메일을 적으면 이 휴대폰에 입장권이 등록돼요.'
-                  : '초대받은 이메일로 본인 확인을 한 뒤 이 휴대폰에 입장권이 등록돼요.'
-                : ticket.role === 'RECIPIENT'
-                ? '받는 분의 이메일로 본인 확인을 한 뒤, 이 휴대폰에 입장권을 등록합니다. 등록을 마치면 보낸 사람의 링크는 사용할 수 없게 됩니다.'
-                : skipOtp
-                  ? '입장권을 받은 이메일 주소를 입력하면 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
-                  : '입장권을 받은 이메일로 본인 확인을 한 뒤, 이 휴대폰 하나에만 입장권을 등록합니다.'}
+              {skipCheck
+                ? '이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
+                : welcoming
+                  ? (ticket.event.claimByPhone ? '초대받은 이메일이나 휴대폰 번호를 적으면' : '초대받은 이메일을 적으면')
+                    + ' 이 휴대폰에 입장권이 등록돼요.'
+                  : (ticket.event.claimByPhone ? '입장권을 받은 이메일이나 휴대폰 번호를 입력하면' : '입장권을 받은 이메일을 입력하면')
+                    + ' 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'}
             </p>
-            {skipOtp ? (
-              /* No code to prove the inbox, so the address is typed instead: it catches a
-                 link that reached the wrong person by mistake. */
-              <form onSubmit={e => { e.preventDefault(); claim(); }}>
+            {/* The email or phone the ticket went to, typed back: it catches a link that
+                reached the wrong person by mistake. Off when the organiser chose so. */}
+            <form onSubmit={e => { e.preventDefault(); claim(); }}>
+              {!skipCheck && (
                 <div className="field">
-                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '입장권을 받은 이메일'}</label>
-                  <input id="ticket-email" type="email" autoComplete="email" required
-                    value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+                  <label htmlFor="ticket-email">{contactLabel(ticket, welcoming)}</label>
+                  <input id="ticket-email" type={ticket.event.claimByPhone ? 'text' : 'email'}
+                    inputMode={ticket.event.claimByPhone ? 'text' : 'email'} autoComplete="email" required
+                    value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder={ticket.event.claimByPhone ? 'you@example.com 또는 01012345678' : 'you@example.com'} />
                 </div>
-                <button className="btn-primary" type="submit"
-                  disabled={busy || !email.trim() || !supportsPasskeys()}>
-                  이 휴대폰에 등록하기
-                </button>
-              </form>
-            ) : (<>
-            {stage === 'email' && (
-              <form onSubmit={e => { e.preventDefault(); sendCode(); }}>
-                <div className="field">
-                  <label htmlFor="ticket-email">{welcoming ? '초대받은 이메일' : '이메일'}</label>
-                  <input id="ticket-email" type="email" autoComplete="email" required
-                    value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-                </div>
-                <button className="btn-primary" type="submit" disabled={busy}>인증번호 받기</button>
-              </form>
-            )}
-            {stage === 'code' && (
-              <form onSubmit={e => { e.preventDefault(); checkCode(); }}>
-                <div className="field">
-                  <label htmlFor="ticket-code">인증번호 6자리</label>
-                  <input id="ticket-code" inputMode="numeric" maxLength={6} required
-                    value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} />
-                </div>
-                <button className="btn-primary" type="submit" disabled={busy}>확인</button>
-                <button className="btn-secondary" type="button" onClick={() => setStage('email')} disabled={busy}>
-                  이메일 다시 입력
-                </button>
-              </form>
-            )}
-            {stage === 'passkey' && (
-              <button className="btn-primary" onClick={claim} disabled={busy || !supportsPasskeys()}>
+              )}
+              <button className="btn-primary" type="submit"
+                disabled={busy || (!skipCheck && !email.trim()) || !supportsPasskeys()}>
                 이 휴대폰에 등록하기
               </button>
-            )}
-            </>)}
+            </form>
             {welcoming && (
               <p className="invite-hero-foot">이 입장권은 내 이름으로 발급됐어요.<br />등록하면 초대한 분의 일행으로 묶여요.</p>
             )}
@@ -1174,11 +1081,20 @@ function RotatingCode({ grant, ticket, movement, used, coupon, onAnother, onDone
 
 /** The event's days on the ticket: which ones it admits, and today among them. */
 function TicketDays({ schedule }: { schedule: TicketSchedule }) {
+  // A long schedule shows the days around today, and says how long it runs.
+  const all = schedule.days;
+  const at = all.findIndex(day => day.today || !day.past);
+  const from = all.length <= 4 ? 0 : Math.max(0, Math.min(at < 0 ? all.length - 4 : at, all.length - 4));
+  const shown = all.slice(from, from + 4);
+  const span = (date: string) => { const [y, m, d] = date.split('-').map(Number); return `${y}.${m}.${d}`; };
   return (
     <section className="ticket-days-strip" aria-label="입장 가능한 날">
       {schedule.pass && <span className="ticket-pass">{schedule.pass}</span>}
-      <ol style={{ gridTemplateColumns: `repeat(${Math.min(schedule.days.length, 4)}, minmax(0, 1fr))` }}>
-        {schedule.days.map(day => {
+      {all.length > 4 && (
+        <span className="ticket-days-span">{span(all[0].date)} – {span(all[all.length - 1].date)} · {all.length.toLocaleString()}일</span>
+      )}
+      <ol style={{ gridTemplateColumns: `repeat(${Math.min(shown.length, 4)}, minmax(0, 1fr))` }}>
+        {shown.map(day => {
           const [, m, d] = day.date.split('-').map(Number);
           const tone = day.today ? (day.admits && schedule.state === 'OPEN' ? 'today' : 'today-off')
             : day.past ? 'off' : day.admits ? 'on' : 'off';

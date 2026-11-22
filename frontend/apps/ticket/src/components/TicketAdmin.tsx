@@ -24,7 +24,7 @@ import ConsoleCoupons from './ConsoleCoupons';
 import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, eventTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -1014,7 +1014,7 @@ export default function TicketAdmin() {
         reentryGraceMinutes: Number(data.get('reentryGraceMinutes')),
         reentryCooldownSeconds: Number(data.get('reentryCooldownSeconds')),
         exitScanRequired: data.get('exitScanRequired') === 'on',
-        claimRequiresOtp: data.get('claimRequiresOtp') === 'on',
+        claimSkipCheck: data.get('claimSkipCheck') === 'on',
         unmatchedExit: data.get('unmatchedExit'),
         dayCloseExit: data.get('dayCloseExit') === 'on',
         dayCloseHour: Number(data.get('dayCloseHour') ?? 0),
@@ -1124,10 +1124,11 @@ export default function TicketAdmin() {
     return new Set(summary?.attributes?.[field.label] ?? []);
   }
 
-  // Places come from the gates. A capacity left over from a gate that has since been
-  // renamed still shows, so the operator can see it and clear it.
+  // Places come from the gates; a booth's terminal hands out coupons and counts no one in,
+  // so its booth is not a place to set a capacity for. A capacity left over from a gate
+  // that has since been renamed still shows, so the operator can see it and clear it.
   const zoneNames = [...new Set([
-    ...gates.map(gate => gate.zone).filter((zone): zone is string => !!zone),
+    ...gates.filter(gate => gate.role !== 'BOOTH').map(gate => gate.zone).filter((zone): zone is string => !!zone),
     ...Object.keys(session?.zoneCapacity ?? {}),
   ])].sort((a, b) => a.localeCompare(b, 'ko'));
   return (
@@ -1160,20 +1161,20 @@ export default function TicketAdmin() {
           <div className="console-head">
             <div>
               <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
-              <p>{dayTime(session.startsAt)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
+              <p>{eventTime(session)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
                 {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
             </div>
             <div className="console-actions">
-              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt) === 'today')) && (
+              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today')) && (
                 <span className={`live-state live-${liveState}`} role="status">
                   {liveState === 'open' ? '실시간 연결됨' : liveState === 'retrying' ? '연결이 끊겨 다시 연결하는 중' : '연결 중'}
                   {updatedAt && ` · ${[updatedAt.getHours(), updatedAt.getMinutes(), updatedAt.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')} 갱신`}
                 </span>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt) === 'today' && (
+              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                 <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt) === 'upcoming' && (
+              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'upcoming' && (
                 <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
               )}
               {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
@@ -1219,7 +1220,11 @@ export default function TicketAdmin() {
         const anyOn = picked.some(row => row.status !== 'REVOKED');
         const hasPasses = (schedule?.passes.length ?? 0) > 0;
         const openDays = (schedule?.days ?? []).filter(day => !day.closed);
-        const columns = 7 + fieldList.length + (hasPasses ? 1 : 0);
+        // A spreadsheet can give tickets a seat or a tier without the event listing that
+        // field; what the tickets carry is still shown, in a column of its own.
+        const looseSeat = takenSeats.size > 0 && !fieldList.some(field => field.kind === 'SEAT');
+        const looseTier = usedTiers.size > 0 && !fieldList.some(field => field.kind === 'TIER');
+        const columns = 7 + fieldList.length + (hasPasses ? 1 : 0) + (looseSeat ? 1 : 0) + (looseTier ? 1 : 0);
         const open = openTicket;
         return (
         <div className="console-stack">
@@ -1280,6 +1285,8 @@ export default function TicketAdmin() {
                     </th>
                     <th>입장권</th>
                     {hasPasses && <th>입장권 종류</th>}
+                    {looseSeat && <th>좌석</th>}
+                    {looseTier && <th>등급</th>}
                     {fieldList.map(field => <th key={field.id}>{field.label}</th>)}
                     <th>상태</th><th>입장 상태</th><th>받는 사람</th><th>전달</th><th className="link-col" aria-label="링크" />
                   </tr>
@@ -1300,6 +1307,8 @@ export default function TicketAdmin() {
                             onClick={() => setOpenTicket(isOpen ? null : row)}>{row.ticketRef}</button>
                         </td>
                         {hasPasses && <td className="field-col">{row.pass ?? '전 일정'}</td>}
+                        {looseSeat && <td className="field-col">{row.seat ?? '–'}</td>}
+                        {looseTier && <td className="field-col">{row.tier ?? '–'}</td>}
                         {fieldList.map(field => <td key={field.id} className="field-col">{valueOf(row, field) ?? '–'}</td>)}
                         <td className="state-col"><span className={`pill pill-${state.tone}`}>{state.label}</span></td>
                         {/* One line: where the holder is and since when, so a row stays one row high. */}
@@ -1416,7 +1425,7 @@ export default function TicketAdmin() {
                       onClick={() => staffMove(open, 'OUT')}>퇴장 처리</button>
                   ) : (
                     <button type="button" className="btn-secondary"
-                      disabled={busy || open.status === 'REVOKED' || open.status === 'TRANSFER_PENDING'}
+                      disabled={busy || open.status === 'REVOKED'}
                       onClick={() => staffMove(open, 'IN')}>입장 처리</button>
                   ))}
                   {givingBooths.length > 0 && open.status !== 'REVOKED' && (
@@ -1708,7 +1717,7 @@ export default function TicketAdmin() {
                   <InfoTip label="이벤트 정보">관람객 입장권과 안내 메일에 그대로 보이는 정보입니다.</InfoTip></h3>
               </div>
               <div className="settings-body">
-            <form key={`details-${session.id}`} className="settings-form" ref={settingsForms.details}
+            <form key={`details-${session.id}`} id="settings-details" className="settings-form" ref={settingsForms.details}
               onChange={() => markSettingsDirty('details')}
               onSubmit={e => { e.preventDefault(); void saveSettings(); }}>
               <div className="field">
@@ -1718,22 +1727,6 @@ export default function TicketAdmin() {
               <div className="field">
                 <label htmlFor="event-venue">장소</label>
                 <input id="event-venue" name="venue" defaultValue={session.venue ?? ''} />
-              </div>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="event-starts">이벤트 시각</label>
-                  <input id="event-starts" name="startsAt" type="datetime-local" required
-                    defaultValue={localInput(session.startsAt)} />
-                </div>
-                <div className="field">
-                  <label htmlFor="event-gate">입장 시각 (선택)
-                    <InfoTip label="입장 시각">
-                      입장 시각을 지정하면 그 전에는 게이트가 입장을 거부합니다. 비워 두면 언제든 입장할 수
-                      있어요. 시각을 바꿔도 이미 발급한 입장권은 그대로 쓰입니다.
-                    </InfoTip></label>
-                  <input id="event-gate" name="gateOpensAt" type="datetime-local"
-                    defaultValue={localInput(session.gateOpensAt)} />
-                </div>
               </div>
               <label className="field-inline">
                 <input name="testEvent" type="checkbox" defaultChecked={session.testEvent} />
@@ -1750,13 +1743,34 @@ export default function TicketAdmin() {
               <div className="settings-side">
                 <h3 id="settings-schedule-title">일정
                   <InfoTip label="일정">
-                    <p>여러 날 진행하는 이벤트의 날짜와 날짜별 입장 시간, 휴관일을 정해요. 마지막 운영일의 입장 마감이 이벤트가 끝나는 시각이에요.</p>
-                    <p>입장권 종류를 만들면 토요일권, 주말권처럼 들어올 수 있는 날을 입장권마다 정할 수 있어요.</p>
+                    <p>이벤트가 언제 열리는지 정해요. 하루짜리는 시작 시각과 입장 시작 시각을, 여러 날은 날짜별 입장 시간과 휴관일을 정해요.</p>
+                    <p>여러 날이면 첫 운영일의 입장 시작이 이벤트 시작, 마지막 운영일의 입장 마감이 이벤트 끝이에요.
+                      입장권 종류를 만들면 토요일권, 주말권처럼 들어올 수 있는 날을 입장권마다 정할 수 있어요.</p>
                   </InfoTip></h3>
               </div>
               <div className="settings-body">
                 <ScheduleSettings key={`schedule-${session.id}`} sessionId={session.id} startsAt={localInput(session.startsAt)}
-                  schedule={schedule} onChanged={() => loadSchedule(session.id)} onNotice={setNotice} onError={setError} />
+                  gateOpensAt={localInput(session.gateOpensAt)}
+                  schedule={schedule} onChanged={async () => { await loadSchedule(session.id); await loadSessions(); }}
+                  onNotice={setNotice} onError={setError}>
+                  {/* One day: its times belong to the event's details and save with them. */}
+                  <div className="form-row">
+                    <div className="field">
+                      <label htmlFor="event-starts">시작 시각</label>
+                      <input id="event-starts" name="startsAt" type="datetime-local" required form="settings-details"
+                        defaultValue={localInput(session.startsAt)} onChange={() => markSettingsDirty('details')} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="event-gate">입장 시작 (선택)
+                        <InfoTip label="입장 시작">
+                          정하면 그 전에는 게이트가 입장을 거부해요. 비워 두면 언제든 입장할 수 있어요.
+                          시각을 바꿔도 이미 발급한 입장권은 그대로 쓰여요.
+                        </InfoTip></label>
+                      <input id="event-gate" name="gateOpensAt" type="datetime-local" form="settings-details"
+                        defaultValue={localInput(session.gateOpensAt)} onChange={() => markSettingsDirty('details')} />
+                    </div>
+                  </div>
+                </ScheduleSettings>
               </div>
             </section>
             <section id="settings-policy" className="settings-section" aria-labelledby="settings-policy-title">
@@ -1832,12 +1846,12 @@ export default function TicketAdmin() {
                 </div>
               </div>
               <label className="field-inline">
-                <input name="claimRequiresOtp" type="checkbox" defaultChecked={session.claimRequiresOtp} />
-                등록 시 이메일 인증 필요
-                <InfoTip label="등록 시 이메일 인증">
-                  이메일 인증을 끄면 <b>입장권을 받은 주소를 입력한 사람</b>이 보유자가 됩니다. 메일로
-                  뿌리는 이벤트라면 켜 두세요. 기기 재발급과 양도 취소는 정책과 무관하게 항상 이메일
-                  인증을 요구합니다.
+                <input name="claimSkipCheck" type="checkbox" defaultChecked={session.claimSkipCheck} />
+                등록할 때 이메일·휴대폰 확인 안 함
+                <InfoTip label="등록할 때 이메일·휴대폰 확인 안 함">
+                  기본으로는 관람객이 입장권을 받은 <b>이메일이나 휴대폰 번호</b>를 입력해야 등록돼요. 잘못 전달된 링크를
+                  다른 사람이 등록하는 것을 막아 줘요. 현장에서 링크를 직접 나눠 줄 때처럼 확인이 필요 없을 때만 켜세요.
+                  켜면 링크를 가진 사람이 곧 보유자가 됩니다.
                 </InfoTip>
               </label>
             </form>
@@ -2065,7 +2079,7 @@ export default function TicketAdmin() {
                 <p>입장권, 입·퇴장 기록, 등록된 단말이 함께 사라지고 되돌릴 수 없어요.</p>
               </div>
               <div className="settings-body">
-                {eventWhen(session.startsAt) === 'today' && (
+                {eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                   <p className="error-text">오늘 진행 중인 이벤트입니다. 이벤트가 끝난 뒤에 지우는 것을 권해요.</p>
                 )}
                 <button className="btn-danger" type="button" onClick={() => setConfirmDelete(true)}>이 이벤트 삭제…</button>
@@ -2623,18 +2637,21 @@ export default function TicketAdmin() {
                 <p className="console-none">기록이 없어요.</p>
               ) : (
                 <div className="console-table-box flat">
-                  <table className="console-table">
-                    <thead><tr><th>시각</th><th>구분</th><th>입장권</th><th>게이트</th><th>비고</th></tr></thead>
+                  <table className="console-table recent-table">
+                    <thead><tr><th>시각</th><th>구분</th><th>입장권</th><th className="recent-wide">게이트</th><th className="recent-wide">비고</th></tr></thead>
                     <tbody>
                       {occupancy?.recent.map((row, index) => (
                         <tr key={index}>
-                          <td className="muted">{shortTime(text(row.occurred_at) || null)}</td>
+                          <td className="muted"><span className="recent-wide">{shortTime(text(row.occurred_at) || null)}</span>
+                            <span className="recent-narrow">{clock(text(row.occurred_at) || null)}</span></td>
                           <td><span className={`pill pill-${outcomeTone(text(row.result))}`}>
                             {OUTCOMES[text(row.result)] ?? text(row.result)}</span>
-                            {text(row.direction) !== '' && <small className="cell-note">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
-                          <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}</td>
-                          <td>{text(row.gate_label) || text(row.gate_id) || '–'}</td>
-                          <td className="muted">{text(row.reason)}</td>
+                            {text(row.direction) !== '' && <small className="cell-note recent-wide">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
+                          <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}
+                            <small className="recent-under">
+                              {[text(row.gate_label) || text(row.gate_id), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
+                          <td className="recent-wide">{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                          <td className="muted recent-wide">{text(row.reason)}</td>
                         </tr>
                       ))}
                     </tbody>

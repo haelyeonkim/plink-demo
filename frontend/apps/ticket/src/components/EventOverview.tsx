@@ -23,7 +23,7 @@ interface Todo { tone: 'warn' | 'info' | 'done'; title: string; detail: string; 
 export default function EventOverview({ session, summary, occupancy, gates }: {
   session: SessionRow; summary: TicketSummary | null; occupancy: Occupancy | null; gates: GateRow[];
 }) {
-  const when = eventWhen(session.startsAt);
+  const when = eventWhen(session.startsAt, session.scheduleEndsAt);
   const counts = summary?.counts ?? { all: 0, unclaimed: 0, bound: 0, inside: 0, revoked: 0, live: 0 };
   const doors = gates.filter(gate => gate.role !== 'BOOTH');
   const terminals = gates.filter(gate => gate.role === 'BOOTH');
@@ -176,16 +176,19 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
           <p className="console-none">아직 게이트를 지난 기록이 없어요.</p>
         ) : (
           <div className="console-table-box flat">
-            <table className="console-table">
+            {/* On a phone the gate and the note sit under the ticket, so the row fits the screen. */}
+            <table className="console-table recent-table">
               <tbody>
                 {(occupancy?.recent ?? []).slice(0, 6).map((row, index) => (
                   <tr key={index}>
                     <td className="muted num-left">{clock(text(row.occurred_at) || null)}</td>
                     <td><span className={`pill pill-${outcomeTone(text(row.result))}`}>
                       {OUTCOMES[text(row.result)] ?? text(row.result)}</span></td>
-                    <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}</td>
-                    <td>{text(row.gate_label) || text(row.gate_id) || '–'}</td>
-                    <td className="muted">{text(row.reason)}</td>
+                    <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}
+                      <small className="recent-under">
+                        {[text(row.gate_label) || text(row.gate_id), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
+                    <td className="recent-wide">{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                    <td className="muted recent-wide">{text(row.reason)}</td>
                   </tr>
                 ))}
               </tbody>

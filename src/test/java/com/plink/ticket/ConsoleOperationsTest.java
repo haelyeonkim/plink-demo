@@ -42,7 +42,6 @@ class ConsoleOperationsTest {
     @Autowired GateAuthService gateAuth;
     @Autowired com.plink.ticket.controller.TicketAdminController adminController;
     @Autowired TextCipher cipher;
-    @Autowired com.plink.ticket.service.TransferService transfers;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired com.plink.ticket.repository.TicketFieldRepository fields;
 
@@ -499,20 +498,6 @@ class ConsoleOperationsTest {
             () -> tickets.setRevoked(ticketId, false)).getReason().contains("비활성화된 입장권이 아니"));
     }
 
-    @Test void reEnablingKeepsATicketLockedWhileItsTransferIsStillOpen() {
-        long sessionId = newSession();
-        Map<String, Object> issued = tickets.issue(sessionId, "sender@example.com", "D-1", null, null);
-        long ticketId = ((Number) issued.get("ticketId")).longValue();
-        ticketRepository.bind(ticketId, holderFor("sender@example.com"), "sender@example.com");
-        transfers.initiate(ticketRepository.findById(ticketId).orElseThrow(),
-            "recipient@example.com", "127.0.0.1", "test");
-
-        tickets.setRevoked(ticketId, true);
-        // Restoring must not hand the ticket back to the sender: the recipient's claim
-        // link is still live, and a BOUND ticket would let both of them in.
-        assertEquals("TRANSFER_PENDING", tickets.setRevoked(ticketId, false).get("status"));
-    }
-
     @Test void aBulkIssueReportsEachRowOnItsOwn() {
         long sessionId = newSession();
         fields.insert(sessionId, "좌석", "SEAT", "A-1\nA-2");
@@ -789,7 +774,6 @@ class ConsoleOperationsTest {
         com.plink.ticket.model.EventSession before = tickets.requireSession(sessionId);
 
         Map<String, Object> body = new java.util.LinkedHashMap<>();
-        body.put("transferMax", 5);
         body.put("crowdBusyPercent", 90);
         body.put("crowdSteadyPercent", 40);
         body.put("seats", "A-1\nA-2");
@@ -801,7 +785,6 @@ class ConsoleOperationsTest {
         assertEquals(HttpStatus.BAD_REQUEST, refused.getStatusCode());
 
         com.plink.ticket.model.EventSession after = tickets.requireSession(sessionId);
-        assertEquals(before.transferMax, after.transferMax);
         assertEquals(before.crowdBusyPercent, after.crowdBusyPercent);
         assertEquals(before.dayCloseHour, after.dayCloseHour);
         assertEquals(before.reentryMode, after.reentryMode);
@@ -810,7 +793,6 @@ class ConsoleOperationsTest {
         body.put("reentryMax", 2);
         adminController.updatePolicy(sessionId, body);
         com.plink.ticket.model.EventSession saved = tickets.requireSession(sessionId);
-        assertEquals(5, saved.transferMax);
         assertEquals(2, saved.reentryMax);
         assertEquals("LIMITED", saved.reentryMode);
         assertEquals(4, saved.dayCloseHour);
@@ -818,8 +800,8 @@ class ConsoleOperationsTest {
 
     @Test void negativePolicyNumbersAreRefused() {
         long sessionId = newSession();
-        for (String key : java.util.List.of("reentryGraceMinutes", "reentryCooldownSeconds", "transferMax",
-                "transferClosesMinutesBefore", "faceRetentionDays", "geoRadiusMeters")) {
+        for (String key : java.util.List.of("reentryGraceMinutes", "reentryCooldownSeconds",
+                "faceRetentionDays", "geoRadiusMeters")) {
             ResponseStatusException refused = assertThrows(ResponseStatusException.class,
                 () -> adminController.updatePolicy(sessionId, Map.of(key, -1)), key);
             assertEquals(HttpStatus.BAD_REQUEST, refused.getStatusCode(), key);

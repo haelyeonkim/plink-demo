@@ -162,6 +162,11 @@ public class TicketAdminController {
         Timestamp gateOpensAt = body.get("gateOpensAt") == null || body.get("gateOpensAt").isBlank()
             ? null
             : timestamp(body.get("gateOpensAt"), "입장 시각을 ISO 형식으로 입력해 주세요.");
+        if (schedule.scheduled(id)) {
+            // The days say when it starts and when each day's doors open.
+            startsAt = current.startsAt;
+            gateOpensAt = null;
+        }
         if (gateOpensAt != null && gateOpensAt.after(startsAt)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                 "입장 시각은 시작 시각보다 앞서야 해요.");
@@ -730,7 +735,6 @@ public class TicketAdminController {
         row.put("issuedToEmail", email(ticket.issuedToEmail, plain));
         row.put("holderEmail", email(ticket.holderEmail, plain));
         row.put("reissueCount", ticket.reissueCount);
-        row.put("transferCount", ticket.transferCount);
         row.put("phone", ticket.phone);
         row.put("deliveredVia", ticket.deliveredVia);
         row.put("inside", presence != null && presence.inside());
@@ -1197,6 +1201,11 @@ public class TicketAdminController {
         row.put("startsAt", session.startsAt.toInstant().toString());
         row.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         row.put("testEvent", session.testEvent);
+        // An event over days runs until its last day closes, not just on the day it starts.
+        row.put("scheduleEndsAt", schedule.endsAt(session).map(Instant::toString).orElse(null));
+        java.util.Optional<java.time.LocalDate[]> span = schedule.span(session);
+        row.put("scheduleFirstDay", span.map(s -> s[0].toString()).orElse(null));
+        row.put("scheduleLastDay", span.map(s -> s[1].toString()).orElse(null));
         row.put("dayCloseExit", session.dayCloseExit);
         row.put("dayCloseHour", session.dayCloseHour);
         row.put("reentryMode", session.reentryMode);
@@ -1206,10 +1215,7 @@ public class TicketAdminController {
         row.put("exitScanRequired", session.exitScanRequired);
         row.put("unmatchedExit", session.unmatchedExit);
         row.put("autoExitAfterMinutes", session.autoExitAfterMinutes);
-        row.put("transferMax", session.transferMax);
-        row.put("transferClosesMinutesBefore", session.transferClosesMinutesBefore);
-        row.put("transferAfterFirstEntry", session.transferAfterFirstEntry);
-        row.put("claimRequiresOtp", session.claimRequiresOtp);
+        row.put("claimSkipCheck", session.claimSkipCheck);
         row.put("faceEnabled", session.faceEnabled);
         // How many faces turning it off would delete, so the console can say so first.
         row.put("faceEnrolled", faceRows.countEnrolled(session.id));

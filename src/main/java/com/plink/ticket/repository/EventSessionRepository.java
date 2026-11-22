@@ -31,10 +31,7 @@ public class EventSessionRepository {
         s.exitScanRequired = rs.getBoolean("exit_scan_required");
         s.unmatchedExit = rs.getString("unmatched_exit");
         s.autoExitAfterMinutes = rs.getInt("auto_exit_after_minutes");
-        s.transferMax = rs.getInt("transfer_max");
-        s.transferClosesMinutesBefore = rs.getInt("transfer_closes_minutes_before");
-        s.transferAfterFirstEntry = rs.getBoolean("transfer_after_first_entry");
-        s.claimRequiresOtp = rs.getBoolean("claim_requires_otp");
+        s.claimSkipCheck = rs.getBoolean("claim_skip_check");
         s.faceEnabled = rs.getBoolean("face_enabled");
         s.faceRequired = rs.getBoolean("face_required");
         s.reentryRequiresFace = rs.getBoolean("reentry_requires_face");
@@ -64,9 +61,9 @@ public class EventSessionRepository {
 
     /**
      * The event row under lock: what keeps "one live ticket per address" true when two
-     * issues, or an issue and an accepted transfer, name the same address at once. A
-     * unique index cannot say it - revoked tickets are exempt, and transfers made before
-     * the rule may already have left an address holding two.
+     * issues name the same address at once. A unique index cannot say it - revoked
+     * tickets are exempt, and transfers made before the rule may already have left an
+     * address holding two.
      */
     public Optional<EventSession> lockById(long id) {
         return jdbc.query("SELECT * FROM event_session WHERE id = ? FOR UPDATE", MAPPER, id).stream().findFirst();
@@ -98,6 +95,11 @@ public class EventSessionRepository {
             + "WHERE id = ?", name, venue, startsAt, gateOpensAt, id);
     }
 
+    /** When the event starts, as its schedule's first day says, with no separate door time. */
+    public void updateStart(long id, Timestamp startsAt) {
+        jdbc.update("UPDATE event_session SET starts_at = ?, gate_opens_at = NULL WHERE id = ?", startsAt, id);
+    }
+
     public void updateDayClose(long id, boolean dayCloseExit, int dayCloseHour) {
         jdbc.update("UPDATE event_session SET day_close_exit = ?, day_close_hour = ? WHERE id = ?",
             dayCloseExit, dayCloseHour, id);
@@ -107,18 +109,13 @@ public class EventSessionRepository {
         jdbc.update("UPDATE event_session SET test_event = ? WHERE id = ?", testEvent, id);
     }
 
-    public void updateTransferPolicy(long id, int transferMax, int closesMinutesBefore, boolean afterFirstEntry) {
-        jdbc.update("UPDATE event_session SET transfer_max = ?, transfer_closes_minutes_before = ?, "
-            + "transfer_after_first_entry = ? WHERE id = ?", transferMax, closesMinutesBefore, afterFirstEntry, id);
-    }
-
     /** Cascades to tickets, presence and the ledger through the foreign keys. */
     public int delete(long id) {
         return jdbc.update("DELETE FROM event_session WHERE id = ?", id);
     }
 
-    public void updateClaimPolicy(long id, boolean requiresOtp) {
-        jdbc.update("UPDATE event_session SET claim_requires_otp = ? WHERE id = ?", requiresOtp, id);
+    public void updateClaimPolicy(long id, boolean skipCheck) {
+        jdbc.update("UPDATE event_session SET claim_skip_check = ? WHERE id = ?", skipCheck, id);
     }
 
     public void updateInviteStatus(long id, String status) {

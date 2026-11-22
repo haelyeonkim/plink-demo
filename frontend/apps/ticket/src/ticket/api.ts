@@ -1,12 +1,6 @@
 import { mutate } from '@shared/auth';
 import type { Grant } from './codes';
 
-export interface TicketTransfer {
-  status: string;
-  toEmail: string;
-  expiresAt: string;
-}
-
 /** An offer this ticket holds at a booth, and what became of it. */
 export interface TicketCoupon {
   couponId: number;
@@ -27,9 +21,6 @@ export interface TicketView {
    * event is filled in, and the page asks for the passkey before anything else.
    */
   locked?: boolean;
-  /** HOLDER opened their own ticket; RECIPIENT opened a transfer link. */
-  role: 'HOLDER' | 'RECIPIENT';
-  transfer: TicketTransfer | null;
   seat: string | null;
   tier: string | null;
   holderEmailMasked: string | null;
@@ -42,7 +33,10 @@ export interface TicketView {
     exitScanRequired: boolean;
     reentryMode: string;
     /** When false, opening the link is the whole claim: no verification code is sent. */
-    claimRequiresOtp: boolean;
+    /** Registering needs no email or phone typed back: the organiser chose so. */
+    claimSkipCheck: boolean;
+    /** The ticket went to a phone too, so the number can be typed instead of the email. */
+    claimByPhone?: boolean;
     /** Whether the event admits by face; when off, the ticket says nothing about faces. */
     faceEnabled?: boolean;
     /** Opening a code is checked against the venue: only then is the phone's position asked for. */
@@ -102,18 +96,6 @@ export async function fetchCrowding(sessionId: string, token: string): Promise<C
   return read(await fetch(`${ticketBase(sessionId, token)}/crowding`)) as Promise<Crowding>;
 }
 
-export async function requestOtp(sessionId: string, token: string, email: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/otp`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-  }));
-}
-
-export async function verifyOtp(sessionId: string, token: string, email: string, code: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/otp/verify`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }),
-  }));
-}
-
 /**
  * Opens an entry or exit code on the browser whose passkey already opened this ticket.
  * Refused with 403 once that proof has lapsed; the page asks for the passkey again.
@@ -131,12 +113,11 @@ export async function presentCoupon(sessionId: string, token: string, couponId: 
   return read(await mutate(`${ticketBase(sessionId, token)}/coupons/${couponId}/present`, { method: 'POST' })) as Promise<Grant>;
 }
 
-export async function cancelTransfer(sessionId: string, token: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/transfer/cancel`, { method: 'POST' }));
-}
-
-export async function reissueTicket(sessionId: string, token: string) {
-  return read(await mutate(`${ticketBase(sessionId, token)}/recover`, { method: 'POST' }));
+/** A fresh link to the ticket's own email; from a phone without the passkey, the email or phone is typed back. */
+export async function reissueTicket(sessionId: string, token: string, contact?: string) {
+  return read(await mutate(`${ticketBase(sessionId, token)}/recover`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact: contact ?? null }),
+  }));
 }
 
 export interface FaceStatus {
@@ -257,10 +238,8 @@ export async function gateGrantConfirm(gateId: string, gateToken: string, pick: 
 
 export interface CommunitySummary {
   entered: boolean;
-  /** Entered and inside now: the chat is the room's, and closes when they step out. */
+  /** Come in at least once: the chat opens then and stays open after stepping out. */
   chatOpen?: boolean;
-  /** Why the chat is shut to an entered holder: stepped out, or banned. */
-  chatClosed?: string;
   latestChatId?: number;
   inside?: number;
   notice?: string | null;

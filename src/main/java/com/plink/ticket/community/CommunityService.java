@@ -32,9 +32,8 @@ import java.util.Set;
  * The room's own channels: a chat among the people who have come in, and a board of
  * booth and organiser notices.
  *
- * <p>Both open only to a holder who has proved the ticket is theirs on this browser and
- * has been through a gate. The chat further needs them inside now: it is the room's own
- * talk, closed to whoever has stepped out until they come back in. Writing to it needs them
+ * <p>Both open to a holder who has proved the ticket is theirs on this browser and has
+ * been through a gate once; stepping out later closes neither. Writing to the chat needs them
  * not muted or banned, and not to have written in the last cooldown. A banned ticket's lines are
  * also kept from every other holder until the ban is lifted. Holders appear under a name made from
  * their ticket ("초록 여우"), never their seat or address; the console sees the ticket.
@@ -72,12 +71,12 @@ public class CommunityService {
     // ---- Who may read and write ----
 
     /** A holder let into the room's channels, and whether they may write to the chat now. */
-    public record Member(Ticket ticket, boolean inside, boolean canWrite, String writeBlocked, boolean banned) {}
+    public record Member(Ticket ticket, boolean canWrite, String writeBlocked, boolean banned) {}
 
     /** The holder themselves, on a browser that has proved it: who an organiser's alert reaches. */
     private boolean viewer(TicketService.Resolved resolved, HttpSession session) {
         Ticket ticket = resolved.ticket;
-        return !resolved.viaTransfer() && ticket.claimed() && !ticket.revoked() && passkeys.canView(session, ticket);
+        return ticket.claimed() && !ticket.revoked() && passkeys.canView(session, ticket);
     }
 
     /** Whether this holder has come in yet, without refusing: what the ticket page asks first. */
@@ -88,7 +87,7 @@ public class CommunityService {
 
     public Member member(TicketService.Resolved resolved, HttpSession session) {
         Ticket ticket = resolved.ticket;
-        if (resolved.viaTransfer() || !ticket.claimed() || ticket.revoked()) {
+        if (!ticket.claimed() || ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "등록을 마친 입장권에서 볼 수 있어요.");
         }
         if (!passkeys.canView(session, ticket)) {
@@ -106,18 +105,7 @@ public class CommunityService {
             : !settings.enabled() ? "지금은 채팅이 닫혀 있어요."
             : repo.muted(ticket.sessionId, ticket.id) ? "운영팀이 이 입장권의 채팅 쓰기를 막았어요."
             : null;
-        return new Member(ticket, presence.inside(), blocked == null, blocked, banned);
-    }
-
-    /** A holder in the chat: one who is inside now. Stepping out closes it, reading included. */
-    private Member chatter(TicketService.Resolved resolved, HttpSession session) {
-        Member member = member(resolved, session);
-        if (!member.inside()) {
-            // A banned holder is not promised that coming back in opens it.
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, member.banned()
-                ? member.writeBlocked() : "장외에서는 채팅을 볼 수 없어요. 다시 입장하면 열려요.");
-        }
-        return member;
+        return new Member(ticket, blocked == null, blocked, banned);
     }
 
     /**
@@ -152,7 +140,7 @@ public class CommunityService {
     // ---- The chat, from a holder's ticket ----
 
     public Map<String, Object> chat(TicketService.Resolved resolved, HttpSession session, long afterId) {
-        Member member = chatter(resolved, session);
+        Member member = member(resolved, session);
         long sessionId = member.ticket().sessionId;
         CommunityRepository.Settings settings = repo.settings(sessionId);
         Timestamp now = Timestamp.from(Instant.now());
@@ -220,7 +208,7 @@ public class CommunityService {
 
     @Transactional
     public Map<String, Object> post(TicketService.Resolved resolved, HttpSession session, String rawBody, Long replyTo) {
-        Member member = chatter(resolved, session);
+        Member member = member(resolved, session);
         if (!member.canWrite()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, member.writeBlocked());
         long sessionId = member.ticket().sessionId;
         CommunityRepository.Settings settings = repo.settings(sessionId);
@@ -293,7 +281,7 @@ public class CommunityService {
      * closed chat reads but does not like, dislike or report.
      */
     private Member writer(TicketService.Resolved resolved, HttpSession session) {
-        Member member = chatter(resolved, session);
+        Member member = member(resolved, session);
         if (!member.canWrite()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, member.writeBlocked());
         return member;
     }
@@ -384,7 +372,8 @@ public class CommunityService {
         boolean viewer = viewer(resolved, session);
         Presence presence = viewer ? admissions.find(resolved.ticket.id).orElse(null) : null;
         boolean entered = presence != null && presence.entryCount > 0;
-        boolean chatOpen = entered && presence.inside();
+        // The chat opens with the first entry and stays open: stepping out does not close it.
+        boolean chatOpen = entered;
         long sessionId = resolved.ticket.sessionId;
         Timestamp now = Timestamp.from(Instant.now());
         result.put("entered", entered);
@@ -395,23 +384,16 @@ public class CommunityService {
                 "id", m.id(), "body", m.body(), "createdAt", m.createdAt().toInstant().toString())));
         }
         if (!entered) return result;
-        if (!chatOpen) {
-            // What the closed chat tile says; a ban is not lifted by coming back in.
-            result.put("chatClosed", repo.banned(sessionId, resolved.ticket.id)
-                ? "운영자가 이 입장권의 채팅을 차단했어요." : "장외에서는 닫혀 있어요. 다시 입장하면 열려요.");
-        }
         result.put("inside", admissions.occupancy(sessionId).getOrDefault("inside", 0));
-        // The chat's tile, only for someone who could open it: outside, the room's talk is not theirs.
-        if (chatOpen) {
-            result.put("latestChatId", repo.latestId(sessionId));
-            result.put("notice", repo.pinnedNotice(sessionId, now).map(CommunityRepository.Message::body).orElse(null));
-            // The latest thing someone said; a notice already has its own line on the tile.
-            List<CommunityRepository.Message> last = repo.recent(sessionId, 0, 10, false);
-            for (int i = last.size() - 1; i >= 0; i--) {
-                if (last.get(i).notice()) continue;
-                result.put("lastMessage", Map.of("author", author(last.get(i)), "body", last.get(i).body()));
-                break;
-            }
+        // The chat's tile.
+        result.put("latestChatId", repo.latestId(sessionId));
+        result.put("notice", repo.pinnedNotice(sessionId, now).map(CommunityRepository.Message::body).orElse(null));
+        // The latest thing someone said; a notice already has its own line on the tile.
+        List<CommunityRepository.Message> last = repo.recent(sessionId, 0, 10, false);
+        for (int i = last.size() - 1; i >= 0; i--) {
+            if (last.get(i).notice()) continue;
+            result.put("lastMessage", Map.of("author", author(last.get(i)), "body", last.get(i).body()));
+            break;
         }
         List<CommunityRepository.Ad> ads = repo.visibleAds(sessionId, now);
         result.put("adCount", ads.size());

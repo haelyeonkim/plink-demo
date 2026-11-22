@@ -4,7 +4,8 @@ export interface SessionRow {
   id: number; name: string; venue: string | null; startsAt: string; gateOpensAt: string | null;
   reentryMode: string; reentryMax: number; reentryGraceMinutes: number; reentryCooldownSeconds: number;
   exitScanRequired: boolean; unmatchedExit: string; autoExitAfterMinutes: number;
-  claimRequiresOtp: boolean;
+  /** Registering needs no email or phone typed back; off unless the organiser turns it on. */
+  claimSkipCheck: boolean;
   faceEnabled: boolean;
   /** Holders with a face enrolled now: what turning face entry off would delete. */
   faceEnrolled: number;
@@ -12,6 +13,10 @@ export interface SessionRow {
   reentryRequiresFace: boolean;
   /** A rehearsal: recipient emails are shown in full in the console's lists. */
   testEvent: boolean;
+  /** When an event over days ends; null for an event of one day. */
+  scheduleEndsAt?: string | null;
+  /** The first and last open days of an event over days, as "2026-11-21"; null for one day. */
+  scheduleFirstDay?: string | null; scheduleLastDay?: string | null;
   /** Close open entries once the venue's day turns over, at this hour (venue time). */
   dayCloseExit: boolean; dayCloseHour: number;
   seats: string[]; tiers: string[];
@@ -57,17 +62,24 @@ export interface TicketRow {
 }
 
 /** Whether an event is still ahead, is today, or has been, by the calendar day. */
-export function eventWhen(startsAt: string): 'upcoming' | 'today' | 'past' {
+/**
+ * Where an event stands. One that runs over days is on from its start until its last day
+ * closes; one without days is on the day it starts.
+ */
+export function eventWhen(startsAt: string, endsAt?: string | null): 'upcoming' | 'today' | 'past' {
   const start = new Date(startsAt);
   const day = (d: Date) => d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
   const today = day(new Date());
+  if (endsAt) {
+    if (Date.now() >= new Date(endsAt).getTime()) return 'past';
+    return day(start) <= today ? 'today' : 'upcoming';
+  }
   return day(start) === today ? 'today' : day(start) < today ? 'past' : 'upcoming';
 }
 
 /** What the ticket itself is: issued, claimed by a person, or switched off. */
 export function ticketState(row: TicketRow): { label: string; tone: string } {
   if (row.status === 'REVOKED') return { label: '비활성', tone: 'off' };
-  if (row.status === 'TRANSFER_PENDING') return { label: '양도 중', tone: 'warn' };
   if (row.holderEmail) return { label: '등록 완료', tone: 'ok' };
   return { label: '미등록', tone: 'wait' };
 }
@@ -228,6 +240,23 @@ export function dayTime(value: string | null): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} (${'일월화수목금토'[d.getDay()]}) `
     + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * When the event is, as a list or a header says it: "11.08 (일) 10:00" for an event of
+ * one day, "11.21 (토) – 11.23 (월)" for one over days, with the years when they differ.
+ */
+export function eventTime(session: Pick<SessionRow, 'startsAt' | 'scheduleFirstDay' | 'scheduleLastDay'>): string {
+  const first = session.scheduleFirstDay, last = session.scheduleLastDay;
+  if (!first || !last) return dayTime(session.startsAt);
+  const say = (iso: string, year: boolean) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const weekday = '일월화수목금토'[new Date(y, m - 1, d).getDay()];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${year ? `${y}.` : ''}${pad(m)}.${pad(d)} (${weekday})`;
+  };
+  const years = first.slice(0, 4) !== last.slice(0, 4);
+  return first === last ? say(first, false) : `${say(first, years)} – ${say(last, years)}`;
 }
 
 /** "09:30": the time alone, for a day the row has already named. */

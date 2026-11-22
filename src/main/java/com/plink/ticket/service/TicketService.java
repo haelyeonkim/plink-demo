@@ -8,13 +8,11 @@ import com.plink.ticket.model.EventSession;
 import com.plink.ticket.model.Presence;
 import com.plink.ticket.model.Ticket;
 import com.plink.ticket.model.TicketField;
-import com.plink.ticket.model.Transfer;
 import com.plink.ticket.repository.AdmissionRepository;
 import com.plink.ticket.repository.EventSessionRepository;
 import com.plink.ticket.repository.HolderRepository;
 import com.plink.ticket.repository.TicketFieldRepository;
 import com.plink.ticket.repository.TicketRepository;
-import com.plink.ticket.repository.TransferRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,7 +39,6 @@ public class TicketService {
     private final EventSessionRepository sessions;
     private final HolderRepository holders;
     private final AdmissionRepository admissions;
-    private final TransferRepository transfers;
     private final PresentationService presentations;
     private final EmailSender mail;
     private final MessageSender sms;
@@ -62,7 +59,7 @@ public class TicketService {
     public TicketService(TicketRepository tickets, TicketFieldRepository fields,
             EventSessionRepository sessions,
             HolderRepository holders, AdmissionRepository admissions,
-            TransferRepository transfers, PresentationService presentations, EmailSender mail,
+            PresentationService presentations, EmailSender mail,
             MessageSender sms, TicketProperties properties, TextCipher cipher, CouponService coupons,
             com.plink.ticket.live.LiveEvents live,
             org.springframework.transaction.PlatformTransactionManager transactionManager,
@@ -77,7 +74,6 @@ public class TicketService {
         this.sessions = sessions;
         this.holders = holders;
         this.admissions = admissions;
-        this.transfers = transfers;
         this.presentations = presentations;
         this.mail = mail;
         this.sms = sms;
@@ -254,8 +250,8 @@ public class TicketService {
             String rawPhone, Map<String, String> values) {
         String recipient = EmailOtpService.normalize(email);
         String phone = normalizePhone(rawPhone);
-        // Held until the ticket is in: two issues to one address, or an issue racing a
-        // transfer to it, would otherwise both pass the check below.
+        // Held until the ticket is in: two issues to one address would otherwise both pass
+        // the check below.
         EventSession session = sessions.lockById(sessionId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
         // One ticket per address per event. Two links to the same inbox are two links
@@ -341,18 +337,8 @@ public class TicketService {
     /**
      * Drops the binding and mints a new token for a ticket the caller has locked, and
      * returns the token. Shared by the holder's recovery and the console's re-issue.
-     *
-     * <p>A transfer still open on the ticket is cancelled in the same transaction. The
-     * rotation puts the ticket back to ISSUED, which is no longer "transfer pending":
-     * left open, the recipient could still accept it and both the recovered link and the
-     * claim link would admit somebody.
      */
     private String rotate(Ticket locked, String recipient) {
-        for (Transfer open : transfers.lockPendingByTicket(locked.id)) {
-            if (!transfers.close(open.id, "CANCELLED")) continue;
-            AfterCommit.run(() -> mail.send(open.toEmail, "입장권 양도가 취소되었어요",
-                "입장권이 재발급되어 양도가 취소되었습니다. 받은 링크는 더 이상 사용할 수 없어요."));
-        }
         tickets.unbind(locked.id);
         presentations.revokeFor(locked.id);
         String token = Secrets.randomToken(16);
@@ -449,6 +435,31 @@ public class TicketService {
     }
 
     /** Digits only, so a number typed with dashes or spaces still matches. */
+    /**
+     * Whether what a holder typed is the email or the phone number this ticket went to.
+     *
+     * @return null when it is, else what to tell them
+     */
+    public static String contactMismatch(String typed, String email, String phone) {
+        String value = typed == null ? "" : typed.strip();
+        if (value.isEmpty()) return "입장권을 받은 이메일이나 휴대폰 번호를 입력해 주세요.";
+        if (value.contains("@")) {
+            return email != null && EmailOtpService.normalize(value).equalsIgnoreCase(email) ? null
+                : "입장권을 받은 이메일과 일치하지 않아요. 받으신 주소를 다시 확인해 주세요.";
+        }
+        String digits = phoneDigits(value);
+        if (digits.length() < 9) return "이메일이나 휴대폰 번호를 다시 확인해 주세요.";
+        if (phone == null) return "이 입장권에는 휴대폰 번호가 없어요. 입장권을 받은 이메일을 입력해 주세요.";
+        return digits.equals(phoneDigits(phone)) ? null
+            : "입장권을 받은 휴대폰 번호와 일치하지 않아요. 번호를 다시 확인해 주세요.";
+    }
+
+    /** A Korean number as it is dialled at home: +82 10 ... and 010 ... are one number. */
+    private static String phoneDigits(String raw) {
+        String digits = raw.replaceAll("\\D", "");
+        return digits.startsWith("82") && digits.length() >= 11 ? "0" + digits.substring(2) : digits;
+    }
+
     public static String normalizePhone(String raw) {
         if (raw == null || raw.isBlank()) return null;
         String digits = raw.replaceAll("[^0-9+]", "");
@@ -464,27 +475,30 @@ public class TicketService {
      * the old link stops resolving at the same moment.
      */
     @Transactional
-    public Map<String, Object> reissue(Ticket resolved, String verifiedEmail) {
-        // Read again under the lock: the ticket may have been transferred, revoked or
+    public Map<String, Object> reissue(Ticket resolved) {
+        // Read again under the lock: the ticket may have been revoked or
         // recovered since the page resolved it, and the checks below are about now.
         Ticket ticket = tickets.lockById(resolved.id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "입장권을 찾을 수 없어요."));
         if (ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
         }
+        // The new link goes only where the ticket already went: whoever asked for it, it
+        // lands with the holder.
         String recipient = ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail;
-        if (!verifiedEmail.equalsIgnoreCase(recipient)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "입장권에 등록된 이메일로만 재발급할 수 있어요.");
-        }
         if (ticket.reissueCount >= properties.getRebindMaxPerTicket()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                 "재발급 가능 횟수를 모두 사용했어요. 안내 데스크에서 도움을 받아 주세요.");
         }
         EventSession session = requireSession(ticket.sessionId);
         String url = urlFor(ticket.sessionId, rotate(ticket, recipient));
-        AfterCommit.run(() -> mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
-            "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
-            + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요."));
+        String phone = ticket.phone;
+        AfterCommit.run(() -> {
+            mail.send(recipient, "[" + session.name + "] 입장권 재발급 링크",
+                "새 기기에서 아래 링크를 열고 다시 등록해 주세요. 이전 링크와 이전 기기의 패스키는 지금부터 사용할 수 없습니다.\n\n"
+                + url + "\n\n요청하지 않았다면 즉시 안내 데스크에 알려 주세요.");
+            if (phone != null) sms.send(phone, smsText(session, url));
+        });
 
         ActivityLog.emit(Activity.of(Activity.TICKET, "ticket.reissued_by_holder").session(ticket.sessionId)
             .ticket(ticket.id).summary(recipient).put("email", recipient)
@@ -548,12 +562,7 @@ public class TicketService {
             if (!ticket.revoked()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "비활성화된 입장권이 아니에요.");
             }
-            // A transfer that was still open when the ticket went off must stay locked:
-            // restoring it to BOUND would let the sender enter while the recipient's
-            // claim link is live, and both would get in off one ticket.
-            boolean transferring = transfers.findPendingByTicket(ticket.id).filter(Transfer::open).isPresent();
-            tickets.updateStatus(ticket.id,
-                transferring ? "TRANSFER_PENDING" : ticket.claimed() ? "BOUND" : "ISSUED");
+            tickets.updateStatus(ticket.id, ticket.claimed() ? "BOUND" : "ISSUED");
         }
         Ticket updated = tickets.findById(ticketId).orElseThrow();
         ActivityLog.emit(Activity.of(Activity.TICKET, revoked ? "ticket.revoked" : "ticket.restored")
@@ -571,16 +580,10 @@ public class TicketService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "이벤트를 찾을 수 없어요."));
     }
 
-    /**
-     * A resolved ticket, and which side of a transfer the visitor is on. A link is either
-     * the ticket's own token or a pending transfer's claim token; both open the same
-     * ticket but mean opposite things.
-     */
+    /** The ticket a link opens. Tickets do not change hands, so a link is only ever its own token. */
     public static class Resolved {
         public final Ticket ticket;
-        public final Transfer claim;
-        Resolved(Ticket ticket, Transfer claim) { this.ticket = ticket; this.claim = claim; }
-        public boolean viaTransfer() { return claim != null; }
+        Resolved(Ticket ticket) { this.ticket = ticket; }
     }
 
     /** Resolves a personal token. A wrong token and a wrong session look identical. */
@@ -589,19 +592,14 @@ public class TicketService {
             throw notFound();
         }
         String hash = tokenHmac(token);
-        Ticket ticket = tickets.findByTokenHmac(hash).orElse(null);
-        Transfer claim = null;
-        if (ticket == null) {
-            claim = transfers.findByClaimToken(hash).filter(Transfer::open).orElseThrow(this::notFound);
-            ticket = tickets.findById(claim.ticketId).orElseThrow(this::notFound);
-        }
+        Ticket ticket = tickets.findByTokenHmac(hash).orElseThrow(this::notFound);
         if (ticket.sessionId != sessionId) throw notFound();
         ActivityContext.holder(ticket.id, ticket.sessionId,
-            claim != null ? claim.toEmail : ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail);
+            ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail);
         if (ticket.revoked()) {
             throw new ResponseStatusException(HttpStatus.GONE, "사용할 수 없는 입장권이에요.");
         }
-        return new Resolved(ticket, claim);
+        return new Resolved(ticket);
     }
 
     private ResponseStatusException notFound() {
@@ -620,9 +618,7 @@ public class TicketService {
     public Map<String, Object> view(Resolved resolved, boolean viewer) {
         Ticket ticket = resolved.ticket;
         EventSession session = requireSession(ticket.sessionId);
-        // A recipient opening a transfer link has not registered anything yet, whatever
-        // binding the sender may still hold.
-        boolean claimed = !resolved.viaTransfer() && ticket.claimed();
+        boolean claimed = ticket.claimed();
         if (claimed && !viewer) {
             Map<String, Object> event = new LinkedHashMap<>();
             event.put("name", session.name);
@@ -631,7 +627,6 @@ public class TicketService {
             Map<String, Object> locked = new LinkedHashMap<>();
             locked.put("claimed", true);
             locked.put("locked", true);
-            locked.put("role", "HOLDER");
             locked.put("event", event);
             return locked;
         }
@@ -641,19 +636,12 @@ public class TicketService {
         result.put("ticketRef", ticket.ticketRef);
         result.put("claimed", claimed);
         result.put("locked", false);
-        result.put("role", resolved.viaTransfer() ? "RECIPIENT" : "HOLDER");
-        Transfer pending = transfers.findPendingByTicket(ticket.id).filter(Transfer::open).orElse(null);
-        result.put("transfer", pending == null ? null : Map.of(
-            "status", pending.status,
-            "toEmail", mask(pending.toEmail),
-            "expiresAt", pending.expiresAt.toInstant().toString()));
         result.put("seat", ticket.seat);
         result.put("tier", ticket.tier);
-        result.put("holderEmailMasked", mask(resolved.viaTransfer() ? resolved.claim.toEmail
-            : ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail));
+        result.put("holderEmailMasked", mask(ticket.holderEmail != null ? ticket.holderEmail : ticket.issuedToEmail));
         result.put("claimExpired", !claimed && ticket.claimExpiresAt != null
             && ticket.claimExpiresAt.toInstant().isBefore(Instant.now()));
-        result.put("invitation", resolved.viaTransfer() ? null : invitation(ticket));
+        result.put("invitation", invitation(ticket));
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("name", session.name);
@@ -662,7 +650,10 @@ public class TicketService {
         event.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         event.put("exitScanRequired", session.exitScanRequired);
         event.put("reentryMode", session.reentryMode);
-        event.put("claimRequiresOtp", session.claimRequiresOtp);
+        // Whether registering asks for the email or phone the ticket went to.
+        event.put("claimSkipCheck", session.claimSkipCheck);
+        // Which of the two the holder can type: a ticket issued without a phone takes email only.
+        event.put("claimByPhone", ticket.phone != null);
         // An event that does not admit by face says nothing about faces on its tickets.
         event.put("faceEnabled", session.faceEnabled);
         // The phone asks for its position only when the event will look at it.
@@ -672,17 +663,6 @@ public class TicketService {
         result.put("event", event);
 
         Map<String, Object> state = new LinkedHashMap<>();
-        if (resolved.viaTransfer()) {
-            // The recipient has proved nothing yet, and what the sender has done with the
-            // ticket - where they are, what they collected - is the sender's business.
-            state.put("inside", false);
-            state.put("entryCount", 0);
-            state.put("reentryRemaining", null);
-            state.put("reentryUntil", null);
-            result.put("presence", state);
-            result.put("coupons", java.util.List.of());
-            return result;
-        }
         state.put("inside", presence != null && presence.inside());
         state.put("entryCount", presence == null ? 0 : presence.entryCount);
         state.put("reentryRemaining", presence == null ? null : reentryRemaining(session, presence));

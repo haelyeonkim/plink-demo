@@ -63,7 +63,7 @@ export default function SessionCreate() {
           <div className="field">
             <label htmlFor="gateOpensAt">개찰 시각 (선택)
               <InfoTip label="개찰 시각">
-                개찰 시각을 지정하면 그 전에는 입장이 거부됩니다. 재입장·양도·얼굴 정책은 만든 뒤 설정 탭에서
+                개찰 시각을 지정하면 그 전에는 입장이 거부됩니다. 재입장·얼굴 정책은 만든 뒤 설정 탭에서
                 조정할 수 있어요.
               </InfoTip></label>
             <input id="gateOpensAt" name="gateOpensAt" type="datetime-local" />
