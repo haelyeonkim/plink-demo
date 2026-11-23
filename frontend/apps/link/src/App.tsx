@@ -1,11 +1,11 @@
 import AdminArtworkRequests from './components/ArtworkRequests';
 import RequireAdmin from '@shared/components/RequireAdmin';
 import { AuthProvider } from '@shared/auth';
-import { AppScope } from '@shared/scope';
+import { AppScope, SITE_HOME } from '@shared/scope';
 import Login from '@shared/components/Login';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Header from '@shared/components/Header';
-import Home from './components/Home';
+import ToolMain from './components/ToolMain';
 import LinkAdmin from './components/LinkAdmin';
 import LinkCreate from './components/LinkCreate';
 import ContentCreate from './components/ContentCreate';
@@ -16,6 +16,7 @@ import AccessLink from './components/AccessLink';
 import Guide from './components/Guide';
 import Footer from '@shared/components/Footer';
 import { Tracker } from '@shared/track';
+import { DocumentTitle } from '@shared/title';
 import DataLayout from './components/data/DataLayout';
 import DataOverview from './components/data/DataOverview';
 import DataExplore from './components/data/DataExplore';
@@ -49,11 +50,16 @@ export default function App() {
     <AuthProvider>
     <BrowserRouter>
       <Tracker app="link" />
+      <DocumentTitle />
       <Header />
       <main>
         <Routes>
-          {/* Passlink: what it is, and what belongs to the site rather than to either tool. */}
-          <Route path="/" element={<Home />} />
+          {/* Each tool has its own front door, at temporary addresses until each has a domain.
+              The server already redirects /; this covers a navigation inside the app. */}
+          <Route path="/" element={<Moved to={() => SITE_HOME} />} />
+          <Route path="/linkmain" element={<ToolMain tool="link" />} />
+          <Route path="/ticketmain" element={<ToolMain tool="ticket" />} />
+          {/* What belongs to the site rather than to either tool. */}
           <Route path="/admin" element={<RequireAdmin scope="canAccounts"><AdminConsole /></RequireAdmin>} />
           {/* Service logs, statistics and the files sent to organisers. */}
           <Route path="/admin/data" element={<RequireAdmin scope="canAccounts"><DataLayout /></RequireAdmin>}>
@@ -64,7 +70,10 @@ export default function App() {
           <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
           <Route path="/admin/artworks/requests" element={<RequireAdmin scope="canAccounts"><AdminArtworkRequests /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
-          <Route path="/guide" element={<Guide />} />
+          <Route path="/linkguide" element={<Guide tool="link" />} />
+          <Route path="/ticketguide" element={<Guide tool="ticket" />} />
+          {/* The one guide both tools used to share. */}
+          <Route path="/guide" element={<Moved to={() => '/ticketguide'} />} />
           <Route path="/login" element={<Login />} />
           {/* The link tool opens on its console, like the ticket tool under /tickets. */}
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />

@@ -53,10 +53,10 @@ public class ContentController {
 
     private LinkContent owned(long id, Authentication user) {
         LinkContent content = contents.findById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "컨텐츠를 찾을 수 없어요."));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없어요."));
         // Someone else's document is not found rather than forbidden: the id says nothing.
         if (!owner(user).equals(content.ownerSub)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "컨텐츠를 찾을 수 없어요.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없어요.");
         }
         return content;
     }
@@ -167,10 +167,10 @@ public class ContentController {
         int used = contents.linksUsing(content.id);
         if (used > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "이 컨텐츠를 쓰고 있는 링크가 " + used + "개 있어요. 링크의 대상을 먼저 바꿔 주세요.");
+                "이 콘텐츠를 쓰고 있는 링크가 " + used + "개 있어요. 링크의 대상을 먼저 바꿔 주세요.");
         }
         if (contents.hasArtworkRequests(content.id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "수신자 요청 이력이 있는 작품의 원본 컨텐츠는 삭제할 수 없어요.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "수신자 요청 이력이 있는 작품의 원본 콘텐츠는 삭제할 수 없어요.");
         }
         contents.delete(content.id);
         return Map.of("deleted", true);
@@ -190,7 +190,7 @@ public class ContentController {
         if (value == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "내용을 입력해 주세요.");
         String json = mapper.writeValueAsString(value);
         if (json.length() > MAX_BODY) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠가 너무 큽니다.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠가 너무 큽니다.");
         }
         return json;
     }
@@ -217,7 +217,7 @@ public class ContentController {
     private static String sourceType(Object value) {
         String type = value == null ? "MANUAL" : value.toString().trim().toUpperCase(java.util.Locale.ROOT);
         if (!List.of("MANUAL", "URL", "PDF").contains(type)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처를 확인해 주세요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠 출처를 확인해 주세요.");
         }
         return type;
     }
@@ -226,7 +226,7 @@ public class ContentController {
         if ("MANUAL".equals(type)) return null;
         String ref = value == null ? "" : value.toString().trim();
         if (ref.isBlank() || ref.length() > 500) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "컨텐츠 출처 정보를 확인해 주세요.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "콘텐츠 출처 정보를 확인해 주세요.");
         }
         if ("URL".equals(type)) return com.plink.service.ContentSource.webReference(ref);
         return ref;

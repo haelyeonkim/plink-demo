@@ -25,7 +25,7 @@ export default function LinkNav({ detail, tab }: { detail: LinkDetail; tab: Link
       card={<>
         <span className={`pill pill-${state === 'active' ? 'ok' : 'out'}`}>{STATE_LABEL[state]}</span>
         <strong>{detail.title || detail.contentTitle || detail.originalUrl}</strong>
-        <span className="event-nav-target">{detail.contentId ? `컨텐츠 · ${detail.contentTitle}` : detail.originalUrl}</span>
+        <span className="event-nav-target">{detail.contentId ? `콘텐츠 · ${detail.contentTitle}` : detail.originalUrl}</span>
       </>} />
   );
 }

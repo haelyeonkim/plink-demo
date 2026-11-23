@@ -178,7 +178,7 @@ public class ArtworkRepository {
 
     private org.springframework.web.server.ResponseStatusException invalidIdentity() {
         return new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
-            "작품 식별자가 올바르지 않습니다. 컨텐츠를 다시 열어 주세요.");
+            "작품 식별자가 올바르지 않습니다. 콘텐츠를 다시 열어 주세요.");
     }
 
     private static String value(Map<String, String> row, String key) {

@@ -268,7 +268,7 @@ export default function AdminArtworkRequests() {
     ? (reason.trim() ? `${preset} — ${reason.trim()}` : preset) : reason.trim();
   function start(row: InboxRequest, action: string) { setOperation({ row, action }); setReason(''); setPreset(''); setUntil(''); setProcessingState(row.processingState); setAssignee(row.assignee); setNote(row.internalNote); }
   return <section className="page-section page-wide">
-    <h2>작품 요청</h2>
+    <h2>작품 요청 관리</h2>
     <p className="section-desc">전달한 링크에서 받은 반응을 접수순으로 확인합니다. 요청 순서가 홀딩이나 구매 우선권을 자동으로 확정하지 않습니다.</p>
     <div className="request-counts" aria-label="요청 상태 요약">
       {['active', 'interested', 'pending', 'held', 'purchase', 'withdrawn', 'sold', 'cancel', 'inquiry'].map(key => <button key={key}

@@ -23,7 +23,7 @@ const TAB_TITLES: Record<Tab, string> = {
 
 /** What this link opens, in one line: an address elsewhere, or a document written here. */
 function destinationText(link: { originalUrl: string | null; contentTitle: string | null }): string {
-  return link.contentTitle ? `컨텐츠 · ${link.contentTitle}` : link.originalUrl ?? '';
+  return link.contentTitle ? `콘텐츠 · ${link.contentTitle}` : link.originalUrl ?? '';
 }
 
 function formatDate(value: string): string {
@@ -227,13 +227,9 @@ export default function LinkAdmin() {
     <section className="page-section page-wide console">
       {!detail && (<>
         <div className="page-head">
-          <h2><span aria-current="page">링크</span><span className="count">{links.length}</span>
+          <h2><span aria-current="page">링크 관리</span><span className="count">{links.length}</span>
             <InfoTip label="링크 목록">링크 이름을 누르면 들어갑니다. 최근에 만든 링크가 위에 놓입니다.</InfoTip></h2>
           <span className="page-actions">
-            {/* Content is what a link points at, so it is made from here rather than
-                from a menu of its own. */}
-            <Link className="btn-secondary" to="/links/requests">작품 요청</Link>
-            <Link className="btn-secondary" to="/links/contents">컨텐츠</Link>
             <Link className="btn-primary" to="/links/new">링크 추가</Link>
           </span>
         </div>
@@ -318,7 +314,7 @@ export default function LinkAdmin() {
                     <dt>대상</dt>
                     <dd>
                       {detail.contentId
-                        ? <>여기서 만든 컨텐츠 · <Link to={`/links/contents/${detail.contentId}/edit`}>{detail.contentTitle}</Link></>
+                        ? <>여기서 만든 콘텐츠 · <Link to={`/links/contents/${detail.contentId}/edit`}>{detail.contentTitle}</Link></>
                         : <a href={detail.originalUrl ?? '#'} target="_blank" rel="noopener">{detail.originalUrl}</a>}
                     </dd>
                     <dt>발급</dt>
@@ -427,7 +423,7 @@ export default function LinkAdmin() {
                       무엇을 열지, 언제까지·몇 번까지 열 수 있는지 정합니다. 이미 발급한 수신자 링크에도 바로 적용돼요.
                     </InfoTip></h3>
                   <dl className="settings-now">
-                    <div><dt>대상</dt><dd>{detail.contentId ? `컨텐츠 · ${detail.contentTitle}` : '외부 주소'}</dd></div>
+                    <div><dt>대상</dt><dd>{detail.contentId ? `콘텐츠 · ${detail.contentTitle}` : '외부 주소'}</dd></div>
                     <div><dt>만료</dt><dd>{detail.expiresAt ? formatDate(detail.expiresAt) : '없음'}</dd></div>
                     <div><dt>최대 열람</dt><dd>{detail.maxViews > 0 ? `${detail.maxViews}회` : '제한 없음'}</dd></div>
                     <div><dt>비밀번호</dt><dd>{detail.hasPassword ? '있음' : '없음'}</dd></div>
@@ -444,7 +440,7 @@ export default function LinkAdmin() {
                     <select id="settings-target" name="target" value={target}
                       onChange={event => setTarget(event.target.value as 'url' | 'content')}>
                       <option value="url">외부 주소</option>
-                      <option value="content">여기서 만든 컨텐츠</option>
+                      <option value="content">여기서 만든 콘텐츠</option>
                     </select>
                   </div>
                   {target === 'url' ? (
@@ -455,16 +451,16 @@ export default function LinkAdmin() {
                     </div>
                   ) : (
                     <div className="field">
-                      <label htmlFor="settings-content">컨텐츠</label>
+                      <label htmlFor="settings-content">콘텐츠</label>
                       <select id="settings-content" name="contentId" required
                         defaultValue={detail.contentId ? String(detail.contentId) : ''}>
-                        <option value="">컨텐츠를 선택하세요</option>
+                        <option value="">콘텐츠를 선택하세요</option>
                         {contents.map(content => (
                           <option key={content.id} value={content.id}>{content.title}</option>
                         ))}
                       </select>
                       <p className="hint-text">
-                        <Link to="/links/contents">컨텐츠 만들기·편집</Link>
+                        <Link to="/links/contents">콘텐츠 만들기·편집</Link>
                       </p>
                     </div>
                   )}

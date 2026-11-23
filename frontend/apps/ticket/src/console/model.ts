@@ -218,6 +218,21 @@ export const OUTCOMES: Record<string, string> = {
   ADMITTED: '입장', EXITED: '퇴장', DENIED: '거부', DUPLICATE: '중복', TRANSFERRED: '양도',
 };
 
+/** Where a movement happened: its gate, or the console when staff moved the ticket by hand. */
+export function movementPlace(row: Record<string, unknown>): string {
+  const gate = text(row.gate_label) || text(row.gate_id);
+  if (gate) return gate;
+  return text(row.method) === 'STAFF' ? '콘솔 처리' : '';
+}
+
+/** Which way a refused or repeated scan was going; an entry or an exit already says so. */
+export function movementDirection(row: Record<string, unknown>): string {
+  const result = text(row.result);
+  if (result === 'ADMITTED' || result === 'EXITED') return '';
+  const direction = text(row.direction);
+  return direction === 'IN' ? '입장 방향' : direction === 'OUT' ? '퇴장 방향' : '';
+}
+
 /** "yyyy-MM-ddTHH:mm" in the operator's own zone, which is what the input speaks. */
 export function localInput(value: string | null): string {
   if (!value) return '';

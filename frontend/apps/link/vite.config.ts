@@ -1,8 +1,9 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { allowedHosts, backendProxy, dist, shared } from '../../vite.common.ts';
+import { frontDoorOf, isSearchable, withFrontDoorHead } from '../../shared/src/frontDoor.ts';
 
 const ticketDev = `http://localhost:${process.env.TICKET_DEV_PORT || 3010}`;
 const TICKETS = /^\/tickets(?:[/?#]|$)/;
@@ -54,9 +55,71 @@ function ticketApp(): Plugin {
   };
 }
 
+/**
+ * The site root opens the ticket tool's front door for now. Answered by the server, in
+ * development and in a preview alike, so the browser goes straight there.
+ * The query string travels along; nothing else is redirected.
+ */
+function rootToTicketMain(): Plugin {
+  const redirect: Connect.NextHandleFunction = (req, res, next) => {
+    const url = req.url || '/';
+    if ((req.method !== 'GET' && req.method !== 'HEAD') || !/^\/(?:\?|$)/.test(url)) return next();
+    res.statusCode = 302;
+    res.setHeader('Location', '/ticketmain' + url.slice(1));
+    res.setHeader('Cache-Control', 'no-cache');
+    res.end();
+  };
+  return {
+    name: 'plink-root-to-ticket-main',
+    configureServer(server) { server.middlewares.use(redirect); },
+    configurePreviewServer(server) { server.middlewares.use(redirect); },
+  };
+}
+
+/**
+ * Keeps every page but the front doors and guides out of search results, said in a header
+ * so it holds before any script runs. The ticket app's pages pass through here too.
+ */
+function searchIndexing(): Plugin {
+  const mark: Connect.NextHandleFunction = (req, res, next) => {
+    if (!isSearchable(req.url || '/')) res.setHeader('X-Robots-Tag', 'noindex');
+    next();
+  };
+  return {
+    name: 'plink-search-indexing',
+    configureServer(server) { server.middlewares.use(mark); },
+    configurePreviewServer(server) { server.middlewares.use(mark); },
+  };
+}
+
+/**
+ * Each front door's title, description and Open Graph card, written into the page by the
+ * server: a messenger drawing a shared address reads the HTML and never runs the app.
+ */
+function frontDoorHead(): Plugin {
+  return {
+    name: 'plink-front-door-head',
+    // Development: the dev server's index.html, for the address that asked for it.
+    transformIndexHtml(html, ctx) {
+      return ctx.originalUrl ? withFrontDoorHead(html, ctx.originalUrl) : html;
+    },
+    // A preview (stage, production) serves the built page as is, so write it in here.
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url || '/';
+        const page = join(dist, 'index.html');
+        if ((req.method !== 'GET' && req.method !== 'HEAD') || !frontDoorOf(url) || !existsSync(page)) return next();
+        res.setHeader('Content-Type', TYPES['.html']);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.end(withFrontDoorHead(readFileSync(page, 'utf8'), url));
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: import.meta.dirname,
-  plugins: [react(), ticketApp()],
+  plugins: [react(), searchIndexing(), rootToTicketMain(), frontDoorHead(), ticketApp()],
   resolve: { alias: { '@shared': shared } },
   publicDir: '../../public',
   // This empties dist/, ticket app included: npm run build builds this app first.

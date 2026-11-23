@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { scrollToElement } from '@shared/scrollTo';
 import {
   dislikeChat, fetchChat, likeChat, reportChat, sendChat, type ChatMessage, type ChatView, type Reaction,
 } from '../ticket/api';
@@ -173,7 +174,7 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
   if (!view) {
     return <div className="chat-room"><p className="console-none chat-loading">{error || '채팅을 불러오고 있어요.'}</p></div>;
   }
-  const { me } = view;
+  const { me, hot } = view;
   const left = view.maxLength - [...text].length;
   const pinned = [view.notice, view.hot].filter((m): m is ChatMessage => m !== null);
   const rules = [
@@ -218,12 +219,15 @@ export default function TicketChat({ sessionId, token, tick, counts, onSeen }: {
           {pinsOpen && (
             <ul className="cr-pin-list">
               {view.notice && <li className="notice"><b>공지</b><span>{view.notice.body}</span></li>}
-              {view.hot && (
+              {hot && (
                 <li className="hot">
-                  <a href={`#chat-${view.hot.id}`} onClick={() => setPinsOpen(false)}>
-                    <b>인기</b><span>{view.hot.body}</span>
-                    <small><ThumbUp size={12} /> {view.hot.likes}</small>
-                  </a>
+                  <button type="button" onClick={() => {
+                    setPinsOpen(false);
+                    scrollToElement(document.getElementById(`chat-${hot.id}`), 'center');
+                  }}>
+                    <b>인기</b><span>{hot.body}</span>
+                    <small><ThumbUp size={12} /> {hot.likes}</small>
+                  </button>
                 </li>
               )}
             </ul>
