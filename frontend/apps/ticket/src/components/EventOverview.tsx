@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import InfoTip from '@shared/components/InfoTip';
 import {
-  OUTCOMES, clock, count, eventWhen, hourLabel, percent, text, validity,
+  OUTCOMES, clock, movementPlace, count, eventWhen, hourLabel, percent, text, validity,
   type GateRow, type Occupancy, type SessionRow, type TicketSummary,
 } from '../console/model';
 
@@ -186,8 +186,8 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
                       {OUTCOMES[text(row.result)] ?? text(row.result)}</span></td>
                     <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}
                       <small className="recent-under">
-                        {[text(row.gate_label) || text(row.gate_id), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
-                    <td className="recent-wide">{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                        {[movementPlace(row), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
+                    <td className="recent-wide">{movementPlace(row) || '–'}</td>
                     <td className="muted recent-wide">{text(row.reason)}</td>
                   </tr>
                 ))}

@@ -25,7 +25,7 @@ import ConsoleCoupons from './ConsoleCoupons';
 import { BoothManagerExtras, InviteManagerButton, TerminalManagers, useBoothManagers } from './BoothManagers';
 import Toast from '@shared/components/Toast';
 import {
-  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, admitsPeople, clock, count, dayTime, eventTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
+  BoothRow, DIRECTION_LABEL, ScheduleView, dayShort, GateRow, INVITE_STATUS_LABEL, InviteStatus, IssuedTicket, MAX_PER_TICKET, OUTCOMES, Occupancy, PAGE_SIZE, SessionRow, TicketFieldRow, TicketFilter, TicketGroup, TicketGroupMember, TicketRow, TicketHistory, TicketSummary, UNMATCHED_LABEL, movementDirection, movementPlace, admitsPeople, clock, count, dayTime, eventTime, DELIVERY, eventWhen, hourLabel, localInput, percent, presenceState, read, shortTime, text, ticketState, validity,
 } from '../console/model';
 
 type Tab = ConsoleTab;
@@ -1179,8 +1179,13 @@ export default function TicketAdmin() {
                 <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
               )}
               {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
+              {/* With nothing on offer the button cannot do anything; say what it is waiting for. */}
+              {tab === 'coupons' && givingBooths.length === 0 && (
+                <span className="console-actions-note" id="coupon-issue-why">사용 중인 쿠폰 종류를 먼저 추가하세요</span>
+              )}
               {tab === 'coupons' && (
                 <button className="btn-primary" type="button" disabled={givingBooths.length === 0}
+                  aria-describedby={givingBooths.length === 0 ? 'coupon-issue-why' : undefined}
                   onClick={() => openCouponSheet(null, boothTab ?? undefined)}>쿠폰 발급</button>
               )}
             </div>
@@ -1829,15 +1834,9 @@ export default function TicketAdmin() {
                 <input name="exitScanRequired" type="checkbox" defaultChecked={session.exitScanRequired} />
                 퇴장 스캔 필수
               </label>
-              <div className="form-row day-close-row">
-                <label className="field-inline">
-                  <input name="dayCloseExit" type="checkbox" defaultChecked={session.dayCloseExit} />
-                  날이 바뀌면 자동 퇴장
-                  <InfoTip label="날이 바뀌면 자동 퇴장">
-                    켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장
-                    처리합니다. 자정을 넘겨 계속되는 이벤트라면 기준 시각을 새벽으로 늦추세요.
-                  </InfoTip>
-                </label>
+              {/* The hour a day turns over: it decides when the automatic exit runs and where a
+                  day of a multi-day schedule ends, so it reads first and the exit hangs off it. */}
+              <div className="day-close-group">
                 <div className="field">
                   <label htmlFor="day-close-hour">날짜 기준 시각</label>
                   <select id="day-close-hour" name="dayCloseHour" defaultValue={session.dayCloseHour}>
@@ -1845,7 +1844,15 @@ export default function TicketAdmin() {
                       <option key={hour} value={hour}>{hourLabel(hour)}</option>
                     ))}
                   </select>
+                  <p className="hint-text">하루가 바뀌는 시각이에요. 자정을 넘겨 계속되는 이벤트라면 새벽으로 늦추세요.</p>
                 </div>
+                <label className="field-inline">
+                  <input name="dayCloseExit" type="checkbox" defaultChecked={session.dayCloseExit} />
+                  이 시각이 지나면 자동 퇴장
+                  <InfoTip label="이 시각이 지나면 자동 퇴장">
+                    켜 두면 퇴장을 찍지 않은 사람을 날짜 기준 시각(한국 시간)이 지난 뒤 몇 분 안에 퇴장 처리합니다.
+                  </InfoTip>
+                </label>
               </div>
               <label className="field-inline">
                 <input name="claimSkipCheck" type="checkbox" defaultChecked={session.claimSkipCheck} />
@@ -2648,11 +2655,11 @@ export default function TicketAdmin() {
                             <span className="recent-narrow">{clock(text(row.occurred_at) || null)}</span></td>
                           <td><span className={`pill pill-${outcomeTone(text(row.result))}`}>
                             {OUTCOMES[text(row.result)] ?? text(row.result)}</span>
-                            {text(row.direction) !== '' && <small className="cell-note recent-wide">{text(row.direction) === 'IN' ? '입장 방향' : '퇴장 방향'}</small>}</td>
+                            {movementDirection(row) && <small className="cell-note recent-wide">{movementDirection(row)}</small>}</td>
                           <td className="strong">{text(row.ticket_ref)}{row.seat ? ` · ${text(row.seat)}` : ''}
                             <small className="recent-under">
-                              {[text(row.gate_label) || text(row.gate_id), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
-                          <td className="recent-wide">{text(row.gate_label) || text(row.gate_id) || '–'}</td>
+                              {[movementPlace(row), text(row.reason)].filter(Boolean).join(' · ')}</small></td>
+                          <td className="recent-wide">{movementPlace(row) || '–'}</td>
                           <td className="muted recent-wide">{text(row.reason)}</td>
                         </tr>
                       ))}
