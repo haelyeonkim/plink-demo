@@ -21,6 +21,8 @@ export interface TicketView {
    * event is filled in, and the page asks for the passkey before anything else.
    */
   locked?: boolean;
+  /** For an unclaimed ticket, which way to offer first; only a hint, the passkey decides. */
+  suggest?: 'new' | 'existing';
   seat: string | null;
   tier: string | null;
   holderEmailMasked: string | null;
@@ -32,10 +34,7 @@ export interface TicketView {
     gateOpensAt: string | null;
     exitScanRequired: boolean;
     reentryMode: string;
-    /** When false, opening the link is the whole claim: no verification code is sent. */
-    /** Registering needs no email or phone typed back: the organiser chose so. */
-    claimSkipCheck: boolean;
-    /** The ticket went to a phone too, so the number can be typed instead of the email. */
+    /** The ticket went to a phone too, so a new phone can ask for it again by that number. */
     claimByPhone?: boolean;
     /** Whether the event admits by face; when off, the ticket says nothing about faces. */
     faceEnabled?: boolean;

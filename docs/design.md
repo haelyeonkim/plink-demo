@@ -31,6 +31,37 @@ Spring Boot 백엔드를 공유한다. 앱별 화면은 분리하고 인증·헤
 관련 코드: [ArtworkDeliveryService](../src/main/java/com/plink/service/ArtworkDeliveryService.java),
 [ArtworkStatusService](../src/main/java/com/plink/service/ArtworkStatusService.java).
 
+## 등록과 사람 식별: 패스키가 사람이다
+
+링크와 티켓을 처음 등록할 때 이메일이나 전화번호를 확인하지 않는다. 처음 등록한 패스키가
+그 링크·티켓의 주인이다. 그래서 등록 화면은 "처음 등록한 휴대폰에서만 열린다"는 점을 알리고
+받은 사람이 맞는지 확인받은 뒤에 등록 버튼을 연다.
+
+사람(`holder`)은 패스키로 구분한다. 한 사람은 패스키 하나로 받은 모든 링크와 티켓을 연다.
+처음 쓰는 사람은 새 패스키를 만들고, 이미 패스키가 있는 사람은 그 패스키로 인증해 새 링크·티켓을
+자기 것에 더한다. 등록 화면이 어느 쪽을 먼저 보여 줄지는 다음으로 정한다. 어느 것도 연결 여부를
+정하지 않으며, 연결은 언제나 패스키 인증으로 결정한다.
+
+- 같은 이메일·전화번호로 받은 링크·티켓을 전에 등록한 사람이 있으면 "기존 패스키"를 먼저 보여 준다.
+  전화번호는 저장된 형태(010…, +82…)와 상관없이 같은 번호로 본다.
+- 이 브라우저에서 패스키를 만든 적이 있으면(개인정보 없는 표시) "기존 패스키"를 먼저 보여 준다.
+- 새 패스키를 만들 때는 위에서 찾은 사람의 패스키를 제외 목록(`excludeCredentials`)에 넣는다.
+  휴대폰에 이미 있으면 휴대폰이 생성을 거절하고, 화면은 기존 패스키 인증으로 넘어간다.
+
+새 패스키는 휴대폰 목록에 "패스링크 · 11월 23일 14:05"처럼 만든 시각으로 표시한다. 링크가 전달되면
+다른 사람 휴대폰에 남을 수 있고, 등록 전에 페이지로도 내려가기 때문에 이메일이나 전화번호는 넣지 않는다.
+WebAuthn username은 holder의 user handle이다. 예전에 이메일로 만든 holder는 이메일과 user handle을
+그대로 두어 이미 등록된 패스키가 계속 열린다. 부스 관리자는 지금처럼 이메일 인증번호를 거친다.
+
+패스키를 지웠거나 동기화되지 않는 휴대폰으로 바꾸면, 그 사람의 링크·티켓은 모두 열리지 않는다.
+서버는 본인의 분실과 다른 사람의 시도를 구분할 수 없어서, 잠긴 화면은 두 경우에 같은 안내(보낸 분에게
+다시 요청)를 보여 준다. 복구는 관리자의 재발급으로 한다.
+
+관련 코드: [PasskeyClaim](../src/main/java/com/plink/ticket/service/PasskeyClaim.java),
+[HolderRepository](../src/main/java/com/plink/ticket/repository/HolderRepository.java),
+[PasskeyService](../src/main/java/com/plink/service/PasskeyService.java),
+[TicketPasskeyService](../src/main/java/com/plink/ticket/service/TicketPasskeyService.java).
+
 ## 티켓 권리, 본인 확인, QR의 분리
 
 입장 권리는 서버의 티켓 상태로 관리하고, 등록된 보유자의 본인 확인은 패스키로 수행한다.

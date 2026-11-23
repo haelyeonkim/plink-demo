@@ -50,12 +50,11 @@ class PasskeyClaimTest {
         ProtectedLink link = links.createLink("https://example.com/late", "늦은 확정", null, null, null, 0, "owner");
         var issued = links.issue(link.getId(), "late@example.com", null);
         long winner = holder("late@example.com");
-        long loser = holder("loser@example.com");
 
-        // This phone started while the address was free...
+        // This phone started making a passkey while the address was free...
         MockHttpSession session = new MockHttpSession();
-        session.setAttribute("plink.passkey.pending",
-            new PasskeyService.Pending(issued.shortCode, "loser@example.com", issued.id, loser, null, null));
+        session.setAttribute("plink.passkey.pending", new PasskeyService.Pending(issued.shortCode, issued.id, null,
+            new com.plink.ticket.service.PasskeyClaim.NewPasskey(null, "loser-handle"), null));
         // ...and another finished first.
         recipients.bindIfUnclaimed(issued.id, winner);
 

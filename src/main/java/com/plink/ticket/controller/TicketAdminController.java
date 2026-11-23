@@ -1215,7 +1215,6 @@ public class TicketAdminController {
         row.put("exitScanRequired", session.exitScanRequired);
         row.put("unmatchedExit", session.unmatchedExit);
         row.put("autoExitAfterMinutes", session.autoExitAfterMinutes);
-        row.put("claimSkipCheck", session.claimSkipCheck);
         row.put("faceEnabled", session.faceEnabled);
         // How many faces turning it off would delete, so the console can say so first.
         row.put("faceEnrolled", faceRows.countEnrolled(session.id));

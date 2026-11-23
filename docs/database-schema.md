@@ -22,7 +22,7 @@
 | 영역 | 테이블 | 역할 |
 |---|---|---|
 | 관리자 | `admin_account` | 관리자 계정, 로그인 잠금, 콘솔 권한, 공개 주소 slug |
-| 수신자 인증 | `holder`, `holder_credential` | 이메일 기준 사람 식별 및 사람별 패스키 |
+| 수신자 인증 | `holder`, `holder_credential` | 패스키 기준 사람 식별 및 사람별 패스키. `email`은 V63부터 선택(예전 holder만 가짐) |
 | 이메일 인증 | `email_otp` | 목적별 OTP 해시, 만료, 시도 횟수 |
 | 보호 링크 | `protected_link` | 외부 URL 또는 내부 콘텐츠, 소유자 및 보호 정책 |
 | 개인 링크 | `link_recipient` | 수신자별 주소, 이메일, 등록 상태, holder 연결 |
@@ -79,6 +79,7 @@ flowchart LR
 - V32: 행사 `test_event` 플래그.
 - V33: 작품 `sale_status` (`NULL`, `hold`, `sold`).
 - V34: 작품 `archived`, `position` BIGINT, `content_artwork` 연결. 두 환경 모두 적용 완료.
+- V63: 패스키로 등록하기(#27). `holder.email`의 NOT NULL 해제(새 holder는 이메일 없이 만듦), `event_session.claim_skip_check` 삭제(연락처 확인이 없어짐). 예전 holder의 이메일과 user handle은 그대로 둔다.
 
 테이블 존재 여부와 마지막 적용 버전은 실제 DB에서 확인했다. 역할·관계·최근 컬럼 설명은 저장소 마이그레이션을 기준으로 하며, 운영 DB 전체 컬럼과 제약 조건의 일치 여부까지 검증한 것은 아니다.
 

@@ -53,7 +53,13 @@ public class TicketController {
             .result(resolved.ticket.claimed() ? (viewer ? "holder" : "locked") : "unclaimed")
             .summary(resolved.ticket.ticketRef).put("status", resolved.ticket.status)
             .put("viewer", viewer));
-        return tickets.view(resolved, viewer);
+        Map<String, Object> view = tickets.view(resolved, viewer);
+        String suggest = passkeyService.suggestion(resolved.ticket);
+        if (suggest != null) {
+            view = new java.util.LinkedHashMap<>(view);
+            view.put("suggest", suggest);
+        }
+        return view;
     }
 
     /** A registered ticket's details are for the browser that answered its passkey. */
@@ -76,9 +82,9 @@ public class TicketController {
             @RequestBody(required = false) Map<String, String> body, HttpSession session) {
         TicketService.Resolved resolved = tickets.resolve(sessionId, token);
         Map<String, String> input = body == null ? Map.of() : body;
-        // "contact" is the email or phone typed back to register; "email" is what older pages sent.
+        // "choice": "existing" answers a passkey the visitor already has, to claim an unclaimed ticket.
         return passkeyService.start(resolved, input.get("intent"), input.get("direction"),
-            input.get("contact") != null ? input.get("contact") : input.get("email"), session,
+            input.get("choice"), session,
             decimal(input.get("lat")), decimal(input.get("lon")), decimal(input.get("accuracy")));
     }
 

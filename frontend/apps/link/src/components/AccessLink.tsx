@@ -3,22 +3,24 @@ import Icon from '@shared/components/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { accessLink } from '../api';
-import {
-  EmailCodeRequired, openWithPasskey, passkeyError, supportsPasskeys, verifyEmailCode, type Opened,
-} from '../passkey';
+import { openWithPasskey, PasskeyCeremonyError, passkeyError, supportsPasskeys, type Opened } from '../passkey';
+import ClaimConsent from '@shared/components/ClaimConsent';
+import { alreadyOnDevice, preferredChoice, rememberPasskey, type ClaimChoice } from '@shared/passkeyClaim';
 import ContentView from './ContentView';
 import type { AccessInfo } from '../types';
+
+/** The phone had no passkey to answer with, or the sheet was closed: the platform cannot tell them apart. */
+function lockedOut(err: unknown): boolean {
+  const cause = err instanceof PasskeyCeremonyError ? err.reason : err;
+  return cause instanceof DOMException && (cause.name === 'NotAllowedError' || cause.name === 'AbortError');
+}
 
 export default function AccessLink() {
   const { shortCode = '', slug } = useParams<{ shortCode: string; slug?: string }>();
   const navigate = useNavigate();
   const [info, setInfo] = useState<AccessInfo | null>(null);
   const [password, setPassword] = useState('');
-  const [contact, setContact] = useState('');
-  // Set once the server has mailed a code: the first passkey for an address needs the
-  // mailbox as well as the address typed into it.
-  const [verification, setVerification] = useState<{ sentTo: string; sent: boolean } | null>(null);
-  const [emailCode, setEmailCode] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState('');
   const [opened, setOpened] = useState<Opened | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,8 +30,7 @@ export default function AccessLink() {
   currentCode.current = shortCode;
   useEffect(() => {
     let active = true;
-    setInfo(null); setOpened(null); setError(''); setLoading(true); setPassword(''); setContact('');
-    setVerification(null); setEmailCode('');
+    setInfo(null); setOpened(null); setError(''); setLoading(true); setPassword(''); setAgreed(false);
     accessLink(shortCode, slug).then(data => {
       if (!active) return;
       setInfo(data);
@@ -68,28 +69,28 @@ export default function AccessLink() {
     return () => stream.close();
   }, [opened?.statusEventsUrl]);
 
-  async function handleOpen(e: React.FormEvent) {
-    e.preventDefault();
+  /** Opens a claimed link, or claims an unclaimed one the way the visitor chose. */
+  async function open(choice?: ClaimChoice) {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      if (verification) {
-        await verifyEmailCode(shortCode, emailCode, slug);
-        // The session remembers it from here; a cancelled passkey sheet does not need
-        // a second code.
-        if (currentCode.current === shortCode) { setVerification(null); setEmailCode(''); }
+      let result: Opened;
+      try {
+        result = await openWithPasskey(shortCode, password, slug, choice);
+      } catch (err) {
+        // The phone already holds this person's passkey and would not make a second one:
+        // answer that one instead.
+        if (choice !== 'new' || !alreadyOnDevice(err)) throw err;
+        result = await openWithPasskey(shortCode, password, slug, 'existing');
       }
-      const result = await openWithPasskey(shortCode, password, slug, contact);
+      if (choice) rememberPasskey();
       if (currentCode.current === shortCode) setOpened(result);
     } catch (err) {
-      if (err instanceof EmailCodeRequired) {
-        if (currentCode.current === shortCode) {
-          setVerification({ sentTo: err.sentTo, sent: err.sent }); setEmailCode('');
-        }
-        return;
-      }
       if (currentCode.current === shortCode) {
-        setError(passkeyError(err));
+        setError(info?.claimed && !choice && lockedOut(err)
+          // A claimed link only ever asks for the one passkey that claimed it.
+          ? '이 링크에 등록된 패스키가 이 기기에 없어요. 패스키를 지웠거나 휴대폰을 바꿨다면, 보낸 분에게 다시 보내 달라고 요청해 주세요.'
+          : passkeyError(err));
         try { const data = await accessLink(shortCode, slug); if (currentCode.current === shortCode) setInfo(data); } catch { /* keep original error */ }
       }
     } finally { setBusy(false); }
@@ -127,39 +128,21 @@ export default function AccessLink() {
             {info.claimed ? '수신이 확정된 링크예요' : '지금 수신할 수 있는 링크예요'}
             {info.issuedTo && <span className="issued-to"> · {info.issuedTo} 님에게 발급</span>}
           </p>
-          <div className="passkey-notice" id="passkey-notice">
-            <h3>{info.claimed ? '처음 등록한 패스키로 열어 주세요.' : '수신을 확정하면 이 링크는 내 패스키로만 열 수 있어요.'}</h3>
-            <p>{info.claimed ? '다른 패스키로는 열 수 없어요. 패스키를 잃어버렸다면 공유한 분에게 새 링크를 요청해 주세요.' : '패스링크 패스키를 이미 갖고 있다면 새로 만들지 않고 그대로 사용합니다. 다른 사람에게 링크를 전달해도 그 사람은 열 수 없어요.'}</p>
-            <small>같은 패스키가 동기화된 내 다른 기기에서도 열 수 있어요.</small>
-          </div>
+          {info.claimed && (
+            <div className="passkey-notice" id="passkey-notice">
+              <h3>처음 등록한 패스키로 열어 주세요.</h3>
+              <p>이 링크는 처음 등록한 휴대폰에서만 열려요. 본인이 등록했는데 패스키를 지웠거나 휴대폰을 바꿨다면, 보낸 분에게 다시 보내 달라고 요청해 주세요.</p>
+              <small>같은 패스키가 동기화된 내 다른 기기에서도 열 수 있어요.</small>
+            </div>
+          )}
           {!supportsPasskeys() ? <p className="error-text" role="alert">패스키를 지원하는 브라우저에서 열어 주세요. Safari 또는 Chrome의 최신 버전을 사용할 수 있어요.</p> : (
-            <form onSubmit={handleOpen} aria-describedby="passkey-notice" aria-busy={busy}>
-              {info.contactRequired && (
-                <div className="field">
-                  <label htmlFor="link-contact">받으신 이메일</label>
-                  <input id="link-contact" type="email" required value={contact} disabled={busy}
-                    placeholder={info.issuedTo ?? 'name@example.com'}
-                    onChange={e => setContact(e.target.value)} />
-                  <p className="hint-text">이 링크를 받은 주소를 그대로 입력해 주세요.</p>
-                </div>
-              )}
+            <form onSubmit={e => { e.preventDefault(); if (info.claimed) void open(); }} aria-busy={busy}>
               {info.hasPassword && <div className="field"><label htmlFor="link-password">전달받은 비밀번호</label><input id="link-password" type="password" required value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></div>}
-              {verification && (
-                <div className="field">
-                  <label htmlFor="link-email-code">이메일 인증번호</label>
-                  <input id="link-email-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}"
-                    maxLength={6} required value={emailCode} disabled={busy}
-                    onChange={e => setEmailCode(e.target.value.replace(/\D/g, ''))} />
-                  <p className="hint-text" role="status">
-                    {verification.sent
-                      ? `${verification.sentTo} 주소로 6자리 인증번호를 보냈어요. 처음 패스키를 만들 때 한 번만 확인해요.`
-                      : `${verification.sentTo} 주소로 보낸 인증번호를 입력해 주세요. 새 번호는 1분 뒤에 다시 받을 수 있어요.`}
-                  </p>
-                </div>
-              )}
               {error && <p className="error-text" role="alert">{error}</p>}
-              <button className="btn-primary" type="submit" disabled={busy}>{busy ? '기기에서 패스키 확인을 완료해 주세요…' : info.claimed ? '내 패스키로 링크 열기' : '패스키로 수신 확정하기'}</button>
-              {!info.claimed && <p className="passkey-footnote">별도 회원가입 없이 지문·얼굴 인식으로 확정합니다. 패스링크 패스키가 이미 있으면 그대로 사용하고, 없으면 이번에 하나만 만듭니다.</p>}
+              {info.claimed
+                ? <button className="btn-primary" type="submit" disabled={busy} aria-describedby="passkey-notice">{busy ? '기기에서 패스키 확인을 완료해 주세요…' : '내 패스키로 링크 열기'}</button>
+                : <ClaimConsent what="링크" preferred={preferredChoice(info.suggest)} agreed={agreed} onAgreed={setAgreed}
+                    busy={busy} disabled={info.hasPassword && !password} onClaim={choice => void open(choice)} />}
             </form>
           )}
         </>

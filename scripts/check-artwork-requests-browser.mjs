@@ -62,13 +62,9 @@ try {
   await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true,
     hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await page.goto(new URL(delivery.recipient.url).pathname);
-  await page.getByLabel('받으신 이메일').fill(email);
-  await page.getByRole('button', { name: '패스키로 수신 확정하기', exact: true }).click();
-  await page.getByLabel('이메일 인증번호').waitFor();
-  const codes = [...output.matchAll(/인증번호: (\d{6})/g)];
-  assert.ok(codes.length, 'Synthetic verification code was not generated');
-  await page.getByLabel('이메일 인증번호').fill(codes.at(-1)[1]);
-  await page.getByRole('button', { name: '패스키로 수신 확정하기', exact: true }).click();
+  // Claiming asks nothing but the passkey: confirm it was sent to you, then make one.
+  await page.getByLabel('제가 받은 링크가 맞아요').check();
+  await page.getByRole('button', { name: '이 휴대폰으로 받기', exact: true }).click();
   await page.getByRole('button', { name: '관심 있음', exact: true }).click();
   await page.getByRole('button', { name: '관심 해제', exact: true }).waitFor();
   await page.getByRole('button', { name: '홀딩 요청', exact: true }).click();
@@ -195,7 +191,7 @@ try {
   assert.equal(await operator.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'Admin mobile page overflows');
   await screenshot(operator, 'admin-artwork-inbox-mobile');
   assert.deepEqual(errors, []);
-  console.log('PASS: real passkey + email verification, interest, hold refusal popup + inquiry + retry, hold approval + extension, cancellation refusal popup + inquiry + retry, reasons shown to recipient, purchase/withdraw, sale/cancellation, durable timeline, summary, withdrawal filter, artwork grouping, private workflow notes/audit, mobile layout.');
+  console.log('PASS: real passkey claim (no email code), interest, hold refusal popup + inquiry + retry, hold approval + extension, cancellation refusal popup + inquiry + retry, reasons shown to recipient, purchase/withdraw, sale/cancellation, durable timeline, summary, withdrawal filter, artwork grouping, private workflow notes/audit, mobile layout.');
 } finally {
   if (browser) await browser.close();
   server.kill('SIGTERM');

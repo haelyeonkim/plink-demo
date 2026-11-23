@@ -170,7 +170,7 @@ public class BoothManagerPasskeyService {
             if (manager.claimed()) {
                 HolderRepository.Holder holder = holders.findById(manager.holderId).orElseThrow(() ->
                     new ResponseStatusException(HttpStatus.CONFLICT, "등록 정보를 찾을 수 없어요."));
-                AssertionRequest request = assertion(holder.email);
+                AssertionRequest request = assertion(holder);
                 pending = new Pending(manager.id, holder.id, false, null, request);
                 options = request.toCredentialsGetJson();
             } else {
@@ -181,7 +181,7 @@ public class BoothManagerPasskeyService {
                 HolderRepository.Holder holder = holders.findByEmail(email).orElse(null);
                 if (holder != null && !holders.findByHolder(holder.id).isEmpty()) {
                     // Already somebody's passkey on this site: prove it rather than mint a second.
-                    AssertionRequest request = assertion(email);
+                    AssertionRequest request = assertion(holder);
                     pending = new Pending(manager.id, holder.id, true, null, request);
                     options = request.toCredentialsGetJson();
                 } else {
@@ -216,9 +216,10 @@ public class BoothManagerPasskeyService {
         }
     }
 
-    private AssertionRequest assertion(String email) {
+    /** The WebAuthn username is the holder's user handle (see {@link HolderRepository}). */
+    private AssertionRequest assertion(HolderRepository.Holder holder) {
         return rp.startAssertion(StartAssertionOptions.builder()
-            .username(email)
+            .username(holder.userHandle)
             .userVerification(UserVerificationRequirement.REQUIRED)
             .timeout(TIMEOUT_MS).build());
     }

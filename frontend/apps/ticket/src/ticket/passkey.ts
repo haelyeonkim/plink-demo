@@ -66,8 +66,8 @@ export async function runCeremony(
   sessionId: string, token: string,
   options_: {
     direction?: 'IN' | 'OUT'; intent?: 'PRESENT' | 'VIEW';
-    /** The email or phone number the ticket was issued to, typed back to register it. */
-    contact?: string;
+    /** For an unclaimed ticket: make a new passkey, or answer one the visitor already has. */
+    choice?: 'new' | 'existing';
     /**
      * Told where the ceremony has got to. A callback that returns a promise is waited
      * for, so a screen narrating the steps can hold the authenticator back until the
@@ -181,7 +181,7 @@ export function passkeyError(error: unknown): string {
       return '이 브라우저에서는 패스키를 사용할 수 없어요. 최신 Safari 또는 Chrome에서 열어 주세요.';
     }
     if (error.name === 'InvalidStateError') {
-      return '이미 등록된 패스키가 있어요. 페이지를 새로 고치고 다시 시도해 주세요.';
+      return '이 기기에 이미 패스링크 패스키가 있어요. "내 패스키로 받기"로 다시 시도해 주세요.';
     }
     return '이 환경에서는 패스키를 사용할 수 없어요. 링크를 기본 브라우저에서 열어 주세요.';
   }

@@ -14,21 +14,13 @@ public class PasskeyController {
     public PasskeyController(PasskeyService service) { this.service=service; }
 
     /**
-     * A registration or sign-in ceremony, or {"mode":"verify"} when the recipient's
-     * address has no passkey yet and a code has been mailed to it first.
+     * A registration or sign-in ceremony. An unclaimed link makes a new passkey unless the
+     * body says {"choice":"existing"}, which asks for one the visitor already has.
      */
     @PostMapping("/options")
     public Map<String,Object> options(@PathVariable String code, @RequestBody Map<String,String> body,
             HttpServletRequest request, HttpSession session) {
-        return service.start(code, body.get("password"), body.get("contact"), request.getRemoteAddr(), session);
-    }
-
-    /** Checks the mailed code; the browser then asks for options again. */
-    @PostMapping("/verify")
-    public Map<String,Object> verify(@PathVariable String code, @RequestBody Map<String,String> body,
-            HttpServletRequest request, HttpSession session) {
-        service.verifyEmail(code, body.get("code"), request.getRemoteAddr(), session);
-        return Collections.singletonMap("verified", true);
+        return service.start(code, body.get("password"), body.get("choice"), request.getRemoteAddr(), session);
     }
 
     @PostMapping("/finish")
