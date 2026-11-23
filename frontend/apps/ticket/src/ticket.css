@@ -443,9 +443,9 @@ body:has(.gate-screen) .header-plain { display: none; }
   }
   .ticket-table td.cell-buttons::before { content: none; }
 }
-/* The switch and its hour read as one setting: the hour sits beside the box it qualifies. */
-.day-close-row { align-items: end; }
-.day-close-row .field-inline { margin-bottom: 30px; }
+/* The hour a day turns over, with the automatic exit that runs at it just below. */
+.day-close-group { display: grid; gap: 6px; margin-bottom: 14px; }
+.day-close-group .field { margin-bottom: 0; max-width: 520px; }
 .issued-link .share-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .issued-link .share-row a, .issued-link .share-row button {
   font-size: 12px; padding: 6px 12px; border-radius: 8px;
@@ -1595,6 +1595,15 @@ ul.bm-checks.console-card { padding-top: 4px; padding-bottom: 4px; }
 .reactions .reaction:first-child { margin-left: 0; }
 .reactions .reaction.none { color: #9aa1b3; }
 
+/* The setup code and its button on one line, the button beside the dots. */
+.gate-facts dd.setup-code { flex-direction: row; align-items: center; justify-content: flex-start; white-space: nowrap; }
+.gate-facts dd.setup-code .btn-tiny { flex-shrink: 0; }
+/* A booth terminal's card carries one more action than a gate's (inviting its manager);
+   wide enough that all four sit on one line instead of one dropping to a row of its own. */
+@media (min-width: 561px) {
+  .gate-grid.booth-terminals { grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); }
+}
+
 /* A booth's terminals on a phone: two to a row, so a booth with several fits on a screen.
    The card loses the words it can spare; the menu still has everything. */
 @media (max-width: 560px) {
@@ -2439,3 +2448,6 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
   .recent-table .recent-narrow { display: inline; }
   .recent-table .recent-under:not(:empty) { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
 }
+
+/* Beside a header button that cannot act yet: what it is waiting for. */
+.console-actions-note { font-size: 13px; color: var(--muted); align-self: center; }
