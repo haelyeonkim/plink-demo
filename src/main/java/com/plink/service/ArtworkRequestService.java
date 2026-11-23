@@ -24,7 +24,10 @@ public class ArtworkRequestService {
     public record State(long id, long artworkId, long recipientId, long linkId, String recipientEmail,
             String artworkTitle, boolean interested, String holdState, Timestamp holdUntil,
             boolean purchaseIntent, boolean purchased, boolean cancellationRequested, long version, Timestamp updatedAt,
-            boolean cancelRejected, boolean inquiryPending) {}
+            boolean cancelRejected, boolean inquiryPending) {
+        /** What the recipient may not ask for again by themselves: after a sale, a refused cancellation; before it, a refused hold. */
+        public boolean retryBlocked() { return purchased ? cancelRejected : holdState.equals("REJECTED"); }
+    }
     private final JdbcTemplate jdbc;
     private final LinkRecipientRepository recipients;
     private final LinkRepository links;
@@ -80,15 +83,14 @@ public class ArtworkRequestService {
         lock(artworkId);
         // Recheck after waiting for another transition's lock.
         authorize(code, session);
-        long contentId = links.findById(recipient.linkId).orElseThrow(() -> denied()).getContentId();
-        if (artworks.findLinked(contentId).values().stream().noneMatch(a -> a.id() == artworkId)) throw denied();
+        var link = links.findById(recipient.linkId).orElseThrow(() -> denied());
+        if (artworks.findLinked(link.getContentId()).values().stream().noneMatch(a -> a.id() == artworkId)) throw denied();
         var states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
         boolean created = states.isEmpty();
         if (created) {
             jdbc.update("INSERT INTO artwork_request (artwork_id, recipient_id, link_id, recipient_email, artwork_title, owner_sub, holder_id, link_title) "
                 + "SELECT id, ?, ?, ?, title, ?, ?, ? FROM artwork WHERE id = ?", recipient.id, recipient.linkId, recipient.email,
-                links.findById(recipient.linkId).orElseThrow().getOwnerSub(), recipient.holderId,
-                links.findById(recipient.linkId).orElseThrow().getTitle(), artworkId);
+                link.getOwnerSub(), recipient.holderId, link.getTitle(), artworkId);
             states = jdbc.query("SELECT * FROM artwork_request WHERE artwork_id = ? AND recipient_id = ?", row, artworkId, recipient.id);
         }
         State result = apply(states.get(0), command, "RECIPIENT", Long.toString(recipient.id));
@@ -124,8 +126,7 @@ public class ArtworkRequestService {
         boolean interested = s.interested(), purchase = s.purchaseIntent(), purchased = s.purchased(), cancel = s.cancellationRequested();
         boolean cancelRejected = s.cancelRejected(), inquiry = s.inquiryPending();
         String hold = s.holdState(); Timestamp until = s.holdUntil();
-        // What the recipient may not ask for again by themselves: after a sale, a refused cancellation; before it, a refused hold.
-        boolean blocked = s.purchased() ? s.cancelRejected() : hold.equals("REJECTED");
+        boolean blocked = s.retryBlocked();
         if (s.purchased() && !Set.of("REQUEST_CANCEL", "CANCEL_SALE", "KEEP_SALE", "INQUIRE", "ALLOW_RETRY", "DECLINE_RETRY").contains(c.action()))
             throw conflict("판매 확정 후에는 취소 요청을 이용해 주세요.");
         switch (c.action()) {
@@ -253,8 +254,7 @@ public class ArtworkRequestService {
         if (inquiry.isPresent()) {
             String action = (String) inquiry.get().get("action");
             boolean latest = inquiry.get() == events.get(0);
-            boolean blocked = s.purchased() ? s.cancelRejected() : s.holdState().equals("REJECTED");
-            if (action.equals("INQUIRE") ? s.inquiryPending() : action.equals("DECLINE_RETRY") ? blocked && !s.inquiryPending() : latest)
+            if (action.equals("INQUIRE") ? s.inquiryPending() : action.equals("DECLINE_RETRY") ? s.retryBlocked() && !s.inquiryPending() : latest)
                 notices.add(notice("inquiry", inquiry.get()));
         }
         out.put("notices", notices);

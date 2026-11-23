@@ -39,6 +39,8 @@ const reasonVisible = ['EXTEND', 'REJECT', 'RELEASE', 'KEEP_SALE', 'CANCEL_SALE'
 const date = (value: string) => new Date(value).toLocaleString('ko-KR');
 /** A time as a datetime-local input reads it: the device's own zone, to the minute. */
 const localInput = (value: string) => { const d = new Date(value); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+/** What the recipient may not ask for again by themselves: after a sale, a refused cancellation; before it, a refused hold. */
+const retryBlocked = (row: ArtworkRequest) => row.purchased ? row.cancelRejected : row.holdState === 'REJECTED';
 function summary(row: ArtworkRequest) {
   return [row.interested && '관심 있음', labels[row.holdState], row.purchaseIntent && !row.purchased && '구매 의사 있음',
     row.purchased && '판매 완료', row.cancellationRequested && '판매 취소 요청', row.cancelRejected && '판매 취소 거절됨',
@@ -174,6 +176,8 @@ interface InboxRequest extends ArtworkRequest {
   linkTitle: string; ownerSub: string; withdrawalCount: number; currentState: string; inquiryMessage: string | null;
 }
 const states: Record<string, string> = { all: '전체 기록', active: '전체 반응', inquiry: '재요청 문의', interested: '관심', pending: '홀딩 요청', held: '홀딩 확정', purchase: '구매의사', withdrawn: '현재 반응 없음', sold: '판매 완료', cancel: '판매 취소 요청' };
+/** A reaction still waiting on the administrator: what "전체 반응" counts. */
+const ACTIVE = ['interested', 'pending', 'held', 'purchase'];
 const workStates: Record<string, string> = { UNREAD: '미확인', REVIEWED: '확인', CONTACTING: '상담 중', DONE: '처리 완료' };
 interface WorkEvent { id: number; actor: string; occurredAt: string; before: { processing_state: string; assignee: string; internal_note: string }; after: { processing_state: string; assignee: string; internal_note: string } }
 interface RequestEvent { id: number; artworkTitle: string; linkId: number; action: string; actorType: string; actorId: string; reason: string; occurredAt: string; before: ArtworkRequest; after: ArtworkRequest }
@@ -274,12 +278,12 @@ export default function AdminArtworkRequests() {
       {['active', 'interested', 'pending', 'held', 'purchase', 'withdrawn', 'sold', 'cancel', 'inquiry'].map(key => <button key={key}
         className={filter === key ? 'request-count selected' : 'request-count'} aria-pressed={filter === key} onClick={() => setFilter(key)}>
         <span>{states[key]}</span><strong>{counts[key] ?? 0}<small>건</small></strong>
-        {['interested', 'pending', 'held', 'purchase'].includes(key) && <small>{counts.active ? ((counts[key] || 0) / counts.active * 100).toFixed(1) : '0'}%</small>}
+        {ACTIVE.includes(key) && <small>{counts.active ? ((counts[key] || 0) / counts.active * 100).toFixed(1) : '0'}%</small>}
       </button>)}
     </div>
     <p className="hint-text">링크별 수신자 × 작품 기준 · 중복 상태는 구매의사 → 홀딩 → 관심 순으로 집계합니다. 전체 반응은 판매 완료·취소 요청·현재 반응 없음을 제외합니다.</p>
     <div className="admin-artwork-filters">
-      <label>요청 상태 <select value={filter} onChange={event => { setFilter(event.target.value); setPage(0); }}>
+      <label>요청 상태 <select value={filter} onChange={event => setFilter(event.target.value)}>
         {Object.entries(states).map(([key, text]) => <option key={key} value={key}>{text}</option>)}
       </select></label>
       <label>작품 / 수신자 <input type="search" maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} /></label>
@@ -317,7 +321,7 @@ export default function AdminArtworkRequests() {
               <button className="btn-secondary" onClick={() => start(row, 'RELEASE')}>홀딩 해제</button></>}
             {row.purchaseIntent && !row.purchased && <button className="btn-primary" onClick={() => start(row, 'SELL')}>판매 확정</button>}
             {row.cancellationRequested && <><button className="btn-secondary" onClick={() => start(row, 'CANCEL_SALE')}>판매 취소 승인</button><button className="btn-secondary" onClick={() => start(row, 'KEEP_SALE')}>판매 취소 거절</button></>}
-            {(row.purchased ? row.cancelRejected : row.holdState === 'REJECTED') && <button className={row.inquiryPending ? 'btn-primary' : 'btn-secondary'} onClick={() => start(row, 'ALLOW_RETRY')}>재요청 허용</button>}
+            {retryBlocked(row) && <button className={row.inquiryPending ? 'btn-primary' : 'btn-secondary'} onClick={() => start(row, 'ALLOW_RETRY')}>재요청 허용</button>}
             {row.inquiryPending && <button className="btn-secondary" onClick={() => start(row, 'DECLINE_RETRY')}>문의 거절</button>}
             <button className="btn-secondary" onClick={() => start(row, 'WORK')}>담당 / 메모</button>
             <button className="btn-secondary" onClick={() => { setSelected(row); setHistoryPage(0); setWorkPage(0); }}>이력</button>

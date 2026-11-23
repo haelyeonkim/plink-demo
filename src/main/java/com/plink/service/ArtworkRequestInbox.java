@@ -29,6 +29,23 @@ public class ArtworkRequestInbox {
     private static final String TIME = "COALESCE(CASE WHEN r.cancellation_requested OR r.purchased THEN r.requested_at WHEN r.purchase_intent THEN r.purchase_at "
         + "WHEN r.hold_state IN ('PENDING','HELD') THEN r.hold_requested_at WHEN r.interested THEN r.interest_at END,r.requested_at,r.updated_at)";
     private static final Set<String> STATES = Set.of("all", "active", "inquiry", "cancel", "sold", "purchase", "held", "pending", "interested", "withdrawn");
+    /** A reaction still waiting on the administrator: what "전체 반응" counts. */
+    private static final List<String> ACTIVE = List.of("interested", "pending", "held", "purchase");
+    /** The inbox columns a row carries, each under the name the screen reads. */
+    private static final Map<String, String> COLUMNS = camelCase(List.of("id", "artwork_id", "recipient_id", "link_id", "recipient_email",
+        "artwork_title", "interested", "hold_state", "hold_until", "purchase_intent", "purchased", "cancellation_requested", "version",
+        "updated_at", "first_requested_at", "queue_at", "processing_state", "assignee", "internal_note", "link_title", "owner_sub",
+        "withdrawal_count", "current_state", "cancel_rejected", "inquiry_pending", "inquiry_message"));
+    private static Map<String, String> camelCase(List<String> columns) {
+        Map<String, String> names = new LinkedHashMap<>();
+        for (String column : columns) {
+            StringBuilder camel = new StringBuilder(); boolean upper = false;
+            for (char c : column.toCharArray()) { if (c == '_') upper = true; else { camel.append(upper ? Character.toUpperCase(c) : c); upper = false; } }
+            names.put(column, camel.toString());
+        }
+        return names;
+    }
+    private static void checkPage(int page) { if (page < 0 || page > 100000) throw bad(); }
     private static final Set<String> WORK = Set.of("UNREAD", "REVIEWED", "CONTACTING", "DONE");
     private String scope(Authentication auth, String alias, List<Object> args) {
         if (auth == null || !(auth.getPrincipal() instanceof AdminPrincipal admin) || !(admin.owner || admin.canLinks))
@@ -47,7 +64,8 @@ public class ArtworkRequestInbox {
             + target + ".holder_id=" + source + ".holder_id))";
     }
     public Map<String, Object> list(Filter f, Authentication auth) {
-        if (!STATES.contains(f.filter()) || f.search().length() > 200 || f.page() < 0 || f.page() > 100000
+        checkPage(f.page());
+        if (!STATES.contains(f.filter()) || f.search().length() > 200
                 || !Set.of("oldest", "withdrawals").contains(f.sort()) || !f.processing().isEmpty() && !WORK.contains(f.processing())
                 || f.from() != null && f.to() != null && f.from().isAfter(f.to())) throw bad();
         List<Object> args = new ArrayList<>();
@@ -74,9 +92,9 @@ public class ArtworkRequestInbox {
         for (String state : STATES) counts.put(state, 0L);
         jdbc.query("SELECT " + STATE + " AS state, COUNT(*) AS amount FROM artwork_request r WHERE " + where + " GROUP BY " + STATE,
             rs -> { counts.put(rs.getString("state"), rs.getLong("amount")); }, args.toArray());
-        counts.put("active", counts.get("interested") + counts.get("pending") + counts.get("held") + counts.get("purchase"));
+        counts.put("active", ACTIVE.stream().mapToLong(counts::get).sum());
         counts.put("all", counts.get("active") + counts.get("inquiry") + counts.get("cancel") + counts.get("sold") + counts.get("withdrawn"));
-        if (f.filter().equals("active")) where += " AND " + STATE + " IN ('interested','pending','held','purchase')";
+        if (f.filter().equals("active")) where += " AND " + STATE + " IN ('" + String.join("','", ACTIVE) + "')";
         else if (!f.filter().equals("all")) { where += " AND " + STATE + "=?"; args.add(f.filter()); }
         long total = jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request r WHERE " + where, Long.class, args.toArray());
         List<Object> queryArgs = new ArrayList<>(countArgs); queryArgs.addAll(args); queryArgs.add(f.page() * 30);
@@ -86,14 +104,7 @@ public class ArtworkRequestInbox {
             + (f.sort().equals("withdrawals") ? "withdrawal_count DESC, " : "") + "queue_at ASC, r.id ASC LIMIT 30 OFFSET ?";
         var items = jdbc.query(sql, (r, n) -> {
             Map<String, Object> m = new LinkedHashMap<>();
-            for (String key : List.of("id", "artwork_id", "recipient_id", "link_id", "recipient_email", "artwork_title", "interested", "hold_state",
-                    "hold_until", "purchase_intent", "purchased", "cancellation_requested", "version", "updated_at", "first_requested_at", "queue_at",
-                    "processing_state", "assignee", "internal_note", "link_title", "owner_sub", "withdrawal_count", "current_state",
-                    "cancel_rejected", "inquiry_pending", "inquiry_message")) {
-                StringBuilder camel = new StringBuilder(); boolean upper = false;
-                for (char c : key.toCharArray()) { if (c == '_') upper = true; else { camel.append(upper ? Character.toUpperCase(c) : c); upper = false; } }
-                m.put(camel.toString(), r.getObject(key));
-            }
+            for (var column : COLUMNS.entrySet()) m.put(column.getValue(), r.getObject(column.getKey()));
             return m;
         }, queryArgs.toArray());
         List<Object> optionsArgs = new ArrayList<>();
@@ -108,15 +119,16 @@ public class ArtworkRequestInbox {
         return Map.of("items", items, "total", total, "counts", counts, "links", links, "artworks", artworks, "owners", owners);
     }
     public Map<String, Object> recipientHistory(long id, int page, Authentication auth) {
-        check(id, auth);
-        if (page < 0 || page > 100000) throw bad();
+        check(id, auth); checkPage(page);
         List<Object> args = new ArrayList<>();
         String where = scope(auth, "q", args); args.add(id);
         where += " AND " + identity("q", "r") + " AND r.id=?";
         String from = " FROM artwork_request_event e JOIN artwork_request q ON q.id=e.request_id CROSS JOIN artwork_request r WHERE " + where;
-        long total = jdbc.queryForObject("SELECT COUNT(*)" + from, Long.class, args.toArray());
-        long purchases = jdbc.queryForObject("SELECT COUNT(*)" + from + " AND e.actor_type='RECIPIENT' AND e.action='PURCHASE'", Long.class, args.toArray());
-        long withdrawals = jdbc.queryForObject("SELECT COUNT(*)" + from + " AND e.actor_type='RECIPIENT' AND e.action='WITHDRAW'", Long.class, args.toArray());
+        long[] counts = jdbc.queryForObject("SELECT COUNT(*), "
+            + "COALESCE(SUM(CASE WHEN e.actor_type='RECIPIENT' AND e.action='PURCHASE' THEN 1 ELSE 0 END),0), "
+            + "COALESCE(SUM(CASE WHEN e.actor_type='RECIPIENT' AND e.action='WITHDRAW' THEN 1 ELSE 0 END),0)" + from,
+            (r, n) -> new long[] { r.getLong(1), r.getLong(2), r.getLong(3) }, args.toArray());
+        long total = counts[0], purchases = counts[1], withdrawals = counts[2];
         args.add(page * 50);
         var items = jdbc.query("SELECT e.*,q.artwork_title,q.link_id" + from + " ORDER BY e.occurred_at DESC,e.id DESC LIMIT 50 OFFSET ?", (r, n) -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -148,11 +160,11 @@ public class ArtworkRequestInbox {
             Map.of("processing_state", r.getString(1), "assignee", r.getString(2), "internal_note", r.getString(3), "version", r.getLong(4)), id);
     }
     public Map<String, Object> workHistory(long id, int page, Authentication auth) {
-        check(id, auth); if (page < 0 || page > 100000) throw bad();
+        check(id, auth); checkPage(page);
         var items = jdbc.query("SELECT * FROM artwork_request_work_event WHERE request_id=? ORDER BY id DESC LIMIT 50 OFFSET ?", (r, n) ->
             Map.of("id", r.getLong("id"), "actor", r.getString("actor"), "occurredAt", r.getTimestamp("occurred_at"),
                 "before", json.readTree(r.getString("before_state")), "after", json.readTree(r.getString("after_state"))), id, page * 50);
         return Map.of("items", items, "total", jdbc.queryForObject("SELECT COUNT(*) FROM artwork_request_work_event WHERE request_id=?", Long.class, id));
     }
-    private ResponseStatusException bad() { return new ResponseStatusException(HttpStatus.BAD_REQUEST, "검색 또는 처리 내용을 확인해 주세요."); }
+    private static ResponseStatusException bad() { return new ResponseStatusException(HttpStatus.BAD_REQUEST, "검색 또는 처리 내용을 확인해 주세요."); }
 }
