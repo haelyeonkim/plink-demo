@@ -74,7 +74,7 @@ try {
   await page.getByRole('button', { name: '홀딩 요청', exact: true }).click();
   await page.locator('.request-status').filter({ hasText: '홀딩 승인 대기' }).waitFor();
   const operator = await admin.newPage(); operator.on('pageerror', error => errors.push(error.message));
-  await operator.goto('/admin/artworks/requests');
+  await operator.goto('/links/requests');
   const panel = operator.locator('.request-panel form');
   // A refusal is explained to the recipient, and only an inquiry the administrator allows reopens it.
   await operator.getByRole('button', { name: '거절', exact: true }).click();
