@@ -134,10 +134,12 @@ class ArtworkRequestTest {
         mvc.perform(post(r.url()+"/"+stranger.artwork()).with(csrf()).session(r.session()).contentType("application/json").content(body)).andExpect(status().isForbidden());
         mvc.perform(post(r.url()+"/"+r.artwork()).with(csrf()).session(r.session()).contentType("application/json").content(body)).andExpect(status().isOk());
         var s = requests.mine(r.code(), r.session()).get(0);
-        mvc.perform(get("/api/admin/artworks/requests").with(AdminArtworkTest.admin(false))).andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/artworks/requests/"+s.id()+"/history").with(AdminArtworkTest.admin(false))).andExpect(status().isForbidden());
-        mvc.perform(post("/api/admin/artworks/requests/"+s.id()).with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(body)).andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/artworks/requests").with(AdminArtworkTest.admin(true))).andExpect(status().isOk());
+        // Another account's operator sees none of it and cannot act on it; the owner sees every account's.
+        String linkId = Long.toString(s.linkId());
+        mvc.perform(get("/api/links/artwork-requests").param("linkId", linkId).with(AdminArtworkTest.admin(false))).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(get("/api/links/artwork-requests/"+s.id()+"/history").with(AdminArtworkTest.admin(false))).andExpect(status().isNotFound());
+        mvc.perform(post("/api/links/artwork-requests/"+s.id()).with(AdminArtworkTest.admin(false)).with(csrf()).contentType("application/json").content(body)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/links/artwork-requests").param("linkId", linkId).with(AdminArtworkTest.admin(true))).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
         mvc.perform(post(r.url()+"/"+r.artwork()).with(csrf()).session(r.session()).contentType("application/json").content(json.writeValueAsString(command("APPROVE", s.version())))).andExpect(status().isBadRequest());
         jdbc.update("UPDATE link_recipient SET status='REVOKED' WHERE id=?", r.delivery().recipient().id);
         mvc.perform(get(r.url()).session(r.session())).andExpect(status().isForbidden());

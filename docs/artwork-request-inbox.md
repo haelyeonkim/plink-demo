@@ -4,7 +4,7 @@
 
 ## 1. 화면 구성
 
-기본 경로는 `/links/requests`이고 기존 계정 소유자용 `/admin/artworks/requests`에서도 같은 컴포넌트를 사용한다. 링크 도구 상단 메뉴, 링크 목록의 `작품 요청`, 개별 링크의 `작품 요청` 버튼으로 진입한다. 개별 링크에서 진입하면 `linkId` 필터가 적용된다.
+경로는 `/links/requests` 하나이고, 예전 계정 소유자용 `/admin/artworks/requests`는 이 경로로 리다이렉트한다. 링크 도구 상단 메뉴의 `작품 요청 관리`, 개별 링크의 `작품 요청` 버튼, 계정 소유자의 작품 목록에 있는 `작품 요청 관리` 버튼으로 진입한다. 개별 링크에서 진입하면 `linkId` 필터가 적용된다.
 
 | 영역 | 구성과 동작 |
 | --- | --- |
@@ -50,7 +50,7 @@
 
 ## 5. API와 코드 구성
 
-기본 API는 `/api/links/artwork-requests`이며 계정 소유자 전용 `/api/admin/artworks/requests` 경로도 지원한다. 조회 응답에는 `Cache-Control: no-store`를 적용한다.
+API는 `/api/links/artwork-requests`이다. 링크 권한이 있는 계정은 자기 링크의 요청만, 계정 소유자는 전체 계정의 요청을 다룬다. 예전 `/api/admin/artworks/requests` 경로는 없앴다. 조회 응답에는 `Cache-Control: no-store`를 적용한다.
 
 | 메서드·경로 | 역할 |
 | --- | --- |

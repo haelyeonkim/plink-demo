@@ -16,7 +16,7 @@
 - 다른 수신자에게 홀딩/판매된 작품은 관심만 표시할 수 있다. 홀딩 승인 시 다른 대기 홀딩은 종료하며 대기 순번을 제공하지 않는다.
 - 링크 만료/회수/삭제는 기존 요청을 자동 취소하지 않는다. 관리자가 요청 목록에서 처리할 수 있으며 기한 있는 홀딩은 자동 만료한다. 링크 만료 화면에 전달 담당자에게 연락하도록 안내한다.
 
-관리자 진입: **관리자 → 작품 목록 → 수신자 요청** (`/admin/artworks/requests`). 기존 전체 작품 관리와 동일하게 `canAccounts` 권한이 필요하다. 전체/관심/승인 대기/홀딩/구매 의사/판매 취소 필터, 작품명·수신 이메일 검색, 30건 페이지, 요청별 최근 200건 이력을 제공한다. 오래된 이력도 DB에 보존한다.
+관리자 진입: **작품 요청 관리** (`/links/requests`). 링크 권한이 있는 계정은 자기 링크의 요청을, 계정 소유자는 전체 계정의 요청을 본다. 예전 주소 `/admin/artworks/requests`는 이 화면으로 리다이렉트한다. 화면 구성과 필터는 [작품 요청함 설계](artwork-request-inbox.md)를 따른다. 오래된 이력도 DB에 보존한다.
 
 수신자 상태는 링크당 15초마다 갱신하며 작품 판매 상태는 기존 SSE를 사용한다. 취소·만료·거절 후에도 이력이 남는다. 요청이 있는 원본 컨텐츠의 삭제는 차단한다.
 
@@ -36,9 +36,11 @@
 
 - `GET /api/links/s/{code}/artwork-requests`: 인증된 수신자 본인의 상태.
 - `POST /api/links/s/{code}/artwork-requests/{artworkId}`: 수신자 액션. `{slug}/{code}` 주소도 지원.
-- `GET /api/admin/artworks/requests?filter=all&page=0&search=`: 관리자 목록.
-- `POST /api/admin/artworks/requests/{id}`: 관리자 처리.
-- `GET /api/admin/artworks/requests/{id}/history`: 최근 이력.
+- `GET /api/links/artwork-requests?filter=all&page=0&search=`: 관리자 목록.
+- `POST /api/links/artwork-requests/{id}`: 관리자 처리.
+- `GET /api/links/artwork-requests/{id}/history`: 최근 이력.
+
+예전 `/api/admin/artworks/requests` 경로는 없앴다.
 
 변경 본문: `action`, `version`, `key`(UUID), 선택적 `holdUntil`(ISO 시각), `reason`, `releaseHold`. 수신자 ID는 요청 본문으로 받지 않고 기존 패스키 세션에서 결정한다. CSRF 보호, 링크 만료/회수 검사, 링크에 포함된 작품인지 검사를 적용한다. 수신자 API는 타인의 의사/신원을 반환하지 않는다.
 

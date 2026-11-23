@@ -25,7 +25,7 @@ public class ArtworkRequestController {
             @RequestBody ArtworkRequestService.Command command, HttpServletRequest request) {
         return requests.view(requests.recipient(code, artworkId, command, request.getSession(false)));
     }
-    @GetMapping({"/api/admin/artworks/requests", "/api/links/artwork-requests"})
+    @GetMapping("/api/links/artwork-requests")
     public ResponseEntity<Map<String, Object>> list(@RequestParam(defaultValue="all") String filter,
             @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="") String search,
             @RequestParam(required=false) Long linkId, @RequestParam(required=false) Long artworkId,
@@ -35,24 +35,24 @@ public class ArtworkRequestController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(inbox.list(
             new ArtworkRequestInbox.Filter(filter, search, linkId, artworkId, processing, owner, from, to, withdrawals, sort, page), auth));
     }
-    @GetMapping({"/api/admin/artworks/requests/{id}/history", "/api/links/artwork-requests/{id}/history"})
+    @GetMapping("/api/links/artwork-requests/{id}/history")
     public ResponseEntity<List<Map<String, Object>>> history(@PathVariable long id, Authentication auth) {
         inbox.check(id, auth);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(requests.history(id));
     }
-    @GetMapping({"/api/admin/artworks/requests/{id}/recipient-history", "/api/links/artwork-requests/{id}/recipient-history"})
+    @GetMapping("/api/links/artwork-requests/{id}/recipient-history")
     public ResponseEntity<Map<String, Object>> recipientHistory(@PathVariable long id, @RequestParam(defaultValue="0") int page, Authentication auth) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(inbox.recipientHistory(id, page, auth));
     }
-    @GetMapping({"/api/admin/artworks/requests/{id}/work-history", "/api/links/artwork-requests/{id}/work-history"})
+    @GetMapping("/api/links/artwork-requests/{id}/work-history")
     public ResponseEntity<Map<String, Object>> workHistory(@PathVariable long id, @RequestParam(defaultValue="0") int page, Authentication auth) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(inbox.workHistory(id, page, auth));
     }
-    @PostMapping({"/api/admin/artworks/requests/{id}/work", "/api/links/artwork-requests/{id}/work"})
+    @PostMapping("/api/links/artwork-requests/{id}/work")
     public ResponseEntity<Void> work(@PathVariable long id, @RequestBody ArtworkRequestInbox.Work work, Authentication auth) {
         inbox.updateWork(id, work, auth); return ResponseEntity.noContent().build();
     }
-    @PostMapping({"/api/admin/artworks/requests/{id}", "/api/links/artwork-requests/{id}"})
+    @PostMapping("/api/links/artwork-requests/{id}")
     public ArtworkRequestService.State admin(@PathVariable long id, @RequestBody ArtworkRequestService.Command command, Authentication auth) {
         inbox.check(id, auth);
         return requests.admin(id, command, ArtworkRequestService.currentActor());
