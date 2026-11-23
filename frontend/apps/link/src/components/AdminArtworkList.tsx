@@ -80,7 +80,7 @@ export default function AdminArtworkList() {
       <img className="crumb-sep" src="/icons/chevron-right.svg" alt="" width="16" height="16" />
       <span className="crumb" aria-current="page">작품 목록</span>
     </h2>
-    <p><Link className="btn-secondary" to="/admin/artworks/requests">수신자 요청 · 관심 / 홀딩 / 구매</Link></p>
+    <p><Link className="btn-secondary" to="/links/requests">작품 요청 관리</Link></p>
     <p className="section-desc">전체 계정에서 직접 등록하거나 가져온 작품을 확인합니다.</p>
     {notice && <p role="status" className="hint-text">{notice}</p>}
     <form className="admin-artwork-filters" onSubmit={event => { event.preventDefault(); change(draft.trim(), status); }}>

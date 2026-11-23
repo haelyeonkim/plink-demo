@@ -68,7 +68,6 @@ export default function App() {
             <Route path="exports" element={<DataExports />} />
           </Route>
           <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
-          <Route path="/admin/artworks/requests" element={<RequireAdmin scope="canAccounts"><AdminArtworkRequests /></RequireAdmin>} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/linkguide" element={<Guide tool="link" />} />
           <Route path="/ticketguide" element={<Guide tool="ticket" />} />
@@ -77,6 +76,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           {/* The link tool opens on its console, like the ticket tool under /tickets. */}
           <Route path="/links" element={<RequireAdmin scope="canLinks"><LinkAdmin /></RequireAdmin>} />
+          <Route path="/links/requests" element={<RequireAdmin><AdminArtworkRequests /></RequireAdmin>} />
           <Route path="/links/login" element={<Login />} />
           <Route path="/links/new" element={<RequireAdmin scope="canLinks"><LinkCreate /></RequireAdmin>} />
           <Route path="/links/contents" element={<RequireAdmin scope="canLinks"><ContentList /></RequireAdmin>} />

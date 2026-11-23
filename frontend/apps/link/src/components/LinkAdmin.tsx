@@ -252,6 +252,7 @@ export default function LinkAdmin() {
                 {detail.expiresAt ? ` · ${shortDate(detail.expiresAt)}까지` : ''}{detail.hasPassword ? ' · 비밀번호 보호' : ''}</p>
             </div>
             <div className="console-actions">
+              <Link className="btn-secondary" to={`/links/requests?linkId=${detail.id}`}>작품 요청</Link>
               {(tab === 'overview' || tab === 'links') && <Link className="btn-primary" to="?tab=issue">수신자 발급</Link>}
             </div>
           </div>

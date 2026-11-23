@@ -11,6 +11,7 @@
 
 ## 기능 및 검증 기록
 
+- [관리자 작품 요청 설계 및 구현](artwork-request-inbox.md)
 - [PDF 가져오기](pdf-import.md)
 - [콘텐츠 이미지](content-images.md)
 - [2026-10-07 작품 검증](2026-10-07-artwork-validation.md)
