@@ -68,8 +68,6 @@ export default function App() {
             <Route path="exports" element={<DataExports />} />
           </Route>
           <Route path="/admin/data/exports/new" element={<RequireAdmin scope="canAccounts"><DataExportNew /></RequireAdmin>} />
-          {/* The request inbox lives in the link tool; an owner opens the same screen there. */}
-          <Route path="/admin/artworks/requests" element={<Moved to={() => '/links/requests'} />} />
           <Route path="/admin/artworks" element={<RequireAdmin scope="canAccounts"><AdminArtworkList /></RequireAdmin>} />
           <Route path="/linkguide" element={<Guide tool="link" />} />
           <Route path="/ticketguide" element={<Guide tool="ticket" />} />
