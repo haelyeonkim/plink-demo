@@ -594,12 +594,12 @@ export default function GateScanner() {
     return (
       <section className="gate-screen gate-setup">
         <div className="setup-card">
-          <span className="setup-eyebrow">GATE TERMINAL</span>
-          <h2>단말이 연결되어 있지 않아요</h2>
-          <p>
-            관리 화면에서 발급한 <b>설정 링크</b>를 이 태블릿에서 열고 인증번호를 입력하면 연결됩니다.
-            토큰을 직접 입력할 필요는 없어요.
-          </p>
+          <h2>이 태블릿을 게이트로 연결해 주세요</h2>
+          <ol className="setup-steps">
+            <li><span>관리 화면에서 <b>설정 링크</b>를 만들어요.</span></li>
+            <li><span>그 링크를 이 태블릿에서 열어요.</span></li>
+            <li><span>인증번호를 입력하면 연결돼요.</span></li>
+          </ol>
           {error && <p className="gate-error" role="alert">{error}</p>}
           <button className="btn-ghost" onClick={() => window.location.reload()}>다시 확인</button>
         </div>

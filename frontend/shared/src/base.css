@@ -780,6 +780,9 @@ select, .field select, select.artwork-status {
   padding-block: var(--select-block-padding);
   -webkit-appearance: none;
   appearance: none;
+  /* With the platform look switched off a select falls back to the browser's grey, which
+     sets it apart from every text field beside it. */
+  background-color: #fff;
   padding-right: calc(var(--select-arrow-inset) + var(--select-arrow-size) + var(--select-arrow-gap));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d4663' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;

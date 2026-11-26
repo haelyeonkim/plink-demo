@@ -683,13 +683,16 @@ export default function TicketPage() {
     <>
     <section className={`page-section page-tight ticket-page${tabs ? ' with-tabs' : ''}`}>
       {alertBanner}
-      <div className="access-card">
+      <div className={`access-card ticket-card${ticket.claimed && ticket.presence.inside ? ' is-in' : ''}`}>
         {/* Both overlays sit on the card itself: what is being decided is this ticket. */}
         {ceremony && <CeremonySeal ceremony={ceremony} />}
         {movement && !ceremony && (
           <ScanFlash movement={movement} spent={false} inside={ticket.presence.inside} />
         )}
         {used && !ceremony && !movement && <CouponFlash used={used} spent={false} />}
+        {/* The ticket is two pieces joined by a perforation: what the ticket is, above;
+            what the holder does with it, below. */}
+        <div className="ticket-top">
         {welcoming && invitation ? (
           <div className="invite-hero">
             <span className="invite-hero-icon"><GiftIcon size={28} /></span>
@@ -727,7 +730,9 @@ export default function TicketPage() {
             <><dt>남은 재입장</dt><dd>{ticket.presence.reentryRemaining}회</dd></>
           )}
         </dl>}
+        </div>
 
+        <div className="ticket-stub">
         {inAppBrowser() && (
           <p className="warn-text" role="alert">
             카카오톡 등 앱 안의 브라우저에서는 지문·얼굴 인증을 쓸 수 없어요.
@@ -845,6 +850,7 @@ export default function TicketPage() {
             )}
           </>
         )}
+        </div>
       </div>
 
       {/* Under the ticket, where somebody standing in the queue is already looking. */}

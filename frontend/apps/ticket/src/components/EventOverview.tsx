@@ -142,7 +142,10 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
             <Link to="?tab=movements">자세히</Link>
           </div>
           {zones.length === 0 && unplaced === 0 ? (
-            <p className="console-none">게이트에 장소를 정하면 여기에 장소별 인원이 보여요.</p>
+            <div className="console-empty">
+              <p>장소별 인원은 게이트에 장소를 정하면 여기에 보여요.</p>
+              <Link className="btn-secondary" to="?tab=gates">게이트 설정하기</Link>
+            </div>
           ) : zones.map(z => (
             <div className="zone-meter" key={z.zone}>
               <div className="zone-meter-head">
@@ -173,7 +176,9 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
           <Link to="?tab=movements">전체 기록</Link>
         </div>
         {(occupancy?.recent ?? []).length === 0 ? (
-          <p className="console-none">아직 게이트를 지난 기록이 없어요.</p>
+          <div className="console-empty">
+            <p>게이트를 지난 사람이 생기면 여기에 바로 보여요.</p>
+          </div>
         ) : (
           <div className="console-table-box flat">
             {/* On a phone the gate and the note sit under the ticket, so the row fits the screen. */}

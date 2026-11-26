@@ -65,6 +65,41 @@ const SETTINGS_TABS: Array<[SettingsTab, string]> = [
   ['event', '이벤트 정보'], ['schedule', '일정'], ['policy', '재입장 · 퇴장'], ['face', '얼굴 입장'], ['crowd', '혼잡도'], ['invite', '초대'],
   ['fields', '발급 항목'],
 ];
+/**
+ * The settings page is one long scroll; this is its table of contents. It stays at the top
+ * and marks the section being read, so a long page never leaves you wondering where you are.
+ */
+function SettingsQuickNav() {
+  const ids = [...SETTINGS_TABS.map(([key]) => `settings-${key}`), 'settings-delete'];
+  const [current, setCurrent] = useState(ids[0]);
+  useEffect(() => {
+    const targets = ids.map(id => document.getElementById(id)).filter((el): el is HTMLElement => el !== null);
+    if (typeof IntersectionObserver === 'undefined' || targets.length === 0) return;
+    // A section counts as read once its top passes the upper fifth of the window.
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) seen.add(entry.target.id); else seen.delete(entry.target.id);
+      }
+      const first = ids.find(id => seen.has(id));
+      if (first) setCurrent(first);
+    }, { rootMargin: '-20% 0px -65% 0px' });
+    targets.forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <nav className="settings-quick" aria-label="설정 항목">
+      {SETTINGS_TABS.map(([key, label]) => (
+        <button key={key} type="button" aria-current={current === `settings-${key}` ? 'true' : undefined}
+          onClick={() => scrollToElement(document.getElementById(`settings-${key}`))}>{label}</button>
+      ))}
+      <button type="button" className="danger" aria-current={current === 'settings-delete' ? 'true' : undefined}
+        onClick={() => scrollToElement(document.getElementById('settings-delete'))}>이벤트 삭제</button>
+    </nav>
+  );
+}
+
 /** What each choice of who sees a group's entry status means, in one line. */
 const INVITE_STATUS_HINT: Record<InviteStatus, string> = {
   OFF: '초대는 그대로 되지만, 입장 상태는 아무에게도 보여주지 않아요.',
@@ -1711,13 +1746,7 @@ export default function TicketAdmin() {
       {session && tab === 'settings' && (() => {
         return (
           <div className="settings-page">
-            <nav className="settings-quick" aria-label="설정 항목">
-              {SETTINGS_TABS.map(([key, label]) => (
-                <button key={key} type="button" onClick={() => scrollToElement(document.getElementById(`settings-${key}`))}>{label}</button>
-              ))}
-              <button type="button" className="danger"
-                onClick={() => scrollToElement(document.getElementById('settings-delete'))}>이벤트 삭제</button>
-            </nav>
+            <SettingsQuickNav />
             <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
               <div className="settings-side">
                 <h3 id="settings-event-title">이벤트 정보
