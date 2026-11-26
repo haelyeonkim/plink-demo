@@ -11,6 +11,7 @@ import type { ImportResult } from '@shared/components/BulkImport';
 import IssuePanel, { type IssueInput, type IssueMode, type MailedResult } from './IssuePanel';
 import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
+import EventBar from './EventBar';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
 import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
@@ -1186,6 +1187,11 @@ export default function TicketAdmin() {
 
       {session && (
       <div className="console-layout">
+        <EventBar session={session} sessions={sessions} tab={tab} issued={counts.all}
+          inside={occupancy?.inside ?? counts.inside}
+          gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
+          gatesAll={gates.filter(gate => gate.role !== 'BOOTH').length}
+          liveState={liveState} />
         <EventNav session={session} tab={tab} issued={counts.all}
           inside={occupancy?.inside ?? counts.inside}
           gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
@@ -1197,23 +1203,12 @@ export default function TicketAdmin() {
           <div className="console-head">
             <div>
               <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
-              <p>{eventTime(session)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
-                {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
+
             </div>
             <div className="console-actions">
-              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today')) && (
-                <span className={`live-state live-${liveState}`} role="status">
-                  {liveState === 'open' ? '실시간 연결됨' : liveState === 'retrying' ? '연결이 끊겨 다시 연결하는 중' : '연결 중'}
-                  {updatedAt && ` · ${[updatedAt.getHours(), updatedAt.getMinutes(), updatedAt.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')} 갱신`}
-                </span>
-              )}
               {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                 <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'upcoming' && (
-                <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
-              )}
-              {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
               {/* With nothing on offer the button cannot do anything; say what it is waiting for. */}
               {tab === 'coupons' && givingBooths.length === 0 && (
                 <span className="console-actions-note" id="coupon-issue-why">사용 중인 쿠폰 종류를 먼저 추가하세요</span>

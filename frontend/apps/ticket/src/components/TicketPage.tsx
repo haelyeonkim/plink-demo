@@ -1,3 +1,4 @@
+import Guilloche, { Serial } from '@shared/components/Guilloche';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
@@ -693,6 +694,7 @@ export default function TicketPage() {
         {/* The ticket is two pieces joined by a perforation: what the ticket is, above;
             what the holder does with it, below. */}
         <div className="ticket-top">
+        <Guilloche seed={ticket.ticketRef} />
         {welcoming && invitation ? (
           <div className="invite-hero">
             <span className="invite-hero-icon"><GiftIcon size={28} /></span>
@@ -850,6 +852,7 @@ export default function TicketPage() {
             )}
           </>
         )}
+        <Serial value={ticket.ticketRef} />
         </div>
       </div>
 
@@ -1051,9 +1054,13 @@ function RotatingCode({ grant, ticket, movement, used, coupon, onAnother, onDone
           row the gate wrote about this ticket. */}
       {movement && <ScanFlash movement={movement} spent inside={ticket.presence.inside} />}
       {!movement && used && <CouponFlash used={used} spent />}
-      <p className="eyebrow center"><span></span> {grant.direction === 'CPN' ? '쿠폰' : grant.direction === 'IN' ? '입장' : '퇴장'}</p>
-      <h2>{movement || used ? '읽혔어요'
-        : grant.direction === 'CPN' ? `${grant.booth ?? '부스'} 단말에 비춰 주세요` : '게이트 단말에 비춰 주세요'}</h2>
+      {/* The same ink face as the ticket, so the code reads as part of the document. */}
+      <div className="code-head">
+        <Guilloche seed={ticket.ticketRef} />
+        <p className="eyebrow center"><span></span> {grant.direction === 'CPN' ? '쿠폰' : grant.direction === 'IN' ? '입장' : '퇴장'}</p>
+        <h2>{movement || used ? '읽혔어요'
+          : grant.direction === 'CPN' ? `${grant.booth ?? '부스'} 단말에 비춰 주세요` : '게이트 단말에 비춰 주세요'}</h2>
+      </div>
       {grant.direction === 'CPN' && grant.title && <p className="code-coupon">{grant.title}</p>}
       <div className={`code-stage${movement || used ? ' code-spent' : ''}`}>
         <canvas ref={canvas} width={260} height={260} className="code-canvas"

@@ -1,9 +1,7 @@
 import ConsoleNav, { NAV_ICONS, type ConsoleNavEntry } from '@shared/components/ConsoleNav';
-import { eventTime, eventWhen, type SessionRow } from '../console/model';
+import { eventWhen, type SessionRow } from '../console/model';
 
 export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'venue' | 'settings';
-
-const WHEN_LABEL = { today: '오늘 진행', upcoming: '예정', past: '종료' } as const;
 
 /** An event's own menu, down the left of its console. */
 export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll, terminalsUp, terminalsAll, adsPending = 0 }: {
@@ -40,12 +38,5 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
     ['관람객 안내', [{ key: 'venue', label: '행사장 정보', icon: NAV_ICONS.venue }]],
     ['설정', [{ key: 'settings', label: '이벤트 설정', icon: NAV_ICONS.settings }]],
   ];
-  return (
-    <ConsoleNav label="이벤트 메뉴" back={{ to: '/tickets', label: '이벤트 목록' }} current={tab} groups={groups}
-      card={<>
-        <span className={`pill pill-${when === 'today' ? 'ok' : when === 'past' ? 'out' : 'in'}`}>{WHEN_LABEL[when]}</span>
-        <strong>{session.name}</strong>
-        <span>{eventTime(session)}{session.venue ? <><br />{session.venue}</> : null}</span>
-      </>} />
-  );
+  return <ConsoleNav label="이벤트 메뉴" current={tab} groups={groups} />;
 }
