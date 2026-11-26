@@ -1096,7 +1096,7 @@ select.artwork-status {
 .front-ticket { --accent: var(--blue); --soft: var(--accent-soft); background: var(--bg); }
 .front-ticket .front-hero { gap: 48px 64px; padding: 64px 24px 56px; }
 .front-ticket .front-copy { flex: 1 1 420px; }
-.front-ticket .front-copy h1 { font-size: 52px; line-height: 1.14; letter-spacing: -0.035em; margin-bottom: 18px; }
+.front-ticket .front-copy h1 { word-break: keep-all; text-wrap: balance; font-size: 52px; line-height: 1.14; letter-spacing: -0.035em; margin-bottom: 18px; }
 .front-ticket .front-copy p { color: var(--muted); }
 .front-ticket .front-start { background: var(--blue); border-radius: 8px; box-shadow: none; font-weight: 600; }
 .front-ticket .front-start:hover { background: #1f33d4; transform: none; box-shadow: none; }
@@ -1108,4 +1108,4 @@ select.artwork-status {
 .front-specimen { flex: 0 1 400px; width: 100%; max-width: 400px; margin: 0 auto; }
 .front-specimen .access-card.ticket-card { margin: 0; }
 .front-specimen-cta { display: block; text-align: center; padding: 16px 24px; border-radius: 14px; background: var(--blue); color: #fff; font-weight: 600; font-size: 16px; }
-@media (max-width: 700px) { .front-ticket .front-copy h1 { font-size: 38px; } .front-ticket .front-hero { padding-top: 40px; } }
+@media (max-width: 700px) { .front-ticket .front-copy h1 { font-size: 34px; } .front-ticket .front-hero { padding-top: 40px; } }

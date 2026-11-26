@@ -63,7 +63,7 @@ export default function EventBar({ session, sessions, tab, issued, inside, gates
 
       <p className="eb-meta">
         {eventTime(session)}
-        {session.gateOpensAt && <span> 입장 {clock(session.gateOpensAt)}부터</span>}
+        {session.gateOpensAt && <span className="eb-gate"> 입장 {clock(session.gateOpensAt)}부터</span>}
         {session.venue && <span> {session.venue}</span>}
         {session.testEvent && <span className="eb-test">테스트</span>}
       </p>

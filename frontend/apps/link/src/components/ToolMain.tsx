@@ -45,7 +45,7 @@ function Specimen() {
     <div className="front-specimen" role="img" aria-label="입장권 예시: 2026 가을 아트페어, 코엑스 컨퍼런스룸 300">
       <div className="access-card ticket-card">
         <div className="ticket-top">
-          <Guilloche seed="PASSLINK2026" />
+          <Guilloche seed="7KQH2M9XT4WB" />
           <p className="eyebrow center"><span></span> 2026 가을 아트페어</p>
           <h2>입장권<span className="pill pill-out">장외</span></h2>
           <dl className="ticket-meta">
@@ -56,7 +56,7 @@ function Specimen() {
         </div>
         <div className="ticket-stub">
           <span className="front-specimen-cta">입장하기</span>
-          <Serial value="PASSLINK2026" />
+          <Serial value="7KQH2M9XT4WB" />
         </div>
       </div>
     </div>

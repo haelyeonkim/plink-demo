@@ -90,9 +90,9 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
     <div className="console-stack">
       <div className="kpi-grid">
         <div className="kpi">
-          <span className="kpi-label">발급</span>
-          <strong className="kpi-num">{counts.all.toLocaleString()}</strong>
-          <span className="kpi-note">비활성 {counts.revoked.toLocaleString()}장 포함</span>
+          <span className="kpi-label">등록 대기</span>
+          <strong className="kpi-num">{counts.unclaimed.toLocaleString()}</strong>
+          <span className="kpi-note">발급 {counts.all.toLocaleString()}장 중{counts.revoked > 0 ? ` · 비활성 ${counts.revoked.toLocaleString()}장` : ''}</span>
         </div>
         <div className="kpi">
           <span className="kpi-label">등록 완료</span>
@@ -102,15 +102,22 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
         </div>
         <div className="kpi">
           <span className="kpi-label">지금 장내</span>
-          <strong className="kpi-num">{inside.toLocaleString()}
-            {capacity > 0 && <small> / {capacity.toLocaleString()}</small>}</strong>
-          <span className="kpi-note">{when === 'today' ? '실시간' : when === 'upcoming' ? '이벤트 당일부터 집계' : '이벤트 종료'}</span>
+          {when === 'upcoming' && inside === 0 ? (
+            <><strong className="kpi-num kpi-idle">당일 집계</strong><span className="kpi-note">행사 당일부터 실시간으로 보여요</span></>
+          ) : (
+            <><strong className="kpi-num">{inside.toLocaleString()}
+              {capacity > 0 && <small> / {capacity.toLocaleString()}</small>}</strong>
+            <span className="kpi-note">{when === 'today' ? '실시간' : '이벤트 종료'}</span></>
+          )}
         </div>
         <div className={`kpi${offline.length > 0 ? ' kpi-warn' : ''}`}>
           <span className="kpi-label">게이트 연결</span>
-          <strong className="kpi-num">{connected.length}<small> / {doors.length}</small></strong>
-          <span className="kpi-note">{doors.length === 0 ? '게이트 없음'
-            : offline.length > 0 ? `${offline.length}곳 연결 안 됨` : '모두 연결됨'}</span>
+          {doors.length === 0 ? (
+            <><strong className="kpi-num kpi-idle">미설정</strong><span className="kpi-note"><Link to="?tab=gates">게이트 추가하기</Link></span></>
+          ) : (
+            <><strong className="kpi-num">{connected.length}<small> / {doors.length}</small></strong>
+            <span className="kpi-note">{offline.length > 0 ? `${offline.length}곳 연결 안 됨` : '모두 연결됨'}</span></>
+          )}
         </div>
       </div>
 

@@ -50,7 +50,7 @@ button, input, select, textarea { font-family: inherit; }
   border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; cursor: pointer;
 }
 .eb-switch-button:hover, .eb-switch-button[aria-expanded='true'] { background: var(--bg-section); }
-.eb-switch-button strong { font-size: 16px; line-height: 1.5; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eb-switch-button strong { font-size: 16px; line-height: 1.6; padding-block: 2px; letter-spacing: -0.02em; flex: 0 1 auto; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eb-chev { flex: none; color: var(--muted); }
 .eb-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 280px; max-width: 90vw; padding: 6px;
@@ -82,10 +82,11 @@ button, input, select, textarea { font-family: inherit; }
   .eb-switch { flex: 1 1 100%; }
   .eb-switch-button { width: 100%; }
   .eb-switch-button strong { flex: 1; text-align: left; }
-  .eb-meta { flex-basis: 100%; padding: 0 10px; }
-  .eb-meta { font-size: 12.5px; }
-  .eb-stats { gap: 16px; padding: 0 10px; }
-  .eb-issue { margin-left: auto; }
+  .eb-meta { flex-basis: 100%; padding: 0 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eb-gate { display: none; }
+  .console-layout { padding-bottom: 84px; }
+  .eb-stats { gap: 16px; padding: 0 10px 4px; }
+  .eb-issue { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 40; margin: 0; padding: 14px 20px; border-radius: 999px; box-shadow: 0 8px 24px rgba(39, 64, 240, 0.35); }
 }
 
 /* Destructive, and it should not be the first thing the eye lands on. */
@@ -2559,3 +2560,10 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
 
 /* Beside a header button that cannot act yet: what it is waiting for. */
 .console-actions-note { font-size: 13px; color: var(--muted); align-self: center; }
+
+.kpi-num.kpi-idle { font-size: 18px; line-height: 1.7; font-weight: 600; color: var(--muted); letter-spacing: -0.01em; }
+/* A finger needs more than a mouse: row buttons and the small "i" grow on touch screens. */
+@media (pointer: coarse), (max-width: 620px) {
+  .btn-tiny, .ticket-ref { min-height: 40px; display: inline-flex; align-items: center; }
+  .info-tip { min-width: 32px; min-height: 32px; }
+}

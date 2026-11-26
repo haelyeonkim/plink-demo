@@ -33,6 +33,15 @@ type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
 const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', policy: '재입장·퇴장', crowd: '혼잡도', invite: '초대' };
 
+/** The overview has no name of its own to repeat from the menu: it says where the event stands. */
+function overviewTitle(session: SessionRow): string {
+  const when = eventWhen(session.startsAt, session.scheduleEndsAt);
+  if (when === 'today') return '오늘 진행 중이에요';
+  if (when === 'past') return '종료된 이벤트예요';
+  const days = Math.ceil((new Date(session.startsAt).getTime() - Date.now()) / 86400000);
+  return days > 0 ? `행사까지 ${days}일 남았어요` : '곧 시작해요';
+}
+
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
   gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', venue: '행사장 정보', settings: '이벤트 설정',
@@ -1202,7 +1211,7 @@ export default function TicketAdmin() {
         <div className="console-main">
           <div className="console-head">
             <div>
-              <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
+              <h2>{tab === 'overview' ? overviewTitle(session) : TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
 
             </div>
             <div className="console-actions">
@@ -1623,15 +1632,15 @@ export default function TicketAdmin() {
               </p>
             )}
             <div className="gate-grid">{byNeed(doors).map(card)}</div>
-            {doors.length === 0 && (
-              <p className="console-none">아직 입장 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
-            )}
             <details className="console-card add-card" open={doors.length === 0}>
-              <summary>게이트 추가
+              <summary>{doors.length === 0 ? '첫 게이트 추가' : '게이트 추가'}
                 <InfoTip label="게이트 추가">
                   이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요.
                   쿠폰을 주는 부스 단말은 <Link to="?tab=booths">부스</Link>에서 추가해요.
                 </InfoTip></summary>
+              {doors.length === 0 && (
+                <p className="add-card-lead">입구마다 게이트를 하나씩 만들면 태블릿을 연결할 링크가 생겨요.</p>
+              )}
               <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
                 <input type="hidden" name="role" value="ADMISSION" />
                 <div className="form-row">

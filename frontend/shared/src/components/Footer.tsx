@@ -17,7 +17,7 @@ export default function Footer() {
       <Link className="logo" to={brand.home}>
         <img src={brand.logo} alt={brand.name} height="22" />
       </Link>
-      <p>Private by design. Priority by choice.</p>
+      <p>{brand.key === 'ticket' ? '입장권은 받은 사람의 기기에만 묶여요.' : 'Private by design. Priority by choice.'}</p>
       <small>&copy; 2026 Passlink. All rights reserved.</small>
     </footer>
   );
