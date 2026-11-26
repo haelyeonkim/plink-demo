@@ -10,7 +10,6 @@ public class EventSession {
     /** Whether the event admits by face at all; when off, tickets do not mention it. */
     public boolean faceEnabled;
     public boolean faceRequired, reentryRequiresFace;
-    /** Registering needs no email or phone typed back: holding the link is the claim. Off by default. */
     public String faceLiveness, faceChallengeOn;
     public int faceRetentionDays;
     public Double venueLat, venueLon;

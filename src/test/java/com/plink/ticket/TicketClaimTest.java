@@ -268,8 +268,8 @@ class TicketClaimTest {
 
     /**
      * A person accumulates tickets, not passkeys. Once something sent to their email or
-     * phone has been claimed, their next ticket's page offers that passkey first, asks only
-     * for it, and a new registration excludes it - so their phone refuses a second one.
+     * phone has been claimed, their next ticket's page offers "existing" first, and a new
+     * registration excludes that passkey - so their phone refuses a second one.
      */
     @Test void aContactThatClaimedBeforeIsOfferedItsPasskeyFirst() throws Exception {
         long phoneEvent = sessions.insert("휴대폰 회차", null, Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
@@ -291,7 +291,8 @@ class TicketClaimTest {
         mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{\"choice\":\"existing\"}"))
             .andExpect(jsonPath("$.mode").value("authenticate"))
-            .andExpect(jsonPath("$.options.publicKey.allowCredentials[0].id").value(credential));
+            // Naming nobody: the passkey that answers decides whose claim it is.
+            .andExpect(jsonPath("$.options.publicKey.allowCredentials").doesNotExist());
         mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{}"))
             .andExpect(jsonPath("$.mode").value("register"))

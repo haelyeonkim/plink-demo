@@ -136,7 +136,14 @@ export default function AccessLink() {
             </div>
           )}
           {!supportsPasskeys() ? <p className="error-text" role="alert">패스키를 지원하는 브라우저에서 열어 주세요. Safari 또는 Chrome의 최신 버전을 사용할 수 있어요.</p> : (
-            <form onSubmit={e => { e.preventDefault(); if (info.claimed) void open(); }} aria-busy={busy}>
+            <form onSubmit={e => {
+              e.preventDefault();
+              // Enter in the password field: a claimed link opens; an unclaimed one goes the
+              // way the page offers first, once the visitor has said the link is theirs.
+              if (info.claimed) void open();
+              else if (agreed) void open(preferredChoice(info.suggest));
+              else setError('먼저 받은 링크가 맞는지 확인해 주세요.');
+            }} aria-busy={busy}>
               {info.hasPassword && <div className="field"><label htmlFor="link-password">전달받은 비밀번호</label><input id="link-password" type="password" required value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></div>}
               {error && <p className="error-text" role="alert">{error}</p>}
               {info.claimed

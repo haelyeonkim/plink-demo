@@ -97,7 +97,10 @@ public class HolderRepository implements CredentialRepository {
             + "SELECT holder_id FROM link_recipient WHERE holder_id IS NOT NULL AND LOWER(email) = ? "
             + "UNION SELECT holder_id FROM ticket WHERE holder_id IS NOT NULL "
             + "AND (LOWER(issued_to_email) = ? OR phone IN (?, ?, ?)) "
-            + "UNION SELECT id AS holder_id FROM holder WHERE LOWER(email) = ?) claimed",
+            + "UNION SELECT id AS holder_id FROM holder WHERE LOWER(email) = ?) claimed "
+            // A person is somebody with a passkey: a registration given up halfway, under the
+            // old flow, left a holder with an address and nothing to answer with.
+            + "WHERE EXISTS (SELECT 1 FROM holder_credential c WHERE c.holder_id = claimed.holder_id)",
             Long.class, mail, mail, a, b, c, mail);
     }
 

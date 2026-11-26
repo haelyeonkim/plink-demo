@@ -159,7 +159,8 @@ class LinkSecurityTest {
         options(code, null, "existing", new MockHttpSession())
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.mode").value("authenticate"))
-            .andExpect(jsonPath("$.options.publicKey.allowCredentials[0].id").value(credential));
+            // Naming nobody: the passkey that answers decides whose claim it is.
+            .andExpect(jsonPath("$.options.publicKey.allowCredentials").doesNotExist());
         options(code, null, new MockHttpSession())
             .andExpect(jsonPath("$.mode").value("register"))
             .andExpect(jsonPath("$.options.publicKey.excludeCredentials[0].id").value(credential));

@@ -73,6 +73,14 @@ public final class FakePasskey {
 
     /** The JSON a browser posts after navigator.credentials.get() with this challenge. */
     public String authenticate(String challenge) {
+        return authenticate(challenge, null, null);
+    }
+
+    /**
+     * As a discoverable passkey answers a request that named nobody: with the user handle it
+     * was made under, and the attachment the browser reports ("platform", "cross-platform").
+     */
+    public String authenticate(String challenge, String userHandle, String attachment) {
         byte[] clientData = clientData("webauthn.get", challenge);
         counter++;
         ByteArrayOutputStream auth = new ByteArrayOutputStream();
@@ -92,7 +100,10 @@ public final class FakePasskey {
         }
         return "{\"type\":\"public-key\",\"id\":\"" + b64(credentialId) + "\",\"rawId\":\"" + b64(credentialId)
             + "\",\"response\":{\"authenticatorData\":\"" + b64(authData) + "\",\"clientDataJSON\":\""
-            + b64(clientData) + "\",\"signature\":\"" + b64(signature) + "\"},\"clientExtensionResults\":{}}";
+            + b64(clientData) + "\",\"signature\":\"" + b64(signature) + "\""
+            + (userHandle == null ? "" : ",\"userHandle\":\"" + userHandle + "\"") + "},"
+            + (attachment == null ? "" : "\"authenticatorAttachment\":\"" + attachment + "\",")
+            + "\"clientExtensionResults\":{}}";
     }
 
     private byte[] clientData(String type, String challenge) {

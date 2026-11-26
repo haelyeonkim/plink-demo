@@ -153,7 +153,7 @@ public class PasskeyService {
                 pending = new Pending(code, recipient.id, recipient.holderId, null, request);
                 options = request.toCredentialsGetJson();
             } else if ("existing".equals(choice)) {
-                AssertionRequest request = claim.startExisting(recipient.email, null, TTL);
+                AssertionRequest request = claim.startExisting(TTL);
                 pending = new Pending(code, recipient.id, null, null, request);
                 options = request.toCredentialsGetJson();
             } else {

@@ -63,8 +63,9 @@ public class BoothManagerController {
     }
 
     @PostMapping("/passkey/options")
-    public Map<String, Object> options(@PathVariable String token, HttpSession session) {
-        return passkeys.start(managers.resolve(token), session);
+    public Map<String, Object> options(@PathVariable String token,
+            @RequestBody(required = false) Map<String, String> body, HttpSession session) {
+        return passkeys.start(managers.resolve(token), session, body == null ? null : body.get("choice"));
     }
 
     @PostMapping("/passkey/finish")

@@ -19,6 +19,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -157,7 +158,7 @@ public class TicketPasskeyService {
                     "등록 기한이 지났어요. 새 링크를 요청해 주세요.");
             }
             if ("existing".equals(choice)) {
-                AssertionRequest request = claim.startExisting(ticket.issuedToEmail, ticket.phone, TIMEOUT_MS);
+                AssertionRequest request = claim.startExisting(TIMEOUT_MS);
                 pending = new Pending(ticket, "CLAIM", null, ticket.issuedToEmail, null, request);
                 options = request.toCredentialsGetJson();
             } else {
@@ -272,16 +273,28 @@ public class TicketPasskeyService {
             JsonNode credential) {
         RegistrationResult result = claim.verify(pending.registration, credential);
         String aaguid = result.getAaguid().getHex().toLowerCase(Locale.ROOT);
-        if (!properties.getAllowedAaguids().isEmpty()
-                && properties.getAllowedAaguids().stream().noneMatch(allowed ->
-                    allowed.replace("-", "").equalsIgnoreCase(aaguid))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                "휴대폰의 지문·얼굴 인증으로 등록해 주세요. 데스크톱 인증기는 사용할 수 없어요.");
-        }
+        requireTicketAuthenticator(aaguid, false);
         // Inside the finish transaction: a claim that then loses to another phone rolls the
         // person and the passkey back with it.
         pending.holderId = claim.create(pending.registration, result);
         return attach(ticket, pending, resolved);
+    }
+
+    /**
+     * The ticket's authenticator policy: only the allowed authenticator models, when a list
+     * is set, and no security key or other device while the mobile-only policy is on.
+     */
+    void requireTicketAuthenticator(String aaguid, boolean crossPlatform) {
+        List<String> allowed = properties.getAllowedAaguids();
+        if (!allowed.isEmpty() && (aaguid == null || allowed.stream().noneMatch(model ->
+                model.replace("-", "").equalsIgnoreCase(aaguid.replace("-", ""))))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "휴대폰의 지문·얼굴 인증으로 등록해 주세요. 데스크톱 인증기는 사용할 수 없어요.");
+        }
+        if (crossPlatform && !"OFF".equalsIgnoreCase(properties.getMobileOnly())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "입장권은 휴대폰에 저장된 패스키로만 받을 수 있어요. 휴대폰에서 다시 시도해 주세요.");
+        }
     }
 
     /** Binds the ticket to the person the ceremony proved, whichever ceremony it was. */
@@ -314,7 +327,11 @@ public class TicketPasskeyService {
             TicketService.Resolved resolved, JsonNode credential) {
         HolderRepository.Credential used = claim.answer(pending.assertion, credential, "등록한 패스키로 다시 시도해 주세요.");
         if ("CLAIM".equals(pending.intent)) {
-            // A claim answered with a passkey the visitor already had joins their others.
+            // A claim answered with a passkey the visitor already had joins their others -
+            // as long as a ticket would have let that passkey be made. One made for a link
+            // asked nothing of the authenticator, so a security key could otherwise carry
+            // a ticket past the mobile-only policy.
+            requireTicketAuthenticator(used.aaguid, PasskeyClaim.crossPlatform(credential));
             pending.holderId = used.holderId;
             return attach(ticket, pending, resolved);
         }

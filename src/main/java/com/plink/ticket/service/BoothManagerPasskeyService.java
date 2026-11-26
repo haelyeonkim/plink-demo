@@ -49,10 +49,11 @@ public class BoothManagerPasskeyService {
     private final TicketProperties properties;
     private final RelyingParty rp;
     private final ObjectMapper mapper;
+    private final PasskeyClaim claim;
 
     public BoothManagerPasskeyService(BoothManagerRepository managers, HolderRepository holders,
             EmailOtpService otp, TicketService ticketService, TicketProperties properties,
-            @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper) {
+            @Qualifier("ticketRelyingParty") RelyingParty rp, ObjectMapper mapper, PasskeyClaim claim) {
         this.managers = managers;
         this.holders = holders;
         this.otp = otp;
@@ -60,18 +61,20 @@ public class BoothManagerPasskeyService {
         this.properties = properties;
         this.rp = rp;
         this.mapper = mapper;
+        this.claim = claim;
     }
 
     /** A ceremony in flight: for which manager, as which holder, and what was asked. */
     static class Pending {
         final long managerId;
-        final long holderId;
+        /** Null for a claim answered by whichever passkey the phone holds: the answer says whose. */
+        Long holderId;
         final boolean claim;
         final long expires = System.currentTimeMillis() + TIMEOUT_MS;
         final PublicKeyCredentialCreationOptions registration;
         final AssertionRequest assertion;
 
-        Pending(long managerId, long holderId, boolean claim, PublicKeyCredentialCreationOptions registration,
+        Pending(long managerId, Long holderId, boolean claim, PublicKeyCredentialCreationOptions registration,
                 AssertionRequest assertion) {
             this.managerId = managerId;
             this.holderId = holderId;
@@ -163,6 +166,14 @@ public class BoothManagerPasskeyService {
      * holder's passkey and nobody else's.
      */
     public Map<String, Object> start(BoothManager manager, HttpSession session) {
+        return start(manager, session, null);
+    }
+
+    /**
+     * With {@code choice} "existing" an unclaimed invite asks for a passkey the person
+     * already has, whoever's it is: their phone refused to make a second one.
+     */
+    public Map<String, Object> start(BoothManager manager, HttpSession session, String choice) {
         synchronized (session) { session.removeAttribute(PENDING); }
         Pending pending;
         String options;
@@ -184,6 +195,12 @@ public class BoothManagerPasskeyService {
                     AssertionRequest request = assertion(holder);
                     pending = new Pending(manager.id, holder.id, true, null, request);
                     options = request.toCredentialsGetJson();
+                } else if ("existing".equals(choice)) {
+                    // The mailbox is proven; the passkey proves the person, who may have
+                    // claimed tickets with no email of theirs on record.
+                    AssertionRequest request = claim.startExisting(TIMEOUT_MS);
+                    pending = new Pending(manager.id, null, true, null, request);
+                    options = request.toCredentialsGetJson();
                 } else {
                     long holderId = holder != null ? holder.id
                         : holders.create(email, ticketService.userHandleFor(email));
@@ -202,6 +219,10 @@ public class BoothManagerPasskeyService {
                                 .id(HolderRepository.decode(created.userHandle)).build())
                             .authenticatorSelection(selection)
                             .timeout(TIMEOUT_MS).build());
+                    // A phone holding the passkey of somebody who claimed something sent to
+                    // this address refuses a second one; the page then answers that one.
+                    request = request.toBuilder()
+                        .excludeCredentials(holders.descriptors(holders.claimedByContact(email, null))).build();
                     pending = new Pending(manager.id, holderId, true, request, null);
                     options = request.toCredentialsCreateJson();
                 }
@@ -256,7 +277,7 @@ public class BoothManagerPasskeyService {
             if (manager.holderId != null || !managers.claim(manager.id, pending.holderId, now)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 다른 기기에서 등록을 마친 초대예요.");
             }
-        } else if (!manager.claimed() || manager.holderId != pending.holderId) {
+        } else if (!manager.claimed() || !manager.holderId.equals(pending.holderId)) {
             // Reissued between the options and the answer: the passkey proved somebody the
             // link no longer belongs to.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "링크가 바뀌었어요. 새 링크로 다시 열어 주세요.");
@@ -302,9 +323,11 @@ public class BoothManagerPasskeyService {
         }
         // The browser offers every passkey for the domain; the one used has to be this person's.
         Optional<HolderRepository.Credential> used = holders.findByCredentialId(result.getCredentialId().getBase64Url());
-        if (!result.isSuccess() || used.isEmpty() || used.get().holderId != pending.holderId) {
+        if (!result.isSuccess() || used.isEmpty()
+                || (pending.holderId != null && used.get().holderId != pending.holderId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "이 부스 관리자에게 등록된 패스키가 아니에요.");
         }
         holders.recordUse(used.get().credentialId, result.getSignatureCount());
+        if (pending.holderId == null) pending.holderId = used.get().holderId;
     }
 }

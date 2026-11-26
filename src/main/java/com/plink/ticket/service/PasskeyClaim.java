@@ -12,8 +12,6 @@ import tools.jackson.databind.JsonNode;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -100,22 +98,24 @@ public class PasskeyClaim {
     }
 
     /**
-     * Asks for a passkey the person already has. With one likely person the request names
-     * them, which also reaches passkeys made before they were all discoverable; otherwise
-     * any Passlink passkey on the phone may answer.
+     * Asks for a passkey the person already has, whoever's it is. The request names nobody:
+     * the contact a claim was sent to is only a guess, and whoever claimed something sent
+     * there before may not be this visitor - a forwarded link is claimed by whoever opens
+     * it first. Naming them would refuse the visitor's own passkey, and hand the page their
+     * credential ids.
      */
-    public AssertionRequest startExisting(String email, String phone, long timeoutMs) {
-        List<Long> likely = holders.claimedByContact(email, phone);
-        StartAssertionOptions.StartAssertionOptionsBuilder options = StartAssertionOptions.builder()
-            .userVerification(UserVerificationRequirement.REQUIRED).timeout(timeoutMs);
-        if (likely.size() == 1) {
-            holders.findById(likely.get(0)).ifPresent(h -> options.username(h.userHandle));
-            return rp.startAssertion(options.build());
-        }
-        AssertionRequest request = rp.startAssertion(options.build());
-        if (likely.isEmpty()) return request;
-        return request.toBuilder().publicKeyCredentialRequestOptions(request.getPublicKeyCredentialRequestOptions()
-            .toBuilder().allowCredentials(new ArrayList<>(holders.descriptors(likely))).build()).build();
+    public AssertionRequest startExisting(long timeoutMs) {
+        return rp.startAssertion(StartAssertionOptions.builder()
+            .userVerification(UserVerificationRequirement.REQUIRED).timeout(timeoutMs).build());
+    }
+
+    /**
+     * Whether the browser says the answer came from a security key or another device rather
+     * than the phone itself. Reported by the browser, not signed: one layer of the
+     * mobile-only policy, as the attachment asked for at registration is.
+     */
+    public static boolean crossPlatform(JsonNode credential) {
+        return credential != null && "cross-platform".equals(credential.path("authenticatorAttachment").asText(null));
     }
 
     /** Asks the passkey of one known person: a claimed link or ticket opening again. */
