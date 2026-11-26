@@ -75,6 +75,7 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
 /** Stroke drawings for menu entries, shared so both consoles read alike. */
 export const NAV_ICONS = {
   overview: 'M4 13h6V4H4zM14 20h6v-9h-6zM14 4v4h6V4zM4 20h6v-4H4z',
+  stats: 'M4 20h16M7 16v-5M12 16V6M17 16v-8',
   list: 'M4 6h16M4 12h16M4 18h10',
   add: 'M12 5v14M5 12h14',
   movements: 'M7 7h11l-3-3M17 17H6l3 3',

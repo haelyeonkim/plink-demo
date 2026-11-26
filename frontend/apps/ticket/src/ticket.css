@@ -2567,3 +2567,25 @@ body:has(.group-scrim) .ticket-tabs { display: none; }
   .btn-tiny, .ticket-ref { min-height: 40px; display: inline-flex; align-items: center; }
   .info-tip { min-width: 32px; min-height: 32px; }
 }
+
+/* ---- An event's numbers (통계) ---- */
+.stats-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .stats-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stats-in { background: var(--blue); }
+.stats-out { background: color-mix(in srgb, var(--blue) 30%, white); }
+.stats-legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); }
+.stats-legend > span { display: flex; align-items: center; gap: 6px; }
+.stats-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.stats-bars { display: grid; justify-content: center; gap: 4px; align-items: end; height: 190px; border-bottom: 1px solid var(--line); padding: 0 4px; margin-top: 6px; }
+.stats-pair { display: flex; gap: 2px; align-items: flex-end; height: 100%; min-width: 0; }
+.stats-pair span { flex: 1; min-width: 0; border-radius: 3px 3px 0 0; }
+.stats-axis { display: grid; justify-content: center; gap: 4px; padding: 4px 4px 0; font-size: 12px; color: var(--muted); text-align: center; }
+.stats-axis span { white-space: nowrap; }
+.stats-list { margin: 0; display: flex; flex-direction: column; }
+.stats-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef0f5; font-size: 14px; }
+.stats-list > div:last-child { border-bottom: 0; }
+.stats-list dt { color: var(--muted); }
+.stats-list dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stats-list dd small { font-weight: 500; color: var(--muted); }
+.console-table td.stats-bad { color: var(--void); font-weight: 700; }
+@media (forced-colors: active) { .stats-pair span, .stats-legend i { forced-color-adjust: none; } }
