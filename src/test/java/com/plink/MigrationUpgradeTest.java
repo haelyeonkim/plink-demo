@@ -45,7 +45,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO event_session(id,name,starts_at,test_event) VALUES (1,'Rehearsal',CURRENT_TIMESTAMP,TRUE)");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(30);
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(31);
         current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT a.title,a.sale_status,a.archived,ca.artwork_id FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -85,7 +85,7 @@ class MigrationUpgradeTest {
         }
         var reconcile = Flyway.configure().dataSource(dataSource(url))
                 .locations("classpath:db/migration").outOfOrder(true).load();
-        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(29);
+        assertThat(reconcile.migrate().migrationsExecuted).isEqualTo(30);
         flyway(url, "classpath:db/migration").validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT a.sale_status FROM artwork a JOIN content_artwork ca ON ca.artwork_id=a.id")) {
@@ -109,7 +109,7 @@ class MigrationUpgradeTest {
             s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,actor_type,actor_id,action,before_state,after_state,reason,occurred_at) VALUES (1,1,'RECIPIENT','1','PURCHASE','{}','{}','',TIMESTAMP '2026-01-02 09:00:00')");
         }
         var current = flyway(url, "classpath:db/migration");
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(2); current.validate();
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(3); current.validate();
         try (var c = dataSource(url).getConnection(); var s = c.createStatement()) {
             try (var r = s.executeQuery("SELECT * FROM artwork_request WHERE id=1")) {
                 assertThat(r.next()).isTrue(); assertThat(r.getString("owner_sub")).isEqualTo("local:1");
@@ -138,7 +138,7 @@ class MigrationUpgradeTest {
                 s.execute("INSERT INTO artwork_request_event(request_id,artwork_id,action,actor_type,actor_id,before_state,after_state,reason) VALUES "
                     + row.replace(")", ",'ADMIN','1','{}','{}','')"));
         }
-        assertThat(flyway(url, "classpath:db/migration").migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(flyway(url, "classpath:db/migration").migrate().migrationsExecuted).isEqualTo(2);
         try (var c = dataSource(url).getConnection(); var s = c.createStatement();
              var r = s.executeQuery("SELECT id, cancel_rejected, inquiry_pending FROM artwork_request ORDER BY id")) {
             assertThat(r.next()).isTrue(); assertThat(r.getBoolean(2)).isTrue(); assertThat(r.getBoolean(3)).isFalse();

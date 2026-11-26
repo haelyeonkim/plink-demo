@@ -1,5 +1,6 @@
 import { mutate } from '@shared/auth';
 import { ApiError, gateHeaders } from '../ticket/api';
+import { alreadyOnDevice } from '@shared/passkeyClaim';
 import { passkeyCeremony, type CeremonyStage } from '../ticket/passkey';
 import type { Paged } from '../components/ListTools';
 
@@ -156,9 +157,19 @@ export const requestBoothOtp = (token: string, email: string) =>
 export const verifyBoothOtp = (token: string, email: string, code: string) =>
   managerClient(token).send<{ verified: boolean }>('/otp/verify', 'POST', { email, code });
 
-/** Registers a passkey on first use, or signs in with the one already bound. */
+/**
+ * Registers a passkey on first use, or signs in with the one already bound. A phone that
+ * already holds this person's Passlink passkey refuses to make another; the invite is
+ * then claimed by answering that one.
+ */
 export async function boothPasskey(token: string, onStage?: (stage: CeremonyStage) => void) {
-  return passkeyCeremony(boothBase(token), {}, async stage => { onStage?.(stage); });
+  const stage = async (step: CeremonyStage) => { onStage?.(step); };
+  try {
+    return await passkeyCeremony(boothBase(token), {}, stage);
+  } catch (error) {
+    if (!alreadyOnDevice(error)) throw error;
+    return passkeyCeremony(boothBase(token), { choice: 'existing' }, stage);
+  }
 }
 
 export const fetchDashboard = (client: BoothClient) => client.get<BoothDashboard>('/dashboard');

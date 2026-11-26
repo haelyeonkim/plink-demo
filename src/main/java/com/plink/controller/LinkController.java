@@ -32,15 +32,18 @@ public class LinkController {
     private final com.plink.repository.ContentRepository contents;
     private final ArtworkDeliveryService artworkDeliveries;
     private final ZoneId venueZone;
+    private final com.plink.ticket.service.PasskeyClaim claim;
 
     public LinkController(LinkService linkService, LinkAddresses addresses,
             com.plink.repository.ContentRepository contents, ArtworkDeliveryService artworkDeliveries,
+            com.plink.ticket.service.PasskeyClaim claim,
             @Value("${plink.ticket.venue-zone:Asia/Seoul}") String venueZone) {
         this.linkService = linkService;
         this.addresses = addresses;
         this.contents = contents;
         this.artworkDeliveries = artworkDeliveries;
         this.venueZone = ZoneId.of(venueZone);
+        this.claim = claim;
     }
 
     private static final int MAX_TITLE = 50;
@@ -344,8 +347,10 @@ public class LinkController {
             .put("expired", link.isExpired() || recipient.revoked()).put("viewCount", link.getViewCount()));
         Map<String, Object> body = new LinkedHashMap<String, Object>();
         body.put("shortCode", recipient.shortCode);
-        // What the visitor must type to claim it, and how much of it we are willing to show.
-        body.put("contactRequired", !recipient.claimed());
+        // For an unclaimed link, which way the page offers first: "existing" when whoever this
+        // was sent to has claimed something before, so they answer that passkey rather than
+        // make a second one. Only a hint; the passkey decides.
+        if (!recipient.claimed()) body.put("suggest", claim.suggestion(recipient.email, null));
         body.put("expiresAt", link.getExpiresAt());
         body.put("maxViews", link.getMaxViews());
         body.put("viewCount", link.getViewCount());

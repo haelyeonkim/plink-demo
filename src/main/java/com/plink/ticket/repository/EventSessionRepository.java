@@ -31,7 +31,6 @@ public class EventSessionRepository {
         s.exitScanRequired = rs.getBoolean("exit_scan_required");
         s.unmatchedExit = rs.getString("unmatched_exit");
         s.autoExitAfterMinutes = rs.getInt("auto_exit_after_minutes");
-        s.claimSkipCheck = rs.getBoolean("claim_skip_check");
         s.faceEnabled = rs.getBoolean("face_enabled");
         s.faceRequired = rs.getBoolean("face_required");
         s.reentryRequiresFace = rs.getBoolean("reentry_requires_face");
@@ -112,10 +111,6 @@ public class EventSessionRepository {
     /** Cascades to tickets, presence and the ledger through the foreign keys. */
     public int delete(long id) {
         return jdbc.update("DELETE FROM event_session WHERE id = ?", id);
-    }
-
-    public void updateClaimPolicy(long id, boolean skipCheck) {
-        jdbc.update("UPDATE event_session SET claim_skip_check = ? WHERE id = ?", skipCheck, id);
     }
 
     public void updateInviteStatus(long id, String status) {

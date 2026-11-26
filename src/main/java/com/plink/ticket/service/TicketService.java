@@ -650,9 +650,8 @@ public class TicketService {
         event.put("gateOpensAt", session.gateOpensAt == null ? null : session.gateOpensAt.toInstant().toString());
         event.put("exitScanRequired", session.exitScanRequired);
         event.put("reentryMode", session.reentryMode);
-        // Whether registering asks for the email or phone the ticket went to.
-        event.put("claimSkipCheck", session.claimSkipCheck);
-        // Which of the two the holder can type: a ticket issued without a phone takes email only.
+        // Which of the two a holder on a new phone can type to have the ticket sent again
+        // (see /recover): a ticket issued without a phone takes email only.
         event.put("claimByPhone", ticket.phone != null);
         // An event that does not admit by face says nothing about faces on its tickets.
         event.put("faceEnabled", session.faceEnabled);

@@ -236,6 +236,42 @@ class BoothManagerTest {
             .andExpect(status().isConflict());
     }
 
+    /**
+     * Somebody who claimed a ticket - a passkey, no email on record - is then invited to run a
+     * booth at that address. Their phone refuses a second passkey, and the invite is taken
+     * up by the one they have: one person, one passkey.
+     */
+    @Test void aTicketHolderInvitedToABoothKeepsTheirOnePasskey() throws Exception {
+        String email = "holder.manager@example.com";
+        String phone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/605.1";
+        FakePasskey key = new FakePasskey(ORIGIN);
+        tickets.issue(sessionId, email, null, null);
+        String url = mailbox.lastTicketUrl().orElseThrow();
+        String ticketBase = "/api/tickets/" + sessionId + "/" + url.substring(url.lastIndexOf('/') + 1);
+        MockHttpSession holderBrowser = new MockHttpSession();
+        String registration = json(post(ticketBase + "/passkey/options").session(holderBrowser).header("User-Agent", phone), "{}")
+            .andExpect(jsonPath("$.mode").value("register")).andReturn().getResponse().getContentAsString();
+        json(post(ticketBase + "/passkey/finish").session(holderBrowser).header("User-Agent", phone),
+                key.register(JsonPath.read(registration, "$.options.publicKey.challenge")))
+            .andExpect(status().isOk());
+        String handle = JsonPath.read(registration, "$.options.publicKey.user.id");
+        long holderId = holders.findByHandle(handle).orElseThrow().id;
+
+        Invite invite = invite(boothId, email);
+        MockHttpSession browser = new MockHttpSession();
+        proveMailbox(invite.token(), email, browser);
+        json(post(base(invite.token()) + "/passkey/options").session(browser), "{}")
+            .andExpect(jsonPath("$.mode").value("register"))
+            .andExpect(jsonPath("$.options.publicKey.excludeCredentials[0].id")
+                .value(holders.findByHolder(holderId).get(0).credentialId));
+        String body = json(post(base(invite.token()) + "/passkey/options").session(browser), "{\"choice\":\"existing\"}")
+            .andExpect(jsonPath("$.mode").value("authenticate")).andReturn().getResponse().getContentAsString();
+        finish(invite.token(), browser, key.authenticate(JsonPath.read(body, "$.options.publicKey.challenge"), handle, "platform"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.signedIn").value(true));
+        assertEquals(holderId, jdbc.queryForObject("SELECT holder_id FROM booth_manager WHERE id = ?", Long.class, invite.managerId()));
+        assertEquals(1, holders.findByHolder(holderId).size());
+    }
+
     @Test void aSecondDeviceCannotClaimAnInvitationAlreadyTakenUp() throws Exception {
         String email = email();
         Invite invite = invite(boothId, email);

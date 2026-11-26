@@ -50,6 +50,7 @@ class LinkSecurityTest {
     @Autowired RecordingEmail.Mailbox mailbox;
     @Autowired JdbcTemplate jdbc;
     @Autowired HolderRepository holders;
+    @Autowired com.plink.repository.LinkRecipientRepository recipients;
     @Autowired TicketService tickets;
 
     private static final String EMAIL = "linksec@example.com";
@@ -86,11 +87,17 @@ class LinkSecurityTest {
     }
 
     private org.springframework.test.web.servlet.ResultActions options(String code, String password,
-            String contact, MockHttpSession session) throws Exception {
+            MockHttpSession session) throws Exception {
+        return options(code, password, null, session);
+    }
+
+    /** {@code choice} "existing" answers a passkey the visitor already has; otherwise a new one is made. */
+    private org.springframework.test.web.servlet.ResultActions options(String code, String password,
+            String choice, MockHttpSession session) throws Exception {
         return mvc.perform(post("/api/links/s/" + code + "/passkey/options").session(session).with(csrf())
             .with(client).contentType("application/json")
             .content("{\"password\":" + (password == null ? "null" : "\"" + password + "\"")
-                + ",\"contact\":\"" + contact + "\"}"));
+                + (choice == null ? "" : ",\"choice\":\"" + choice + "\"") + "}"));
     }
 
     @Test void aPasswordFromBeforeBcryptStillOpensAndIsUpgraded() throws Exception {
@@ -103,67 +110,88 @@ class LinkSecurityTest {
         jdbc.update("UPDATE protected_link SET password_hash = ? WHERE id = ?",
             String.valueOf("open-sesame".hashCode()), linkId);
         String code = issue(linkId, "legacy@example.com");
-        options(code, "wrong", "legacy@example.com", new MockHttpSession()).andExpect(status().isForbidden());
+        options(code, "wrong", new MockHttpSession()).andExpect(status().isForbidden());
         assertEquals(String.valueOf("open-sesame".hashCode()), jdbc.queryForObject(
             "SELECT password_hash FROM protected_link WHERE id = ?", String.class, linkId),
             "틀린 비밀번호로는 아무것도 바뀌지 않아야 합니다");
 
-        options(code, "open-sesame", "legacy@example.com", new MockHttpSession()).andExpect(status().isOk());
+        options(code, "open-sesame", new MockHttpSession()).andExpect(status().isOk());
         String upgraded = jdbc.queryForObject("SELECT password_hash FROM protected_link WHERE id = ?",
             String.class, linkId);
         assertTrue(upgraded.startsWith("$2"), "확인된 옛 비밀번호는 BCrypt로 바뀌어야 합니다: " + upgraded);
-        options(code, "open-sesame", "legacy@example.com", new MockHttpSession()).andExpect(status().isOk());
+        options(code, "open-sesame", new MockHttpSession()).andExpect(status().isOk());
     }
 
-    @Test void theFirstPasskeyForAnAddressWaitsForTheCodeSentToIt() throws Exception {
+    /** The first passkey made on an address claims it: nothing is mailed, nothing typed. */
+    @Test void theFirstPasskeyClaimsWithoutACode() throws Exception {
         long linkId = createLink("{\"originalUrl\":\"https://example.com/b\"}").get("id").asLong();
         String code = issue(linkId, "first@example.com");
-        MockHttpSession visitor = new MockHttpSession();
         mailbox.clear();
 
-        options(code, null, "first@example.com", visitor)
+        mvc.perform(get("/api/links/s/" + code).with(client))
+            .andExpect(jsonPath("$.contactRequired").doesNotExist())
+            .andExpect(jsonPath("$.suggest").value("new"));
+        options(code, null, new MockHttpSession())
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.mode").value("verify"))
-            .andExpect(jsonPath("$.options").doesNotExist());
-        assertEquals("first@example.com", mailbox.sent.get(mailbox.sent.size() - 1)[0]);
-        String sent = mailbox.lastCode().orElseThrow();
-
-        String wrong = sent.equals("000000") ? "111111" : "000000";
-        mvc.perform(post("/api/links/s/" + code + "/passkey/verify").session(visitor).with(csrf()).with(client)
-                .contentType("application/json").content("{\"code\":\"" + wrong + "\"}"))
-            .andExpect(status().isBadRequest());
-        mvc.perform(post("/api/links/s/" + code + "/passkey/verify").session(visitor).with(csrf()).with(client)
-                .contentType("application/json").content("{\"code\":\"" + sent + "\"}"))
-            .andExpect(status().isOk());
-        // Another browser cannot borrow the proof.
-        options(code, null, "first@example.com", new MockHttpSession())
-            .andExpect(jsonPath("$.mode").value("verify"));
-        options(code, null, "first@example.com", visitor)
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.mode").value("register"));
+            .andExpect(jsonPath("$.mode").value("register"))
+            .andExpect(jsonPath("$.options.publicKey.user.name").value(org.hamcrest.Matchers.startsWith("패스링크 · ")))
+            .andExpect(jsonPath("$.options.publicKey.authenticatorSelection.residentKey").value("required"));
+        assertTrue(mailbox.sent.isEmpty(), "인증번호를 보내지 않아야 합니다");
+        mvc.perform(post("/api/links/s/" + code + "/passkey/verify").session(new MockHttpSession()).with(csrf()).with(client)
+                .contentType("application/json").content("{\"code\":\"123456\"}"))
+            .andExpect(result -> assertTrue(result.getResponse().getStatus() >= 400, "인증번호 확인 경로는 없어야 합니다"));
     }
 
-    @Test void anAddressThatAlreadyHasAPasskeyIsAskedForItNotForACode() throws Exception {
+    /**
+     * Somebody whose address has claimed before - here a holder from when an email named the
+     * person - is offered that passkey first, asked only for it, and excluded from making another.
+     */
+    @Test void anAddressThatClaimedBeforeIsOfferedItsPasskey() throws Exception {
         String email = "known@example.com";
         long holderId = holders.create(email, tickets.userHandleFor(email));
         holders.insert(holderId, new ByteArray(new byte[] { 1, 2, 3, 4 }), new ByteArray(new byte[] { 5, 6 }),
             0, "00000000000000000000000000000000");
+        String credential = new ByteArray(new byte[] { 1, 2, 3, 4 }).getBase64Url();
         long linkId = createLink("{\"originalUrl\":\"https://example.com/c\"}").get("id").asLong();
         String code = issue(linkId, email);
-        options(code, null, email, new MockHttpSession())
+
+        mvc.perform(get("/api/links/s/" + code).with(client)).andExpect(jsonPath("$.suggest").value("existing"));
+        options(code, null, "existing", new MockHttpSession())
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.mode").value("authenticate"));
+            .andExpect(jsonPath("$.mode").value("authenticate"))
+            // Naming nobody: the passkey that answers decides whose claim it is.
+            .andExpect(jsonPath("$.options.publicKey.allowCredentials").doesNotExist());
+        options(code, null, new MockHttpSession())
+            .andExpect(jsonPath("$.mode").value("register"))
+            .andExpect(jsonPath("$.options.publicKey.excludeCredentials[0].id").value(credential));
     }
 
-    @Test void aWrongPasswordAndAWrongAddressReadTheSame() throws Exception {
+    /** A link claimed when an email named the person still asks that person's passkey, by its handle. */
+    @Test void aLinkClaimedByAnEmailHolderStillOpensWithItsPasskey() throws Exception {
+        String email = "before@example.com";
+        long holderId = holders.create(email, tickets.userHandleFor(email));
+        holders.insert(holderId, new ByteArray(new byte[] { 7, 7, 7, 7 }), new ByteArray(new byte[] { 5, 6 }),
+            0, "00000000000000000000000000000000");
+        long linkId = createLink("{\"originalUrl\":\"https://example.com/claimed\"}").get("id").asLong();
+        String code = issue(linkId, email);
+        long recipientId = jdbc.queryForObject("SELECT id FROM link_recipient WHERE short_code = ?", Long.class, code);
+        assertEquals(1, recipients.bindIfUnclaimed(recipientId, holderId));
+
+        options(code, null, new MockHttpSession())
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.mode").value("authenticate"))
+            .andExpect(jsonPath("$.options.publicKey.allowCredentials[0].id")
+                .value(new ByteArray(new byte[] { 7, 7, 7, 7 }).getBase64Url()));
+    }
+
+    @Test void aWrongPasswordIsRefused() throws Exception {
         long linkId = createLink("{\"originalUrl\":\"https://example.com/d\",\"password\":\"right-one\"}")
             .get("id").asLong();
         String code = issue(linkId, "same@example.com");
-        String wrongPassword = options(code, "wrong-one", "same@example.com", new MockHttpSession())
-            .andExpect(status().isForbidden()).andReturn().getResponse().getContentAsString();
-        String wrongAddress = options(code, "right-one", "other@example.com", new MockHttpSession())
-            .andExpect(status().isForbidden()).andReturn().getResponse().getContentAsString();
-        assertEquals(wrongPassword, wrongAddress, "어느 쪽이 틀렸는지 드러나면 안 됩니다");
+        options(code, "wrong-one", new MockHttpSession())
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("비밀번호를 확인해 주세요."));
+        options(code, "right-one", new MockHttpSession()).andExpect(status().isOk());
     }
 
     @Test void guessingAtOneAddressIsCutOff() throws Exception {
@@ -171,10 +199,10 @@ class LinkSecurityTest {
             .get("id").asLong();
         String code = issue(linkId, "guess@example.com");
         for (int i = 0; i < 3; i++) {
-            options(code, "guess-" + i, "guess@example.com", new MockHttpSession()).andExpect(status().isForbidden());
+            options(code, "guess-" + i, new MockHttpSession()).andExpect(status().isForbidden());
         }
         // Even the right answer waits once the address has been guessed at enough.
-        options(code, "right-one", "guess@example.com", new MockHttpSession())
+        options(code, "right-one", new MockHttpSession())
             .andExpect(status().isTooManyRequests());
     }
 
@@ -184,18 +212,18 @@ class LinkSecurityTest {
         for (int round = 0; round < 3; round++) {
             String code = issue(linkId, "sweep" + round + "@example.com");
             for (int i = 0; i < 2; i++) {
-                options(code, "nope", "sweep" + round + "@example.com", new MockHttpSession())
+                options(code, "nope", new MockHttpSession())
                     .andExpect(status().isForbidden());
             }
         }
         String fresh = issue(linkId, "fresh@example.com");
-        options(fresh, "right-one", "fresh@example.com", new MockHttpSession())
+        options(fresh, "right-one", new MockHttpSession())
             .andExpect(status().isTooManyRequests());
         // Somebody else, elsewhere, is not held up by it.
         mvc.perform(post("/api/links/s/" + fresh + "/passkey/options").session(new MockHttpSession())
                 .with(csrf()).with(request -> { request.setRemoteAddr("10.99.99.99"); return request; })
                 .contentType("application/json")
-                .content("{\"password\":\"right-one\",\"contact\":\"fresh@example.com\"}"))
+                .content("{\"password\":\"right-one\"}"))
             .andExpect(status().isOk());
     }
 

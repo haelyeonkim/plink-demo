@@ -35,10 +35,11 @@ async function recipient(delivery, email) {
   } });
   const path = new URL(delivery.recipient.url).pathname;
   await page.goto(base + path);
-  const contact = page.getByLabel('받으신 이메일');
-  await visible(contact);
-  await contact.fill(email);
-  await page.getByRole('button', { name: '패스키로 수신 확정하기', exact: true }).click();
+  // Claiming asks nothing but the passkey: confirm it was sent to you, then make one.
+  const agree = page.getByLabel('제가 받은 링크가 맞아요');
+  await visible(agree);
+  await agree.check();
+  await page.getByRole('button', { name: '이 휴대폰으로 받기', exact: true }).click();
   await visible(page.locator('.content-view .artwork-status').filter({ hasText: '미판매' }));
   // Reload and exercise an assertion with the newly registered passkey as well.
   await page.reload();

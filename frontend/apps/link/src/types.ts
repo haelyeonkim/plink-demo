@@ -62,7 +62,8 @@ export interface AccessInfo {
   issuer: string | null;
   path: string;
   /** Whether the visitor still has to prove which address this was sent to. */
-  contactRequired?: boolean;
+  /** For an unclaimed link, which way to offer first; only a hint, the passkey decides. */
+  suggest?: 'new' | 'existing';
   expiresAt?: string | null;
   maxViews?: number;
   viewCount?: number;

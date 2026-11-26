@@ -7,6 +7,8 @@ import {
   type CommunitySummary, type InviteView, type TicketCoupon, type TicketSchedule, type TicketView, type VenueView,
 } from '../ticket/api';
 import { coarsePosition, passkeyError, runCeremony, supportsPasskeys, type CeremonyStage } from '../ticket/passkey';
+import ClaimConsent from '@shared/components/ClaimConsent';
+import { alreadyOnDevice, preferredChoice, rememberPasskey, type ClaimChoice } from '@shared/passkeyClaim';
 import { CodeMinter, type Grant } from '../ticket/codes';
 import { holdZoom } from '@shared/zoom';
 import FaceEnrolment from './FaceEnrolment';
@@ -53,11 +55,6 @@ function inAppBrowser(): boolean {
   return IN_APP.some(pattern => pattern.test(navigator.userAgent));
 }
 
-/** What the registration form asks to be typed: the email, or the email or phone. */
-function contactLabel(ticket: TicketView, welcoming: boolean): string {
-  if (welcoming) return ticket.event.claimByPhone ? '초대받은 이메일 또는 휴대폰 번호' : '초대받은 이메일';
-  return ticket.event.claimByPhone ? '입장권을 받은 이메일 또는 휴대폰 번호' : '입장권을 받은 이메일';
-}
 
 /**
  * The countdown ring around the code, as a path.
@@ -121,8 +118,10 @@ export default function TicketPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  // The email or phone number the ticket went to, typed back to register or recover it.
+  // The email or phone number the ticket went to, typed on a new phone to have it sent again.
   const [email, setEmail] = useState('');
+  // The visitor has confirmed this ticket was sent to them, before claiming it.
+  const [agreed, setAgreed] = useState(false);
   const [grant, setGrant] = useState<Grant | null>(null);
   const [faceEnrolled, setFaceEnrolled] = useState(false);
   // Everything that is not "get me through the door" folds away, so the ticket itself
@@ -408,9 +407,19 @@ export default function TicketPage() {
     } finally { setBusy(false); }
   }
 
-  const claim = () => guard(async () => {
-    await sealed('claim', onStage =>
-      runCeremony(sessionId, token, { contact: email.trim(), onStage, geoCheck: ticket?.event.geoCheck }));
+  /** Claims the ticket the way the visitor chose: a new passkey, or one they already have. */
+  const claim = (choice: ClaimChoice) => guard(async () => {
+    await sealed('claim', async onStage => {
+      try {
+        return await runCeremony(sessionId, token, { choice, onStage, geoCheck: ticket?.event.geoCheck });
+      } catch (err) {
+        // The phone already holds this person's passkey and would not make a second one:
+        // answer that one instead.
+        if (choice !== 'new' || !alreadyOnDevice(err)) throw err;
+        return runCeremony(sessionId, token, { choice: 'existing', onStage, geoCheck: ticket?.event.geoCheck });
+      }
+    });
+    rememberPasskey();
     setNotice('입장권을 등록했어요.');
     await reload();
   });
@@ -582,9 +591,6 @@ export default function TicketPage() {
       </section>
     );
   }
-
-  // An organiser who hands links over in person may let the link stand alone.
-  const skipCheck = ticket.event.claimSkipCheck === true;
 
 
   // An event over several days: which of them this ticket admits, and whether it is over.
@@ -821,32 +827,11 @@ export default function TicketPage() {
         ) : (
           <>
             {!welcoming && <h3>입장권 등록</h3>}
-            <p className="hint-text">
-              {skipCheck
-                ? '이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'
-                : welcoming
-                  ? (ticket.event.claimByPhone ? '초대받은 이메일이나 휴대폰 번호를 적으면' : '초대받은 이메일을 적으면')
-                    + ' 이 휴대폰에 입장권이 등록돼요.'
-                  : (ticket.event.claimByPhone ? '입장권을 받은 이메일이나 휴대폰 번호를 입력하면' : '입장권을 받은 이메일을 입력하면')
-                    + ' 이 휴대폰 하나에 입장권을 등록합니다. 먼저 등록한 기기에 묶이니 링크를 공유하지 마세요.'}
-            </p>
-            {/* The email or phone the ticket went to, typed back: it catches a link that
-                reached the wrong person by mistake. Off when the organiser chose so. */}
-            <form onSubmit={e => { e.preventDefault(); claim(); }}>
-              {!skipCheck && (
-                <div className="field">
-                  <label htmlFor="ticket-email">{contactLabel(ticket, welcoming)}</label>
-                  <input id="ticket-email" type={ticket.event.claimByPhone ? 'text' : 'email'}
-                    inputMode={ticket.event.claimByPhone ? 'text' : 'email'} autoComplete="email" required
-                    value={email} onChange={e => setEmail(e.target.value)}
-                    placeholder={ticket.event.claimByPhone ? 'you@example.com 또는 01012345678' : 'you@example.com'} />
-                </div>
-              )}
-              <button className="btn-primary" type="submit"
-                disabled={busy || (!skipCheck && !email.trim()) || !supportsPasskeys()}>
-                이 휴대폰에 등록하기
-              </button>
-            </form>
+            {welcoming && <p className="hint-text">이 휴대폰에 등록하면 초대한 분의 일행으로 입장권이 묶여요.</p>}
+            {supportsPasskeys()
+              ? <ClaimConsent what="입장권" preferred={preferredChoice(ticket.suggest)} agreed={agreed} onAgreed={setAgreed}
+                  busy={busy} onClaim={choice => void claim(choice)} />
+              : <p className="error-text" role="alert">패스키를 지원하는 브라우저에서 열어 주세요. Safari 또는 Chrome의 최신 버전을 사용할 수 있어요.</p>}
             {welcoming && (
               <p className="invite-hero-foot">이 입장권은 내 이름으로 발급됐어요.<br />등록하면 초대한 분의 일행으로 묶여요.</p>
             )}

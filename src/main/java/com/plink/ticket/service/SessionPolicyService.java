@@ -44,7 +44,7 @@ public class SessionPolicyService {
     /** What a save asked to change, already checked. A null part was not sent. */
     private record Plan(String reentryMode, int reentryMax, int graceMinutes, int cooldownSeconds,
             boolean exitScanRequired, String unmatchedExit,
-            Crowd crowd, DayClose dayClose, Boolean claimSkipCheck, Geo geo, Face face,
+            Crowd crowd, DayClose dayClose, Geo geo, Face face,
             boolean seatsSent, String seats, boolean tiersSent, String tiers,
             String inviteStatus, Map<String, Integer> inviteQuotas) {}
     private record Crowd(int busy, int steady) {}
@@ -73,7 +73,6 @@ public class SessionPolicyService {
             // A day's hours are read from the hour it turns, so the first day's opening moves with it.
             schedule.syncStart(id);
         }
-        if (plan.claimSkipCheck != null) sessions.updateClaimPolicy(id, plan.claimSkipCheck);
         if (plan.geo != null) {
             sessions.updateGeoPolicy(id, plan.geo.lat, plan.geo.lon, plan.geo.radiusMeters, plan.geo.mode);
         }
@@ -125,8 +124,6 @@ public class SessionPolicyService {
                 within(number(body.get("dayCloseHour"), current.dayCloseHour), 0, 23,
                     "날짜 기준 시각은 0시부터 23시 사이예요."));
         }
-        Boolean claimSkipCheck = body.containsKey("claimSkipCheck")
-            ? flag(body.get("claimSkipCheck"), current.claimSkipCheck) : null;
         Geo geo = null;
         if (body.containsKey("geoMode") || body.containsKey("venueLat") || body.containsKey("venueLon")
                 || body.containsKey("geoRadiusMeters")) {
@@ -167,7 +164,7 @@ public class SessionPolicyService {
             }
         }
         return new Plan(mode, reentryMax, grace, cooldown, exitScanRequired, unmatched,
-            crowd, dayClose, claimSkipCheck, geo, face,
+            crowd, dayClose, geo, face,
             body.containsKey("seats"), catalogue(body.get("seats"), null),
             body.containsKey("tiers"), catalogue(body.get("tiers"), null),
             inviteStatus, inviteQuotas(body.get("inviteQuotas")));

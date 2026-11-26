@@ -17,11 +17,11 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Passkeys belong to a person, addressed by their verified email.
+ * Passkeys belong to a person, and the person is whoever holds them.
  *
- * <p>The WebAuthn username here is that email, so the browser offers one identity for
- * the domain no matter how many tickets it covers, and a second device adds a
- * credential to the same identity rather than starting a new one.
+ * <p>The WebAuthn username here is the holder's user handle: a holder may have no email
+ * at all, and the handle is the one thing every holder has. Holders made when an email
+ * named the person keep the handle derived from it, so their passkeys still answer.
  */
 @Repository
 public class HolderRepository implements CredentialRepository {
@@ -77,6 +77,47 @@ public class HolderRepository implements CredentialRepository {
         return jdbc.query("SELECT * FROM holder WHERE email = ?", HOLDER, email).stream().findFirst();
     }
 
+    public Optional<Holder> findByHandle(String userHandle) {
+        return jdbc.query("SELECT * FROM holder WHERE user_handle = ?", HOLDER, userHandle).stream().findFirst();
+    }
+
+    /**
+     * Holders that have already claimed something sent to this email or phone, and the
+     * holder an email named before claims went by passkey. Only a hint for which
+     * ceremony a claim page offers first: nothing is bound on it, the passkey decides.
+     */
+    public List<Long> claimedByContact(String email, String phone) {
+        String mail = email == null || email.isBlank() ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+        List<String> numbers = phoneForms(phone);
+        if (mail == null && numbers.isEmpty()) return List.of();
+        // Unmatchable placeholders keep the statement one shape whether or not a phone was given.
+        String a = numbers.size() > 0 ? numbers.get(0) : "-", b = numbers.size() > 1 ? numbers.get(1) : "-",
+            c = numbers.size() > 2 ? numbers.get(2) : "-";
+        return jdbc.queryForList("SELECT DISTINCT holder_id FROM ("
+            + "SELECT holder_id FROM link_recipient WHERE holder_id IS NOT NULL AND LOWER(email) = ? "
+            + "UNION SELECT holder_id FROM ticket WHERE holder_id IS NOT NULL "
+            + "AND (LOWER(issued_to_email) = ? OR phone IN (?, ?, ?)) "
+            + "UNION SELECT id AS holder_id FROM holder WHERE LOWER(email) = ?) claimed "
+            // A person is somebody with a passkey: a registration given up halfway, under the
+            // old flow, left a holder with an address and nothing to answer with.
+            + "WHERE EXISTS (SELECT 1 FROM holder_credential c WHERE c.holder_id = claimed.holder_id)",
+            Long.class, mail, mail, a, b, c, mail);
+    }
+
+    /**
+     * The ways one Korean mobile number is stored: as dialled at home (010...) and with the
+     * country code, with or without the plus. Issuing keeps whatever form it was given.
+     */
+    static List<String> phoneForms(String phone) {
+        if (phone == null || phone.isBlank()) return List.of();
+        String digits = phone.replaceAll("\\D", "");
+        String local = digits.startsWith("82") && digits.length() >= 11 ? "0" + digits.substring(2) : digits;
+        if (local.length() < 9) return List.of();
+        if (!local.startsWith("0")) return List.of(local);
+        String national = local.substring(1);
+        return List.of(local, "+82" + national, "82" + national);
+    }
+
     public Optional<Holder> findById(long id) {
         return jdbc.query("SELECT * FROM holder WHERE id = ?", HOLDER, id).stream().findFirst();
     }
@@ -100,7 +141,6 @@ public class HolderRepository implements CredentialRepository {
 
     public List<Credential> findByHolder(long holderId) { return query("c.holder_id = ?", holderId); }
 
-    public List<Credential> findByEmailAddress(String email) { return query("h.email = ?", email); }
 
     public Optional<Credential> findByCredentialId(String credentialId) {
         return query("c.credential_id = ?", credentialId).stream().findFirst();
@@ -120,21 +160,27 @@ public class HolderRepository implements CredentialRepository {
             + "WHERE credential_id = ?", signatureCount, credentialId);
     }
 
-    @Override public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) {
+    /** The holders' passkeys, as a ceremony lists them to allow or to exclude. */
+    public Set<PublicKeyCredentialDescriptor> descriptors(List<Long> holderIds) {
         Set<PublicKeyCredentialDescriptor> ids = new HashSet<>();
-        for (Credential c : findByEmailAddress(username)) {
-            ids.add(PublicKeyCredentialDescriptor.builder().id(decode(c.credentialId)).build());
+        for (long holderId : holderIds) {
+            for (Credential c : findByHolder(holderId)) {
+                ids.add(PublicKeyCredentialDescriptor.builder().id(decode(c.credentialId)).build());
+            }
         }
         return ids;
     }
 
+    @Override public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) {
+        return findByHandle(username).map(h -> descriptors(List.of(h.id))).orElseGet(HashSet::new);
+    }
+
     @Override public Optional<ByteArray> getUserHandleForUsername(String username) {
-        return findByEmail(username).map(h -> decode(h.userHandle));
+        return findByHandle(username).map(h -> decode(h.userHandle));
     }
 
     @Override public Optional<String> getUsernameForUserHandle(ByteArray handle) {
-        return jdbc.query("SELECT * FROM holder WHERE user_handle = ?", HOLDER, handle.getBase64Url())
-            .stream().map(h -> h.email).findFirst();
+        return findByHandle(handle.getBase64Url()).map(h -> h.userHandle);
     }
 
     @Override public Optional<RegisteredCredential> lookup(ByteArray id, ByteArray handle) {

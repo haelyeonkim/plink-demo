@@ -1,4 +1,5 @@
 import { mutate } from '@shared/auth';
+import type { ClaimChoice } from '@shared/passkeyClaim';
 
 function decode(value: string): ArrayBuffer {
   const raw = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
@@ -35,34 +36,10 @@ export class PasskeyCeremonyError extends Error {
   }
 }
 
-/**
- * The recipient's address has no passkey yet, so the server mailed a code to it before
- * it will let one be made. Not a failure: the page asks for the code and tries again.
- */
-export class EmailCodeRequired extends Error {
-  readonly sentTo: string;
-  readonly sent: boolean;
-
-  constructor(sentTo: string, sent: boolean) {
-    super('이메일로 받은 인증번호를 입력해 주세요.');
-    this.name = 'EmailCodeRequired';
-    this.sentTo = sentTo;
-    this.sent = sent;
-  }
-}
-
 function passkeyBase(code: string, slug?: string) {
   return slug
     ? `/api/links/s/${encodeURIComponent(slug)}/${encodeURIComponent(code)}/passkey`
     : `/api/links/s/${encodeURIComponent(code)}/passkey`;
-}
-
-/** Hands back the code that was mailed; the next openWithPasskey can then register. */
-export async function verifyEmailCode(code: string, otp: string, slug?: string): Promise<void> {
-  await readResponse(await mutate(`${passkeyBase(code, slug)}/verify`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: otp.trim() }),
-  }));
 }
 
 export function supportsPasskeys() {
@@ -77,14 +54,17 @@ export interface Opened {
   content?: { intro?: string; columns?: '1' | '2'; artworks?: Array<Record<string, string>> };
 }
 
+/**
+ * Opens the link with a passkey. A claimed link asks its person's passkey; an unclaimed one
+ * makes a new passkey, or with {@code choice} "existing" answers one the visitor already has.
+ */
 export async function openWithPasskey(code: string, password: string, slug?: string,
-    contact?: string): Promise<Opened> {
+    choice?: ClaimChoice): Promise<Opened> {
   const base = passkeyBase(code, slug);
-  const { mode, options, sentTo, sent } = await readResponse(await mutate(`${base}/options`, {
+  const { mode, options } = await readResponse(await mutate(`${base}/options`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, contact }),
+    body: JSON.stringify({ password, choice }),
   }));
-  if (mode === 'verify') throw new EmailCodeRequired(sentTo, sent !== false);
   const publicKey = options.publicKey;
   publicKey.challenge = decode(publicKey.challenge);
   let credential: PublicKeyCredential | null;
@@ -130,7 +110,7 @@ export function passkeyError(error: unknown) {
       return (mode === 'register'
         ? '패스키를 만들지 못했어요. 창을 닫았다면 다시 눌러 주시고, 계속 실패하면 기기의 화면 잠금(지문·얼굴·PIN)과 '
           + 'iCloud 키체인 또는 Google 비밀번호 관리자가 켜져 있는지 확인해 주세요.'
-        : '패스키 인증이 취소되었거나 사용할 패스키가 없어요. 처음 등록한 패스키로 다시 시도해 주세요.') + detail;
+        : '패스키 인증이 취소되었거나 이 기기에 사용할 패스키가 없어요. 처음이라면 "새로 만들기"로 받아 주세요.') + detail;
     }
     if (cause.name === 'NotSupportedError') {
       return '이 브라우저에서는 패스키를 사용할 수 없어요. 최신 Safari 또는 Chrome에서 열어 주세요.' + detail;

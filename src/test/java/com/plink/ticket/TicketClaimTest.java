@@ -46,6 +46,7 @@ class TicketClaimTest {
     @Autowired EventSessionRepository sessions;
     @Autowired RecordingEmail.Mailbox mailbox;
     @Autowired HolderRepository holders;
+    @Autowired com.plink.ticket.repository.TicketRepository ticketRows;
 
     private long sessionId;
     private String token;
@@ -228,12 +229,13 @@ class TicketClaimTest {
             .andExpect(status().isForbidden());
     }
 
-    /** By default the email or phone is checked; the page says so, and which of them it can take. */
-    @Test void thePageReportsWhatRegistrationAsksFor() throws Exception {
+    /** Nothing is typed to claim: the page names no check, only which number can recover it. */
+    @Test void thePageAsksForNothingButAPasskey() throws Exception {
         mvc.perform(get(path()).header("User-Agent", PHONE))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.event.claimSkipCheck").value(false))
-            .andExpect(jsonPath("$.event.claimByPhone").value(false));
+            .andExpect(jsonPath("$.event.claimSkipCheck").doesNotExist())
+            .andExpect(jsonPath("$.event.claimByPhone").value(false))
+            .andExpect(jsonPath("$.suggest").exists());
     }
 
     @Test void thePhoneIsAskedWhereItIsOnlyWhenTheEventChecks() throws Exception {
@@ -249,117 +251,68 @@ class TicketClaimTest {
         sessions.updateGeoPolicy(sessionId, null, null, 300, "OFF");
     }
 
-    /** An organiser handing links over in person can let the link stand alone. */
-    @Test void turningTheCheckOffLetsTheLinkStandAlone() throws Exception {
-        sessions.updateClaimPolicy(sessionId, true);
+    /** Holding the link is the claim: a new passkey, or one the visitor already has. */
+    @Test void holdingTheLinkIsTheClaim() throws Exception {
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
                 .header("User-Agent", PHONE).contentType("application/json").content("{}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.options").exists());
-
-        sessions.updateClaimPolicy(sessionId, false);
+            .andExpect(jsonPath("$.mode").value("register"))
+            // Listed on the phone by when it was made, never by the address it was sent to.
+            .andExpect(jsonPath("$.options.publicKey.user.name").value(org.hamcrest.Matchers.startsWith("패스링크 · ")))
+            .andExpect(jsonPath("$.options.publicKey.authenticatorSelection.residentKey").value("required"));
         mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
-            .andExpect(status().isBadRequest());
-    }
-
-    /**
-     * The typed email or phone is all that stands between a forwarded link and a
-     * stranger's phone, so it is checked rather than recorded.
-     */
-    @Test void claimingNeedsTheAddressTheTicketWentTo() throws Exception {
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("이메일이나 휴대폰 번호를 입력")));
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content(contact("someone.else@example.com")))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("일치하지 않아요")));
-        // Case and surrounding spaces are how people actually type an address.
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content(contact("  Holder@Example.com ")))
-            .andExpect(status().isOk());
-        // This ticket went out without a phone, so a number cannot claim it.
-        mvc.perform(post(path() + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content(contact("01012345678")))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("휴대폰 번호가 없어요")));
-    }
-
-    /** A ticket that went to a phone as well can be claimed with either, however the number is written. */
-    @Test void thePhoneTheTicketWentToClaimsItToo() throws Exception {
-        long phoneEvent = sessions.insert("휴대폰 회차", null, Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
-        tickets.issue(phoneEvent, "phone.holder@example.com", null, null, "010-1234-5678");
-        String url = mailbox.lastTicketUrl().orElseThrow();
-        String base = "/api/tickets/" + phoneEvent + "/" + url.substring(url.lastIndexOf('/') + 1);
-        mvc.perform(get(base).header("User-Agent", PHONE)).andExpect(jsonPath("$.event.claimByPhone").value(true));
-        for (String number : new String[] { "01012345678", "010-1234-5678", "+82 10 1234 5678" }) {
-            mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                    .header("User-Agent", PHONE).contentType("application/json").content(contact(number)))
-                .andExpect(status().isOk());
-        }
-        mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content(contact("010-9999-0000")))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("휴대폰 번호와 일치하지")));
-    }
-
-    /**
-     * The reason this identity exists: a person accumulates tickets, not passkeys. Their
-     * next ticket - a different event, since one event gives an address one ticket -
-     * asks them to prove the passkey they already have instead of creating another
-     * entry on their device.
-     */
-    @Test void aSecondTicketForTheSamePersonAuthenticatesInsteadOfRegistering() throws Exception {
-        MockHttpSession first = verifiedSession("holder@example.com");
-        mvc.perform(post(path() + "/passkey/options").session(first).with(csrf())
-                .header("User-Agent", PHONE).contentType("application/json").content(contact("holder@example.com")))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.mode").value("register"));
-
-        // Stand in for a completed registration on this person's device.
-        long holderId = holders.findByEmail("holder@example.com").orElseThrow().id;
-        holders.insert(holderId, new ByteArray(new byte[] { 1, 2, 3, 4 }),
-            new ByteArray(new byte[] { 5, 6, 7, 8 }), 0, "test");
-
-        long nextEvent = sessions.insert("다음 회차", null,
-            Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
-        tickets.issue(nextEvent, "holder@example.com", "D-9", null);
-        String secondUrl = mailbox.lastTicketUrl().orElseThrow();
-        String secondToken = secondUrl.substring(secondUrl.lastIndexOf('/') + 1);
-        MockHttpSession second = verifiedSession("holder@example.com",
-            "/api/tickets/" + nextEvent + "/" + secondToken);
-
-        mvc.perform(post("/api/tickets/" + nextEvent + "/" + secondToken + "/passkey/options")
-                .session(second).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content(contact("holder@example.com")))
+                .header("User-Agent", PHONE).contentType("application/json").content("{\"choice\":\"existing\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.mode").value("authenticate"));
     }
 
-    @Test void adifferentPersonStillRegistersTheirOwnPasskey() throws Exception {
+    /**
+     * A person accumulates tickets, not passkeys. Once something sent to their email or
+     * phone has been claimed, their next ticket's page offers "existing" first, and a new
+     * registration excludes that passkey - so their phone refuses a second one.
+     */
+    @Test void aContactThatClaimedBeforeIsOfferedItsPasskeyFirst() throws Exception {
+        long phoneEvent = sessions.insert("휴대폰 회차", null, Timestamp.from(Instant.now().plus(3, ChronoUnit.HOURS)), null);
+        tickets.issue(phoneEvent, "phone.holder@example.com", null, null, "010-1234-5678");
+        String firstUrl = mailbox.lastTicketUrl().orElseThrow();
+        long firstTicket = tickets.resolve(phoneEvent, firstUrl.substring(firstUrl.lastIndexOf('/') + 1)).ticket.id;
+        // Stand in for the first claim: a person without an email, holding one passkey.
+        long holderId = holders.create(null, "phone-holder-handle");
+        holders.insert(holderId, new ByteArray(new byte[] { 9, 8, 7, 6 }), new ByteArray(new byte[] { 5, 6, 7, 8 }), 0, "test");
+        ticketRows.bind(firstTicket, holderId, null);
+
+        long nextEvent = sessions.insert("다음 회차", null, Timestamp.from(Instant.now().plus(4, ChronoUnit.HOURS)), null);
+        tickets.issue(nextEvent, "another.address@example.com", null, null, "+82 10 1234 5678");
+        String url = mailbox.lastTicketUrl().orElseThrow();
+        String base = "/api/tickets/" + nextEvent + "/" + url.substring(url.lastIndexOf('/') + 1);
+        String credential = new ByteArray(new byte[] { 9, 8, 7, 6 }).getBase64Url();
+
+        mvc.perform(get(base).header("User-Agent", PHONE)).andExpect(jsonPath("$.suggest").value("existing"));
+        mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{\"choice\":\"existing\"}"))
+            .andExpect(jsonPath("$.mode").value("authenticate"))
+            // Naming nobody: the passkey that answers decides whose claim it is.
+            .andExpect(jsonPath("$.options.publicKey.allowCredentials").doesNotExist());
+        mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
+            .andExpect(jsonPath("$.mode").value("register"))
+            .andExpect(jsonPath("$.options.publicKey.excludeCredentials[0].id").value(credential));
+    }
+
+    /** Somebody new to Passlink is offered a new passkey, excluding nobody's. */
+    @Test void aDifferentPersonRegistersTheirOwnPasskey() throws Exception {
         long otherSession = sessions.insert("다른 회차", null,
             Timestamp.from(Instant.now().plus(2, ChronoUnit.HOURS)), null);
         tickets.issue(otherSession, "someone.else@example.com", "E-1", null);
         String url = mailbox.lastTicketUrl().orElseThrow();
-        String token = url.substring(url.lastIndexOf('/') + 1);
-        MockHttpSession session = verifiedSession("someone.else@example.com",
-            "/api/tickets/" + otherSession + "/" + token);
+        String base = "/api/tickets/" + otherSession + "/" + url.substring(url.lastIndexOf('/') + 1);
 
-        mvc.perform(post("/api/tickets/" + otherSession + "/" + token + "/passkey/options")
-                .session(session).with(csrf()).header("User-Agent", PHONE)
-                .contentType("application/json").content(contact("someone.else@example.com")))
+        mvc.perform(get(base).header("User-Agent", PHONE)).andExpect(jsonPath("$.suggest").value("new"));
+        mvc.perform(post(base + "/passkey/options").session(new MockHttpSession()).with(csrf())
+                .header("User-Agent", PHONE).contentType("application/json").content("{}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.mode").value("register"));
-    }
-
-    private MockHttpSession verifiedSession(String email) throws Exception {
-        return verifiedSession(email, path());
-    }
-
-    private MockHttpSession verifiedSession(String email, String base) {
-        return new MockHttpSession();
+            .andExpect(jsonPath("$.mode").value("register"))
+            .andExpect(jsonPath("$.options.publicKey.excludeCredentials").isEmpty());
     }
 
     private static String contact(String value) {
