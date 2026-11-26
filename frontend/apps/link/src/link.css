@@ -1080,3 +1080,32 @@ select.artwork-status {
 .artwork-request .modal label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; text-align: left; }
 .artwork-request .modal textarea { width: 100%; min-height: 90px; }
 .artwork-request .modal-details { text-align: left; }
+
+
+/* ---- The ticket tool's front door, in the ticket's own identity ----
+   The page is served by the link app, so the ticket identity (see apps/ticket/src/ticket.css)
+   is switched on by what the page contains: the tokens move on :root, which re-dresses the
+   shared header and footer too. */
+:root:has(.front-ticket) {
+  --ink: #0d1b3f; --muted: #5b6479; --blue: #2740f0; --accent-soft: #eef1ff; --mint: #0e8f5f;
+  --line: #dadfe8; --bg: #f2f4f7; --bg-section: #ebeef3; --radius: 8px; --shadow: 0 1px 2px rgba(13, 27, 63, 0.06);
+  --font: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-serial: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+:root:has(.front-ticket) body { font-family: var(--font); letter-spacing: 0; -webkit-font-smoothing: antialiased; }
+.front-ticket { --accent: var(--blue); --soft: var(--accent-soft); background: var(--bg); }
+.front-ticket .front-hero { gap: 48px 64px; padding: 64px 24px 56px; }
+.front-ticket .front-copy { flex: 1 1 420px; }
+.front-ticket .front-copy h1 { word-break: keep-all; text-wrap: balance; font-size: 52px; line-height: 1.14; letter-spacing: -0.035em; margin-bottom: 18px; }
+.front-ticket .front-copy p { color: var(--muted); }
+.front-ticket .front-start { background: var(--blue); border-radius: 8px; box-shadow: none; font-weight: 600; }
+.front-ticket .front-start:hover { background: #1f33d4; transform: none; box-shadow: none; }
+.front-ticket .front-steps li { border-radius: 10px; box-shadow: none; border: 1px solid var(--line); background: #fff; }
+.front-ticket .front-step-icon { border-radius: 8px; }
+.front-ticket .front-steps b { letter-spacing: -0.02em; }
+.front-ticket .front-steps-head h2 { letter-spacing: -0.02em; }
+.front-ticket .front-steps p, .front-ticket .front-facts span { color: var(--muted); }
+.front-specimen { flex: 0 1 400px; width: 100%; max-width: 400px; margin: 0 auto; }
+.front-specimen .access-card.ticket-card { margin: 0; }
+.front-specimen-cta { display: block; text-align: center; padding: 16px 24px; border-radius: 14px; background: var(--blue); color: #fff; font-weight: 600; font-size: 16px; }
+@media (max-width: 700px) { .front-ticket .front-copy h1 { font-size: 34px; } .front-ticket .front-hero { padding-top: 40px; } }

@@ -1,5 +1,6 @@
 import { AppLink as Link, useBrand } from '@shared/scope';
 import Icon from '@shared/components/Icon';
+import Guilloche, { Serial } from '@shared/components/Guilloche';
 import { WALK, type Tool } from './Walkthrough';
 
 /** Each tool's front door: what it promises, the way in, and what to know. */
@@ -34,6 +35,34 @@ const MAIN: Record<Tool, {
   },
 };
 
+
+/**
+ * A real ticket, drawn with the holder's own components and styles, so the front door shows
+ * the thing it is promising instead of describing it. Fixed values: it is a specimen.
+ */
+function Specimen() {
+  return (
+    <div className="front-specimen" role="img" aria-label="입장권 예시: 2026 가을 아트페어, 코엑스 컨퍼런스룸 300">
+      <div className="access-card ticket-card">
+        <div className="ticket-top">
+          <Guilloche seed="7KQH2M9XT4WB" />
+          <p className="eyebrow center"><span></span> 2026 가을 아트페어</p>
+          <h2>입장권<span className="pill pill-out">장외</span></h2>
+          <dl className="ticket-meta">
+            <dt>일시</dt><dd>2026. 11. 7. 오전 10:00</dd>
+            <dt>장소</dt><dd>코엑스 컨퍼런스룸 300</dd>
+            <dt>등록 이메일</dt><dd>h***@example.com</dd>
+          </dl>
+        </div>
+        <div className="ticket-stub">
+          <span className="front-specimen-cta">입장하기</span>
+          <Serial value="7KQH2M9XT4WB" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One tool's front door, for the people who came to find out about it: what it promises,
  * the way into its console, the four steps at a glance - the guide walks through them on
@@ -55,6 +84,7 @@ export default function ToolMain({ tool }: { tool: Tool }) {
             <Link className="front-start" to={brand.console}>{main.start}<Icon name="arrow-right" /></Link>
           </div>
         </div>
+        {tool === 'ticket' && <Specimen />}
       </section>
 
       <section className="front-steps" aria-labelledby="steps-title">

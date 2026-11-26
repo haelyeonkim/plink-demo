@@ -11,6 +11,7 @@ import type { ImportResult } from '@shared/components/BulkImport';
 import IssuePanel, { type IssueInput, type IssueMode, type MailedResult } from './IssuePanel';
 import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
+import EventBar from './EventBar';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
 import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
@@ -31,6 +32,15 @@ import {
 type Tab = ConsoleTab;
 /** Each screen's title, which is also its entry in the event's menu. */
 const SETTINGS_NAMES: Record<string, string> = { details: '이벤트 정보', policy: '재입장·퇴장', crowd: '혼잡도', invite: '초대' };
+
+/** The overview has no name of its own to repeat from the menu: it says where the event stands. */
+function overviewTitle(session: SessionRow): string {
+  const when = eventWhen(session.startsAt, session.scheduleEndsAt);
+  if (when === 'today') return '오늘 진행 중이에요';
+  if (when === 'past') return '종료된 이벤트예요';
+  const days = Math.ceil((new Date(session.startsAt).getTime() - Date.now()) / 86400000);
+  return days > 0 ? `행사까지 ${days}일 남았어요` : '곧 시작해요';
+}
 
 const TAB_TITLES: Record<Tab, string> = {
   overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
@@ -65,6 +75,41 @@ const SETTINGS_TABS: Array<[SettingsTab, string]> = [
   ['event', '이벤트 정보'], ['schedule', '일정'], ['policy', '재입장 · 퇴장'], ['face', '얼굴 입장'], ['crowd', '혼잡도'], ['invite', '초대'],
   ['fields', '발급 항목'],
 ];
+/**
+ * The settings page is one long scroll; this is its table of contents. It stays at the top
+ * and marks the section being read, so a long page never leaves you wondering where you are.
+ */
+function SettingsQuickNav() {
+  const ids = [...SETTINGS_TABS.map(([key]) => `settings-${key}`), 'settings-delete'];
+  const [current, setCurrent] = useState(ids[0]);
+  useEffect(() => {
+    const targets = ids.map(id => document.getElementById(id)).filter((el): el is HTMLElement => el !== null);
+    if (typeof IntersectionObserver === 'undefined' || targets.length === 0) return;
+    // A section counts as read once its top passes the upper fifth of the window.
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) seen.add(entry.target.id); else seen.delete(entry.target.id);
+      }
+      const first = ids.find(id => seen.has(id));
+      if (first) setCurrent(first);
+    }, { rootMargin: '-20% 0px -65% 0px' });
+    targets.forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <nav className="settings-quick" aria-label="설정 항목">
+      {SETTINGS_TABS.map(([key, label]) => (
+        <button key={key} type="button" aria-current={current === `settings-${key}` ? 'true' : undefined}
+          onClick={() => scrollToElement(document.getElementById(`settings-${key}`))}>{label}</button>
+      ))}
+      <button type="button" className="danger" aria-current={current === 'settings-delete' ? 'true' : undefined}
+        onClick={() => scrollToElement(document.getElementById('settings-delete'))}>이벤트 삭제</button>
+    </nav>
+  );
+}
+
 /** What each choice of who sees a group's entry status means, in one line. */
 const INVITE_STATUS_HINT: Record<InviteStatus, string> = {
   OFF: '초대는 그대로 되지만, 입장 상태는 아무에게도 보여주지 않아요.',
@@ -1151,6 +1196,11 @@ export default function TicketAdmin() {
 
       {session && (
       <div className="console-layout">
+        <EventBar session={session} sessions={sessions} tab={tab} issued={counts.all}
+          inside={occupancy?.inside ?? counts.inside}
+          gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
+          gatesAll={gates.filter(gate => gate.role !== 'BOOTH').length}
+          liveState={liveState} />
         <EventNav session={session} tab={tab} issued={counts.all}
           inside={occupancy?.inside ?? counts.inside}
           gatesUp={gates.filter(gate => gate.role !== 'BOOTH' && gate.boundDevice).length}
@@ -1161,24 +1211,13 @@ export default function TicketAdmin() {
         <div className="console-main">
           <div className="console-head">
             <div>
-              <h2>{TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
-              <p>{eventTime(session)}{session.gateOpensAt ? ` · 입장 ${clock(session.gateOpensAt)}부터` : ''}
-                {session.venue ? ` · ${session.venue}` : ''}{session.testEvent ? ' · 테스트 이벤트' : ''}</p>
+              <h2>{tab === 'overview' ? overviewTitle(session) : TAB_TITLES[tab]}{TAB_HELP[tab] && <InfoTip label={TAB_TITLES[tab]}>{TAB_HELP[tab]}</InfoTip>}</h2>
+
             </div>
             <div className="console-actions">
-              {(tab === 'movements' || (tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today')) && (
-                <span className={`live-state live-${liveState}`} role="status">
-                  {liveState === 'open' ? '실시간 연결됨' : liveState === 'retrying' ? '연결이 끊겨 다시 연결하는 중' : '연결 중'}
-                  {updatedAt && ` · ${[updatedAt.getHours(), updatedAt.getMinutes(), updatedAt.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')} 갱신`}
-                </span>
-              )}
               {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'today' && (
                 <Link className="btn-primary" to="?tab=movements">실시간 입·퇴장 보기</Link>
               )}
-              {tab === 'overview' && eventWhen(session.startsAt, session.scheduleEndsAt) === 'upcoming' && (
-                <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>
-              )}
-              {tab === 'tickets' && <Link className="btn-primary" to="?tab=issue">입장권 발급</Link>}
               {/* With nothing on offer the button cannot do anything; say what it is waiting for. */}
               {tab === 'coupons' && givingBooths.length === 0 && (
                 <span className="console-actions-note" id="coupon-issue-why">사용 중인 쿠폰 종류를 먼저 추가하세요</span>
@@ -1593,15 +1632,15 @@ export default function TicketAdmin() {
               </p>
             )}
             <div className="gate-grid">{byNeed(doors).map(card)}</div>
-            {doors.length === 0 && (
-              <p className="console-none">아직 입장 게이트가 없어요. 아래에서 첫 게이트를 추가하세요.</p>
-            )}
             <details className="console-card add-card" open={doors.length === 0}>
-              <summary>게이트 추가
+              <summary>{doors.length === 0 ? '첫 게이트 추가' : '게이트 추가'}
                 <InfoTip label="게이트 추가">
                   이름, 장소, 방향만 정하면 설정 링크와 인증번호가 만들어져요.
                   쿠폰을 주는 부스 단말은 <Link to="?tab=booths">부스</Link>에서 추가해요.
                 </InfoTip></summary>
+              {doors.length === 0 && (
+                <p className="add-card-lead">입구마다 게이트를 하나씩 만들면 태블릿을 연결할 링크가 생겨요.</p>
+              )}
               <form onSubmit={e => { e.preventDefault(); registerGate(e.currentTarget); }}>
                 <input type="hidden" name="role" value="ADMISSION" />
                 <div className="form-row">
@@ -1711,13 +1750,7 @@ export default function TicketAdmin() {
       {session && tab === 'settings' && (() => {
         return (
           <div className="settings-page">
-            <nav className="settings-quick" aria-label="설정 항목">
-              {SETTINGS_TABS.map(([key, label]) => (
-                <button key={key} type="button" onClick={() => scrollToElement(document.getElementById(`settings-${key}`))}>{label}</button>
-              ))}
-              <button type="button" className="danger"
-                onClick={() => scrollToElement(document.getElementById('settings-delete'))}>이벤트 삭제</button>
-            </nav>
+            <SettingsQuickNav />
             <section id="settings-event" className="settings-section" aria-labelledby="settings-event-title">
               <div className="settings-side">
                 <h3 id="settings-event-title">이벤트 정보

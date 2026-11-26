@@ -4,7 +4,7 @@ import type { TicketCoupon } from './api';
  * A booth's colour on the holder's coupons: the same booth always the same colour, so a
  * stub can be recognised at a glance across the list, the code and the stamp.
  */
-const PALETTE = ['#6a4cf0', '#d0892a', '#1c8a6a', '#3d4663', '#c2366d', '#2f6fd0'];
+const PALETTE = ['#2740f0', '#d0892a', '#1c8a6a', '#3d4663', '#c2366d', '#2f6fd0'];
 
 export function boothColor(booth: string | null): string {
   const name = booth ?? '';

@@ -780,6 +780,9 @@ select, .field select, select.artwork-status {
   padding-block: var(--select-block-padding);
   -webkit-appearance: none;
   appearance: none;
+  /* With the platform look switched off a select falls back to the browser's grey, which
+     sets it apart from every text field beside it. */
+  background-color: #fff;
   padding-right: calc(var(--select-arrow-inset) + var(--select-arrow-size) + var(--select-arrow-gap));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d4663' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -1066,7 +1069,7 @@ select, .field select, select.artwork-status {
 .event-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .event-nav-menu { display: contents; }
 .event-nav-toggle { display: none; }
-.event-nav-label { font-size: 11px; font-weight: 700; letter-spacing: .6px; color: var(--muted); padding: 0 10px 6px; }
+.event-nav-label { font-size: 12px; font-weight: 700; letter-spacing: 0; color: #46506a; padding: 0 10px 6px; }
 .event-nav-group a {
   display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px;
   font-size: 14px; font-weight: 500; color: var(--ink);
@@ -1091,7 +1094,7 @@ select, .field select, select.artwork-status {
 .console-card h3 { font-size: 16px; margin: 0 0 10px; }
 .console-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .console-card-head a { font-size: 13px; font-weight: 700; }
-.console-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.console-two { align-items: start; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .console-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: start; }
 .console-split.reverse { grid-template-columns: 280px minmax(0, 1fr); }
 .console-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -1150,7 +1153,11 @@ select, .field select, select.artwork-status {
 .gate-card-actions { display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid #eef0f5; padding-top: 14px; }
 .gate-card-actions .btn-primary, .gate-card-actions .btn-secondary { margin: 0; width: auto; padding: 9px 14px; font-size: 13px; }
 
-.add-card > summary { cursor: pointer; font-weight: 800; font-size: 15px; }
+.add-card > summary { cursor: pointer; font-weight: 800; font-size: 15px; list-style: none; display: flex; align-items: center; gap: 8px; }
+.add-card > summary::-webkit-details-marker { display: none; }
+.add-card > summary::before { content: ''; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.add-card[open] > summary::before { transform: rotate(45deg); }
+.add-card-lead { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
 .add-card[open] > summary { margin-bottom: 12px; }
 .add-card form .btn-secondary { width: auto; }
 

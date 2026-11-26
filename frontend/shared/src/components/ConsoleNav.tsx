@@ -14,8 +14,8 @@ export interface ConsoleNavEntry<K extends string> {
  */
 export default function ConsoleNav<K extends string>({ label, back, card, groups, current }: {
   label: string;
-  back: { to: string; label: string };
-  card: ReactNode;
+  back?: { to: string; label: string };
+  card?: ReactNode;
   groups: Array<[string, ConsoleNavEntry<K>[]]>;
   current: K;
 }) {
@@ -34,12 +34,14 @@ export default function ConsoleNav<K extends string>({ label, back, card, groups
   useMenuFocus(open, toggle, menu, () => setOpen(false));
   return (
     <nav className="event-nav" aria-label={label} ref={box}>
-      <Link className="event-nav-back" to={back.to}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
-          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-        {back.label}
-      </Link>
-      <div className="event-nav-card">{card}</div>
+      {back && (
+        <Link className="event-nav-back" to={back.to}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+          {back.label}
+        </Link>
+      )}
+      {card && <div className="event-nav-card">{card}</div>}
       <button ref={toggle} type="button" className="event-nav-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
         {here && <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={here.icon} /></svg>}

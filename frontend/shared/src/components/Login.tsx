@@ -7,7 +7,7 @@ import { AppLink as Link, safeNext, useBrand, useGo } from '../scope';
 const WORDS = {
   site: { eyebrow: 'WELCOME TO PASSLINK', title: '반가워요, 패스링크입니다' },
   link: { eyebrow: 'PRIVATE LINK SHARING', title: '링크 관리자 로그인' },
-  ticket: { eyebrow: 'PASSLINK TICKET', title: '입장권 운영자 로그인' },
+  ticket: { eyebrow: '', title: '입장권 운영자 로그인' },
 };
 
 export default function Login() {
@@ -47,7 +47,7 @@ export default function Login() {
     <section className="page-section login-page">
       <div className="access-card login-card">
         <img src={brand.logo} alt={brand.name} height="32" />
-        <p className="eyebrow center">{words.eyebrow}</p>
+        {words.eyebrow && <p className="eyebrow center">{words.eyebrow}</p>}
         <h1>{session?.user ? '로그인되었습니다' : words.title}</h1>
 
         {loading ? <p role="status">로그인 상태를 확인하고 있어요.</p> : error ? (

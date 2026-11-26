@@ -90,9 +90,9 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
     <div className="console-stack">
       <div className="kpi-grid">
         <div className="kpi">
-          <span className="kpi-label">발급</span>
-          <strong className="kpi-num">{counts.all.toLocaleString()}</strong>
-          <span className="kpi-note">비활성 {counts.revoked.toLocaleString()}장 포함</span>
+          <span className="kpi-label">등록 대기</span>
+          <strong className="kpi-num">{counts.unclaimed.toLocaleString()}</strong>
+          <span className="kpi-note">발급 {counts.all.toLocaleString()}장 중{counts.revoked > 0 ? ` · 비활성 ${counts.revoked.toLocaleString()}장` : ''}</span>
         </div>
         <div className="kpi">
           <span className="kpi-label">등록 완료</span>
@@ -102,15 +102,22 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
         </div>
         <div className="kpi">
           <span className="kpi-label">지금 장내</span>
-          <strong className="kpi-num">{inside.toLocaleString()}
-            {capacity > 0 && <small> / {capacity.toLocaleString()}</small>}</strong>
-          <span className="kpi-note">{when === 'today' ? '실시간' : when === 'upcoming' ? '이벤트 당일부터 집계' : '이벤트 종료'}</span>
+          {when === 'upcoming' && inside === 0 ? (
+            <><strong className="kpi-num kpi-idle">당일 집계</strong><span className="kpi-note">행사 당일부터 실시간으로 보여요</span></>
+          ) : (
+            <><strong className="kpi-num">{inside.toLocaleString()}
+              {capacity > 0 && <small> / {capacity.toLocaleString()}</small>}</strong>
+            <span className="kpi-note">{when === 'today' ? '실시간' : '이벤트 종료'}</span></>
+          )}
         </div>
         <div className={`kpi${offline.length > 0 ? ' kpi-warn' : ''}`}>
           <span className="kpi-label">게이트 연결</span>
-          <strong className="kpi-num">{connected.length}<small> / {doors.length}</small></strong>
-          <span className="kpi-note">{doors.length === 0 ? '게이트 없음'
-            : offline.length > 0 ? `${offline.length}곳 연결 안 됨` : '모두 연결됨'}</span>
+          {doors.length === 0 ? (
+            <><strong className="kpi-num kpi-idle">미설정</strong><span className="kpi-note"><Link to="?tab=gates">게이트 추가하기</Link></span></>
+          ) : (
+            <><strong className="kpi-num">{connected.length}<small> / {doors.length}</small></strong>
+            <span className="kpi-note">{offline.length > 0 ? `${offline.length}곳 연결 안 됨` : '모두 연결됨'}</span></>
+          )}
         </div>
       </div>
 
@@ -142,7 +149,10 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
             <Link to="?tab=movements">자세히</Link>
           </div>
           {zones.length === 0 && unplaced === 0 ? (
-            <p className="console-none">게이트에 장소를 정하면 여기에 장소별 인원이 보여요.</p>
+            <div className="console-empty">
+              <p>장소별 인원은 게이트에 장소를 정하면 여기에 보여요.</p>
+              <Link className="btn-secondary" to="?tab=gates">게이트 설정하기</Link>
+            </div>
           ) : zones.map(z => (
             <div className="zone-meter" key={z.zone}>
               <div className="zone-meter-head">
@@ -173,7 +183,9 @@ export default function EventOverview({ session, summary, occupancy, gates }: {
           <Link to="?tab=movements">전체 기록</Link>
         </div>
         {(occupancy?.recent ?? []).length === 0 ? (
-          <p className="console-none">아직 게이트를 지난 기록이 없어요.</p>
+          <div className="console-empty">
+            <p>게이트를 지난 사람이 생기면 여기에 바로 보여요.</p>
+          </div>
         ) : (
           <div className="console-table-box flat">
             {/* On a phone the gate and the note sit under the ticket, so the row fits the screen. */}

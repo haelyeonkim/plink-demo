@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 34" fill="none">
-  <!-- Passlink's keyhole, on a ticket stub: the notches on either side are what make it a ticket. -->
-  <path d="M8 2 H22 A8 8 0 0 1 30 10 V13.5 A3.5 3.5 0 0 0 30 20.5 V24 A8 8 0 0 1 22 32 H8 A8 8 0 0 1 0 24 V20.5 A3.5 3.5 0 0 0 0 13.5 V10 A8 8 0 0 1 8 2 Z" fill="#6a4cf0"/>
-  <circle cx="15" cy="14" r="4.2" fill="#fff"/>
-  <path d="M12.6 18.2 L17.4 18.2 L18.9 25.4 L11.1 25.4 Z" fill="#fff"/>
-  <text x="38" y="26" font-family="Arial, 'Apple SD Gothic Neo', sans-serif" font-weight="800"
-        font-size="24" letter-spacing="-1.5" fill="#122145">Passlink<tspan fill="#6a4cf0" dx="6" font-weight="700" letter-spacing="-0.5">Ticket</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 272 34" fill="none">
+  <!-- The mark is a ticket stub whose "p" is also a key: the stem is the shaft, the bowl the head.
+       The wordmark is drawn as strokes, so it looks the same wherever the image is shown. -->
+  <path d="M7 2 H23 A5 5 0 0 1 28 7 V12.5 A3.5 3.5 0 0 0 28 19.5 V27 A5 5 0 0 1 23 32 H7 A5 5 0 0 1 2 27 V19.5 A3.5 3.5 0 0 0 2 12.5 V7 A5 5 0 0 1 7 2 Z" fill="#2740F0"/>
+  <g stroke="#fff" stroke-width="2.6" stroke-linecap="round" fill="none"><path d="M11.5,10 L11.5,25"/><circle cx="16.8" cy="14.2" r="5.3"/></g>
+  <g stroke="#0D1B3F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M42,12 L42,31"/><circle cx="48.5" cy="18.5" r="6.5"/><circle cx="67.5" cy="18.5" r="6.5"/><path d="M74,12 L74,25"/><path d="M92.5,14.2 C90.5,11.4 82.5,11.4 82.5,15.2 C82.5,18.9 92.5,17.7 92.5,21.7 C92.5,25.6 84,25.6 81.5,22.6"/><path d="M111.5,14.2 C109.5,11.4 101.5,11.4 101.5,15.2 C101.5,18.9 111.5,17.7 111.5,21.7 C111.5,25.6 103,25.6 100.5,22.6"/><path d="M119,5 L119,25"/><path d="M127,12 L127,25"/><circle cx="127" cy="6.8" r="1.5" fill="#0D1B3F" stroke="none"/><path d="M134,12 L134,25 M134,17.6 C134,12.4 146,11 146,17.6 L146,25"/><path d="M152,5 L152,25 M163,12 L152,19.5 M155.6,16.6 L164,25"/></g>
+  <g stroke="#2740F0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M182,7 L182,22.2 Q182,25 185.5,25 M178,12 L186.5,12"/><path d="M193.5,12 L193.5,25"/><circle cx="193.5" cy="6.8" r="1.5" fill="#2740F0" stroke="none"/><path d="M211.6,13.9 A6.5,6.5 0 1 0 211.6,23.1"/><path d="M218.5,5 L218.5,25 M229.5,12 L218.5,19.5 M222.1,16.6 L230.5,25"/><path d="M236.5,18.5 L249.5,18.5 A6.5,6.5 0 1 0 247.6,23.1"/><path d="M259.5,7 L259.5,22.2 Q259.5,25 263.0,25 M255.5,12 L264.0,12"/></g>
 </svg>
