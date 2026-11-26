@@ -13,6 +13,7 @@ import EventTable from './EventTable';
 import EventNav, { type ConsoleTab } from './EventNav';
 import EventBar from './EventBar';
 import EventOverview, { crowdLevel, outcomeTone } from './EventOverview';
+import EventStats from './EventStats';
 import { openLive, type LiveState } from '../ticket/live';
 import { EMPTY_PAGE, ListFilter, Pager, useDebounced, type Paged } from './ListTools';
 import RowMenu from './RowMenu';
@@ -43,11 +44,15 @@ function overviewTitle(session: SessionRow): string {
 }
 
 const TAB_TITLES: Record<Tab, string> = {
-  overview: '개요', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
+  overview: '개요', stats: '통계', tickets: '발급 현황', issue: '입장권 발급', movements: '실시간 입·퇴장',
   gates: '게이트', booths: '부스', coupons: '쿠폰', chat: '장내 채팅', ads: '알림판', venue: '행사장 정보', settings: '이벤트 설정',
 };
 /** What a screen's actions mean, behind an "i" beside its title. */
 const TAB_HELP: Partial<Record<Tab, ReactNode>> = {
+  stats: <>
+    <p>이 이벤트에서 쌓인 숫자만 모아 보여요. 연락처 같은 개인정보는 들어 있지 않아요.</p>
+    <p>입장한 사람은 한 번이라도 입장한 입장권 수예요. 평균 체류는 입장해서 퇴장할 때까지 한 번 머문 시간의 평균이고, 아직 장내에 있는 사람은 빼고 계산해요.</p>
+  </>,
   tickets: <>
     <p><b>링크 다시 보내기</b>는 처음 보낸 링크를 그대로 다시 보냅니다. <b>새 링크로 재발급</b>은 새 링크를 만들고 그 순간
       이전 링크를 닫아요.</p>
@@ -1233,6 +1238,7 @@ export default function TicketAdmin() {
           {tab === 'overview' && (
             <EventOverview session={session} summary={summary} occupancy={occupancy} gates={gates} />
           )}
+          {tab === 'stats' && <EventStats session={session} />}
           {tab === 'chat' && (
             <ConsoleChat sessionId={session.id} tick={roomTick} onNotice={setNotice} onError={setError} />
           )}

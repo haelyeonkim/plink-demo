@@ -125,6 +125,28 @@ class ActivityDataTest {
         }
     }
 
+    /**
+     * An event's console reads its own numbers: any account with the ticket console, not
+     * only owners, and without the service's logs, which stay with the data console.
+     */
+    @Test void anEventsConsoleReadsItsOwnNumbers() throws Exception {
+        long sessionId = newSession();
+        long other = newSession();
+        tickets.issue(sessionId, "s1@example.com", null, null, null, false);
+        tickets.issue(sessionId, "s2@example.com", null, null, null, false);
+        tickets.issue(other, "s3@example.com", null, null, null, false);
+        String path = "/api/admin/sessions/" + sessionId + "/stats";
+        mvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mvc.perform(get(path).with(admin(false)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.kpis.issued").value(2))
+            .andExpect(jsonPath("$.kpis.admittedPeople").value(0))
+            .andExpect(jsonPath("$.hourly").isArray())
+            .andExpect(jsonPath("$.gates").isArray())
+            .andExpect(jsonPath("$.logs").doesNotExist());
+        mvc.perform(get("/api/admin/sessions/999999/stats").with(admin(false))).andExpect(status().isNotFound());
+    }
+
     @Test void theOverviewAndTheLogReadOneEvent() throws Exception {
         long sessionId = newSession();
         tickets.issue(sessionId, "a@example.com", null, null, null, false);

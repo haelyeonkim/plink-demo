@@ -1,7 +1,7 @@
 import ConsoleNav, { NAV_ICONS, type ConsoleNavEntry } from '@shared/components/ConsoleNav';
 import { eventWhen, type SessionRow } from '../console/model';
 
-export type ConsoleTab = 'overview' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'venue' | 'settings';
+export type ConsoleTab = 'overview' | 'stats' | 'tickets' | 'issue' | 'movements' | 'gates' | 'booths' | 'coupons' | 'chat' | 'ads' | 'venue' | 'settings';
 
 /** An event's own menu, down the left of its console. */
 export default function EventNav({ session, tab, issued, inside, gatesUp, gatesAll, terminalsUp, terminalsAll, adsPending = 0 }: {
@@ -14,7 +14,10 @@ export default function EventNav({ session, tab, issued, inside, gatesUp, gatesA
 }) {
   const when = eventWhen(session.startsAt, session.scheduleEndsAt);
   const groups: Array<[string, ConsoleNavEntry<ConsoleTab>[]]> = [
-    ['', [{ key: 'overview', label: '개요', icon: NAV_ICONS.overview }]],
+    ['', [
+      { key: 'overview', label: '개요', icon: NAV_ICONS.overview },
+      { key: 'stats', label: '통계', icon: NAV_ICONS.stats },
+    ]],
     ['입장권', [
       { key: 'tickets', label: '발급 현황', icon: NAV_ICONS.list, badge: issued.toLocaleString(), badgeLabel: `발급 ${issued}장` },
       { key: 'issue', label: '발급', icon: NAV_ICONS.add },
